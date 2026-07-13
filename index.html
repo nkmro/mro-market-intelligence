@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MRO 자재 시황 관리 시스템 - 로그인</title>
+<style>
+  :root {
+    --accent: #1a6b52;
+    --accent-dark: #0f4a38;
+    --bg: #f6f5f2;
+    --card: #ffffff;
+    --border: #e2e0da;
+    --text: #1f2320;
+    --text-muted: #6b6f6a;
+    --danger: #b3413a;
+    --danger-bg: #fbeceb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 24px;
+  }
+  .brand { text-align: center; margin-bottom: 20px; }
+  .brand-title { font-size: 16px; font-weight: 600; }
+  .brand-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .tabs {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .tab {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 10px 0;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--text-muted); margin: 10px 0 4px; }
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    color: var(--text);
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  button.primary {
+    width: 100%;
+    margin-top: 18px;
+    padding: 12px 0;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { background: #b8bcb8; cursor: not-allowed; }
+  .link-row { text-align: right; margin-top: 6px; }
+  .link-row.center { text-align: center; margin-top: 14px; }
+  a.link { font-size: 12px; color: var(--accent); text-decoration: none; cursor: pointer; }
+  .error-box {
+    display: none;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-top: 12px;
+  }
+  .info-box {
+    background: var(--bg);
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+  }
+  .pane { display: none; }
+  .pane.active { display: block; }
+  .success-screen { text-align: center; }
+  .success-screen .icon { font-size: 40px; margin-bottom: 8px; }
+  .success-screen .name { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .success-screen .role { font-size: 13px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="brand-title">MRO 자재 시황</div>
+    <div class="brand-sub">동부 · 서부 · 중부 · 영업지원팀</div>
+  </div>
+
+  <div id="auth-area">
+    <div class="tabs">
+      <button class="tab active" id="tab-login" onclick="showTab('login')">로그인</button>
+      <button class="tab" id="tab-signup" onclick="showTab('signup')">회원가입</button>
+      <button class="tab" id="tab-reset" onclick="showTab('reset')" style="display:none;">비밀번호 찾기</button>
+    </div>
+
+    <!-- 로그인 -->
+    <div class="pane active" id="pane-login">
+      <label for="login-email">이메일</label>
+      <input type="email" id="login-email" placeholder="name@nkmro.com" autocomplete="username">
+      <label for="login-password">비밀번호</label>
+      <input type="password" id="login-password" placeholder="6자 이상" autocomplete="current-password">
+      <div class="link-row"><a class="link" onclick="showTab('reset')">비밀번호를 잊으셨나요?</a></div>
+      <button class="primary" id="btn-login" onclick="doLogin()">로그인</button>
+      <div class="error-box" id="login-error"></div>
+    </div>
+
+    <!-- 회원가입 -->
+    <div class="pane" id="pane-signup">
+      <div id="signup-step1">
+        <label for="signup-email">이메일</label>
+        <input type="email" id="signup-email" placeholder="name@nkmro.com">
+        <div class="hint">@nkmro.com 계정만 가입할 수 있어요.</div>
+        <label for="signup-name">이름</label>
+        <input type="text" id="signup-name" placeholder="홍길동">
+        <label for="signup-team">소속팀</label>
+        <select id="signup-team">
+          <option value="동부">동부팀</option>
+          <option value="서부">서부팀</option>
+          <option value="중부">중부팀</option>
+          <option value="영업지원">영업지원팀</option>
+        </select>
+        <label for="signup-password">비밀번호</label>
+        <input type="password" id="signup-password" placeholder="6자 이상" autocomplete="new-password">
+        <button class="primary" id="btn-signup-request" onclick="doRequestSignup()">인증코드 받기</button>
+        <div class="error-box" id="signup-error"></div>
+      </div>
+      <div id="signup-step2" style="display:none;">
+        <div class="info-box" id="signup-sent-to"></div>
+        <label for="signup-code">인증코드 6자리</label>
+        <input type="text" id="signup-code" maxlength="6" placeholder="123456" style="letter-spacing:4px;">
+        <button class="primary" id="btn-signup-verify" onclick="doVerifySignup()">가입 완료</button>
+        <div class="error-box" id="signup-verify-error"></div>
+        <div class="link-row center"><a class="link" onclick="backToSignupStep1()">이메일 다시 입력</a></div>
+      </div>
+    </div>
+
+    <!-- 비밀번호 재설정 -->
+    <div class="pane" id="pane-reset">
+      <div id="reset-step1">
+        <label for="reset-email">이메일</label>
+        <input type="email" id="reset-email" placeholder="name@nkmro.com">
+        <button class="primary" id="btn-reset-request" onclick="doRequestReset()">인증코드 받기</button>
+        <div class="error-box" id="reset-error"></div>
+      </div>
+      <div id="reset-step2" style="display:none;">
+        <div class="info-box" id="reset-sent-to"></div>
+        <label for="reset-code">인증코드 6자리</label>
+        <input type="text" id="reset-code" maxlength="6" placeholder="123456" style="letter-spacing:4px;">
+        <label for="reset-newpassword">새 비밀번호</label>
+        <input type="password" id="reset-newpassword" placeholder="6자 이상">
+        <button class="primary" id="btn-reset-confirm" onclick="doConfirmReset()">비밀번호 변경</button>
+        <div class="error-box" id="reset-confirm-error"></div>
+      </div>
+      <div class="link-row center"><a class="link" onclick="showTab('login')">로그인으로 돌아가기</a></div>
+    </div>
+  </div>
+
+  <!-- 로그인 성공 (임시 - 피드 화면 개발 전까지) -->
+  <div class="pane success-screen" id="pane-success">
+    <div class="icon">✓</div>
+    <div class="name" id="success-name"></div>
+    <div class="role" id="success-role"></div>
+    <div class="link-row center"><a class="link" onclick="doLogout()">로그아웃</a></div>
+  </div>
+</div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
+
+const ERROR_MESSAGES = {
+  MISSING_FIELDS: '입력하지 않은 항목이 있어요.',
+  USER_NOT_FOUND: '등록되지 않은 이메일이에요.',
+  USER_INACTIVE: '비활성화된 계정이에요. 팀장님께 문의해주세요.',
+  ACCOUNT_LOCKED: '로그인 5회 실패로 계정이 잠겼어요. 비밀번호를 재설정해주세요.',
+  WRONG_PASSWORD: '비밀번호가 일치하지 않아요.',
+  INVALID_DOMAIN: '@nkmro.com 이메일만 가입할 수 있어요.',
+  PASSWORD_TOO_SHORT: '비밀번호는 6자 이상이어야 해요.',
+  ALREADY_REGISTERED: '이미 가입된 이메일이에요.',
+  CODE_EXPIRED_OR_NOT_FOUND: '인증코드가 만료됐어요. 다시 요청해주세요.',
+  CODE_MISMATCH: '인증코드가 일치하지 않아요.',
+  CODE_MISMATCH_OR_EXPIRED: '인증코드가 일치하지 않거나 만료됐어요.',
+  SERVER_ERROR: '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.'
+};
+
+function errMsg(code) {
+  return ERROR_MESSAGES[code] || ('오류가 발생했어요 (' + code + ')');
+}
+
+async function callApi(action, body) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ action: action }, body))
+  });
+  return res.json();
+}
+
+function showTab(name) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('pane-' + name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById('tab-' + name);
+  if (tab) tab.classList.add('active');
+}
+
+function showError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideError(elId) {
+  document.getElementById(elId).style.display = 'none';
+}
+
+function setLoading(btnId, loading, label) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  btn.textContent = loading ? '처리 중...' : label;
+}
+
+async function doLogin() {
+  hideError('login-error');
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+
+  setLoading('btn-login', true, '로그인');
+  try {
+    const res = await callApi('login', { email, password });
+    if (!res.ok) { showError('login-error', errMsg(res.error)); return; }
+    saveSession(res);
+    showSuccess(res);
+  } catch (e) {
+    showError('login-error', errMsg('SERVER_ERROR'));
+  } finally {
+    setLoading('btn-login', false, '로그인');
+  }
+}
+
+async function doRequestSignup() {
+  hideError('signup-error');
+  const email = document.getElementById('signup-email').value.trim();
+  const name = document.getElementById('signup-name').value.trim();
+  const team = document.getElementById('signup-team').value;
+  const password = document.getElementById('signup-password').value;
+  if (!email || !name || !password) { showError('signup-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+
+  setLoading('btn-signup-request', true, '인증코드 받기');
+  try {
+    const res = await callApi('requestSignup', { email, name, team, password });
+    if (!res.ok) { showError('signup-error', errMsg(res.error)); return; }
+    document.getElementById('signup-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
+    document.getElementById('signup-step1').style.display = 'none';
+    document.getElementById('signup-step2').style.display = 'block';
+  } catch (e) {
+    showError('signup-error', errMsg('SERVER_ERROR'));
+  } finally {
+    setLoading('btn-signup-request', false, '인증코드 받기');
+  }
+}
+
+async function doVerifySignup() {
+  hideError('signup-verify-error');
+  const email = document.getElementById('signup-email').value.trim();
+  const code = document.getElementById('signup-code').value.trim();
+  if (!code) { showError('signup-verify-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+
+  setLoading('btn-signup-verify', true, '가입 완료');
+  try {
+    const res = await callApi('verifySignup', { email, code });
+    if (!res.ok) { showError('signup-verify-error', errMsg(res.error)); return; }
+    document.getElementById('signup-password').value = document.getElementById('signup-password').value;
+    showTab('login');
+    document.getElementById('login-email').value = email;
+  } catch (e) {
+    showError('signup-verify-error', errMsg('SERVER_ERROR'));
+  } finally {
+    setLoading('btn-signup-verify', false, '가입 완료');
+  }
+}
+
+function backToSignupStep1() {
+  document.getElementById('signup-step1').style.display = 'block';
+  document.getElementById('signup-step2').style.display = 'none';
+}
+
+async function doRequestReset() {
+  hideError('reset-error');
+  const email = document.getElementById('reset-email').value.trim();
+  if (!email) { showError('reset-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+
+  setLoading('btn-reset-request', true, '인증코드 받기');
+  try {
+    const res = await callApi('requestPasswordReset', { email });
+    if (!res.ok) { showError('reset-error', errMsg(res.error)); return; }
+    document.getElementById('reset-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
+    document.getElementById('reset-step1').style.display = 'none';
+    document.getElementById('reset-step2').style.display = 'block';
+  } catch (e) {
+    showError('reset-error', errMsg('SERVER_ERROR'));
+  } finally {
+    setLoading('btn-reset-request', false, '인증코드 받기');
+  }
+}
+
+async function doConfirmReset() {
+  hideError('reset-confirm-error');
+  const email = document.getElementById('reset-email').value.trim();
+  const code = document.getElementById('reset-code').value.trim();
+  const newPassword = document.getElementById('reset-newpassword').value;
+  if (!code || !newPassword) { showError('reset-confirm-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+
+  setLoading('btn-reset-confirm', true, '비밀번호 변경');
+  try {
+    const res = await callApi('confirmPasswordReset', { email, code, newPassword });
+    if (!res.ok) { showError('reset-confirm-error', errMsg(res.error)); return; }
+    showTab('login');
+    document.getElementById('login-email').value = email;
+    document.getElementById('login-password').value = '';
+  } catch (e) {
+    showError('reset-confirm-error', errMsg('SERVER_ERROR'));
+  } finally {
+    setLoading('btn-reset-confirm', false, '비밀번호 변경');
+  }
+}
+
+function saveSession(res) {
+  localStorage.setItem('mro_session', JSON.stringify({
+    sessionToken: res.sessionToken,
+    email: res.email,
+    name: res.name,
+    role: res.role,
+    team: res.team
+  }));
+}
+
+function showSuccess(res) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('auth-area').style.display = 'none';
+  document.getElementById('pane-success').classList.add('active');
+  document.getElementById('success-name').textContent = res.name + '님, 환영합니다';
+  document.getElementById('success-role').textContent = res.team + ' · ' + res.role;
+}
+
+function doLogout() {
+  localStorage.removeItem('mro_session');
+  document.getElementById('auth-area').style.display = 'block';
+  document.getElementById('pane-success').classList.remove('active');
+  showTab('login');
+}
+
+(function init() {
+  const saved = localStorage.getItem('mro_session');
+  if (saved) {
+    try {
+      const session = JSON.parse(saved);
+      showSuccess(session);
+    } catch (e) { localStorage.removeItem('mro_session'); }
+  }
+})();
+</script>
+</body>
+</html>
