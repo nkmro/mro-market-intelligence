@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MRO 자재 시황 관리 시스템 - 피드</title>
+<style>
+  :root {
+    --accent: #1a6b52;
+    --accent-dark: #0f4a38;
+    --accent-soft: #eaf3ef;
+    --bg: #f6f5f2;
+    --card: #ffffff;
+    --border: #e2e0da;
+    --text: #1f2320;
+    --text-muted: #6b6f6a;
+    --danger: #b3413a;
+    --danger-bg: #fbeceb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ---------- 헤더 ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 30;
+    height: 56px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .hamburger {
+    display: none;
+    width: 32px; height: 32px;
+    border: none; background: transparent; cursor: pointer;
+    font-size: 20px; color: var(--text);
+    align-items: center; justify-content: center;
+  }
+  .brand-title { font-size: 15px; font-weight: 700; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .user-chip { font-size: 12px; color: var(--text-muted); text-align: right; line-height: 1.3; }
+  .user-chip b { color: var(--text); font-weight: 600; }
+  .logout-link { font-size: 12px; color: var(--accent); text-decoration: none; cursor: pointer; white-space: nowrap; }
+
+  /* ---------- 레이아웃 ---------- */
+  .shell { display: flex; }
+  .sidebar {
+    width: 220px; flex-shrink: 0;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    height: calc(100vh - 56px);
+    position: sticky; top: 56px;
+    padding: 18px 12px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px;
+    font-size: 14px; color: var(--text-muted);
+    cursor: pointer; margin-bottom: 2px;
+  }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 600; }
+  .nav-item:hover:not(.active) { background: var(--bg); }
+
+  .main {
+    flex: 1; min-width: 0;
+    padding: 20px 16px 60px;
+    display: flex; justify-content: center;
+  }
+  .feed { width: 100%; max-width: 700px; }
+
+  .feed-empty {
+    text-align: center; color: var(--text-muted); font-size: 13px;
+    padding: 60px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  }
+  .feed-loading { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 0; }
+
+  /* ---------- 게시물 카드 ---------- */
+  .post-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .material-badge {
+    display: inline-block;
+    background: var(--accent); color: #fff;
+    font-size: 16px; font-weight: 700;
+    padding: 4px 12px; border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .post-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+  .post-title { font-size: 17px; font-weight: 700; margin: 0 0 8px; line-height: 1.4; }
+  .post-summary { font-size: 14px; line-height: 1.65; color: var(--text); margin-bottom: 10px; }
+  .article-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+  .article-link:hover { text-decoration: underline; }
+
+  /* ---------- 관련 품목 블록 ---------- */
+  .items-block { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .items-block-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+
+  .items-grid-header {
+    display: grid; grid-template-columns: 1.2fr 1.4fr 1fr 24px;
+    font-size: 11px; color: var(--text-muted);
+    padding: 0 10px 6px; border-bottom: 1px solid var(--border);
+  }
+  .item-row {
+    display: grid; grid-template-columns: 1.2fr 1.4fr 1fr 24px;
+    align-items: center;
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; font-size: 13px;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-row:hover { background: var(--bg); }
+  .item-row .customer { font-weight: 600; }
+  .item-row .manager { color: var(--text-muted); }
+  .item-badge {
+    font-size: 11px; padding: 2px 7px; border-radius: 20px;
+    background: var(--bg); color: var(--text-muted); width: fit-content;
+  }
+  .item-badge.checked { background: var(--accent-soft); color: var(--accent-dark); }
+  .chevron { transition: transform .15s ease; color: var(--text-muted); text-align: right; }
+  .item-row.open .chevron { transform: rotate(90deg); }
+
+  /* ---------- 댓글 스레드(아코디언) ---------- */
+  .comment-thread {
+    display: none;
+    background: var(--accent-soft);
+    border-top: 1px dashed #c7d9d0;
+    border-radius: 0 0 10px 10px;
+    padding: 14px 12px;
+    margin-bottom: 4px;
+  }
+  .comment-thread.open { display: block; }
+  .thread-empty { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+
+  .comment-item { display: flex; gap: 8px; margin-bottom: 12px; }
+  .comment-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .comment-body { flex: 1; min-width: 0; }
+  .reply-to { font-size: 11px; color: var(--accent-dark); margin-bottom: 2px; }
+  .comment-head { font-size: 12px; margin-bottom: 2px; }
+  .comment-head .name { font-weight: 700; color: var(--text); }
+  .comment-head .role { color: var(--text-muted); margin-left: 4px; }
+  .comment-head .time { color: var(--text-muted); margin-left: 6px; }
+  .comment-text { font-size: 13px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+  .comment-reply-btn {
+    font-size: 11px; color: var(--accent); background: none; border: none;
+    cursor: pointer; padding: 4px 0; margin-top: 2px;
+  }
+
+  .reply-composer { margin-top: 6px; display: flex; gap: 6px; }
+  .reply-composer textarea {
+    flex: 1; resize: none; font-family: inherit; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    background: #fff; min-height: 40px;
+  }
+  .reply-composer button {
+    border: none; background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 0 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .reply-composer button:disabled { background: #b8bcb8; cursor: not-allowed; }
+
+  .first-comment-btn {
+    border: 1px solid var(--accent); color: var(--accent); background: #fff;
+    border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .first-comment-form { margin-top: 8px; }
+
+  .thread-error { font-size: 12px; color: var(--danger); margin-top: 6px; }
+
+  /* ---------- 모바일 드로어 ---------- */
+  .drawer-overlay {
+    display: none;
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 40;
+  }
+  .drawer-overlay.open { display: block; }
+
+  /* ---------- 반응형 ---------- */
+  @media (max-width: 768px) {
+    .hamburger { display: flex; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh;
+      transform: translateX(-100%);
+      transition: transform .2s ease;
+      z-index: 50;
+      width: 240px;
+      padding-top: 66px;
+    }
+    .sidebar.open { transform: translateX(0); }
+
+    .items-grid-header { display: none; }
+    .item-row {
+      display: flex; flex-direction: column; gap: 4px;
+      grid-template-columns: unset;
+      border: none; border-bottom: 1px solid var(--border);
+      padding: 12px 4px;
+      position: relative;
+    }
+    .item-row .field { display: flex; gap: 6px; font-size: 13px; }
+    .item-row .field .label { color: var(--text-muted); min-width: 56px; flex-shrink: 0; }
+    .item-row .chevron { position: absolute; right: 4px; top: 12px; }
+
+    .comment-thread { margin-left: -4px; margin-right: -4px; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <button class="hamburger" id="btn-hamburger" onclick="toggleDrawer(true)">☰</button>
+    <div class="brand-title">MRO 자재 시황</div>
+  </div>
+  <div class="topbar-right">
+    <div class="user-chip"><b id="chip-name">-</b><br><span id="chip-role">-</span></div>
+    <a class="logout-link" onclick="doLogout()">로그아웃</a>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer(false)"></div>
+
+<div class="shell">
+  <div class="sidebar" id="sidebar">
+    <div class="nav-item active">피드</div>
+    <div class="nav-item">알림함</div>
+    <div class="nav-item">품목 등록·수정</div>
+    <div class="nav-item">설정</div>
+  </div>
+
+  <div class="main">
+    <div class="feed" id="feed-root">
+      <div class="feed-loading" id="feed-loading">불러오는 중...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   가정한 GAS API 응답 규약 (실제 백엔드 구현과 필드명을 반드시 대조/조정할 것)
+
+   action=getFeed  (POST, {action, sessionToken})
+     -> { ok:true, currentUser:{email,name,role,team},
+          posts:[{ postId, materialName, title, summary, articleUrl, postedAt,
+                    items:[{ itemId, customerName, itemName,
+                             managerName, managerEmail,
+                             commentCount, hasFirstComment }] }] }
+
+   action=getComments (POST, {action, sessionToken, itemId})
+     -> { ok:true, comments:[{ commentId, itemId, authorName, authorRole,
+                                authorEmail, content, createdAt, parentId }] }
+        parentId 는 최상위 댓글이면 null.
+
+   action=postComment (POST, {action, sessionToken, itemId, content, parentId})
+     -> { ok:true, comment:{ commentId, itemId, authorName, authorRole,
+                              authorEmail, content, createdAt, parentId } }
+
+   action=markChecked (POST, {action, sessionToken, itemId})
+     -> { ok:true }
+   ========================================================================= */
+
+const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
+
+let session = null;
+let feedState = { posts: [] };
+// itemId 별 댓글 캐시/열림상태
+const threadState = {}; // { [itemId]: { loaded, comments, open, replyOpenFor, submitting } }
+
+function getSession() {
+  const raw = localStorage.getItem('mro_session');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+async function callApi(action, body) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body))
+  });
+  return res.json();
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (sameDay) return `오늘 ${hh}:${mm}`;
+  return `${d.getMonth() + 1}.${d.getDate()} ${hh}:${mm}`;
+}
+
+function initials(name) {
+  if (!name) return '?';
+  return name.trim().slice(-2);
+}
+
+/* ---------------- 초기 로드 ---------------- */
+(async function init() {
+  session = getSession();
+  if (!session || !session.sessionToken) {
+    window.location.href = 'index.html';
+    return;
+  }
+  document.getElementById('chip-name').textContent = session.name || '-';
+  document.getElementById('chip-role').textContent = (session.team ? session.team + ' · ' : '') + (session.role || '-');
+
+  await loadFeed();
+})();
+
+async function loadFeed() {
+  const root = document.getElementById('feed-root');
+  try {
+    const res = await callApi('getFeed', {});
+    if (!res.ok) {
+      if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
+        doLogout();
+        return;
+      }
+      root.innerHTML = `<div class="feed-empty">피드를 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
+      return;
+    }
+    if (res.currentUser) session = Object.assign({}, session, res.currentUser);
+    feedState.posts = res.posts || [];
+    renderFeed();
+  } catch (e) {
+    root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요. 새로고침 후 다시 시도해주세요.</div>`;
+  }
+}
+
+/* ---------------- 렌더링 ---------------- */
+function renderFeed() {
+  const root = document.getElementById('feed-root');
+  if (!feedState.posts.length) {
+    root.innerHTML = `<div class="feed-empty">아직 게시된 시황이 없어요.</div>`;
+    return;
+  }
+  root.innerHTML = feedState.posts.map(renderPost).join('');
+}
+
+function renderPost(post) {
+  const itemsHtml = (post.items || []).map(item => renderItemRow(post.postId, item)).join('');
+  return `
+    <div class="post-card">
+      <span class="material-badge">${escapeHtml(post.materialName || '')}</span>
+      <div class="post-meta">AI 시황봇 · ${escapeHtml(fmtTime(post.postedAt))}</div>
+      <div class="post-title">${escapeHtml(post.title || '')}</div>
+      <div class="post-summary">${escapeHtml(post.summary || '')}</div>
+      ${post.articleUrl ? `<a class="article-link" href="${escapeHtml(post.articleUrl)}" target="_blank" rel="noopener">기사 원문 보기 →</a>` : ''}
+      <div class="items-block">
+        <div class="items-block-label">관련 품목 (${(post.items || []).length})</div>
+        <div class="items-grid-header">
+          <div>고객사</div><div>품목명</div><div>담당소장</div><div></div>
+        </div>
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
+}
+
+function renderItemRow(postId, item) {
+  const checked = !!item.hasFirstComment;
+  const badge = `<span class="item-badge ${checked ? 'checked' : ''}">${checked ? '확인완료' : '미확인'}${item.commentCount ? ' · 댓글 ' + item.commentCount : ''}</span>`;
+  return `
+    <div>
+      <div class="item-row" id="row-${item.itemId}" onclick="toggleThread('${item.itemId}')">
+        <div class="field customer"><span class="label">고객사</span><span class="customer">${escapeHtml(item.customerName || '')}</span></div>
+        <div class="field"><span class="label">품목명</span><span>${escapeHtml(item.itemName || '')}</span></div>
+        <div class="field manager"><span class="label">담당소장</span><span class="manager">${escapeHtml(item.managerName || '')}</span>${badge}</div>
+        <div class="chevron">›</div>
+      </div>
+      <div class="comment-thread" id="thread-${item.itemId}"></div>
+    </div>
+  `;
+}
+
+/* ---------------- 댓글 아코디언 ---------------- */
+async function toggleThread(itemId) {
+  const row = document.getElementById('row-' + itemId);
+  const panel = document.getElementById('thread-' + itemId);
+  const st = threadState[itemId] || (threadState[itemId] = { loaded: false, comments: [], open: false, replyOpenFor: null });
+
+  st.open = !st.open;
+  row.classList.toggle('open', st.open);
+  panel.classList.toggle('open', st.open);
+
+  if (st.open && !st.loaded) {
+    panel.innerHTML = `<div class="thread-empty">댓글 불러오는 중...</div>`;
+    await loadComments(itemId);
+  }
+}
+
+function findItem(itemId) {
+  for (const post of feedState.posts) {
+    for (const item of (post.items || [])) {
+      if (String(item.itemId) === String(itemId)) return item;
+    }
+  }
+  return null;
+}
+
+async function loadComments(itemId) {
+  const panel = document.getElementById('thread-' + itemId);
+  try {
+    const res = await callApi('getComments', { itemId });
+    if (!res.ok) {
+      panel.innerHTML = `<div class="thread-error">댓글을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
+      return;
+    }
+    const st = threadState[itemId];
+    st.loaded = true;
+    st.comments = res.comments || [];
+    renderThread(itemId);
+  } catch (e) {
+    panel.innerHTML = `<div class="thread-error">네트워크 오류가 발생했어요.</div>`;
+  }
+}
+
+function canStartFirstComment(item) {
+  if (!session) return false;
+  return session.role === '소장' && item && item.managerEmail === session.email;
+}
+function canReply() {
+  return session && (session.role === '소장' || session.role === '팀장' || session.role === '임원');
+}
+
+function renderThread(itemId) {
+  const panel = document.getElementById('thread-' + itemId);
+  const st = threadState[itemId];
+  const item = findItem(itemId);
+  const comments = st.comments || [];
+
+  if (!comments.length) {
+    const startBtn = canStartFirstComment(item)
+      ? `<button class="first-comment-btn" onclick="openReplyBox('${itemId}', null)">첫 댓글 남기기</button>
+         <div id="composer-${itemId}-root" class="first-comment-form"></div>`
+      : '';
+    panel.innerHTML = `<div class="thread-empty">아직 확인 댓글이 없어요.</div>${startBtn}`;
+    return;
+  }
+
+  // parentId 기준 depth 계산
+  const byId = {}; comments.forEach(c => byId[c.commentId] = c);
+  function depthOf(c) {
+    let d = 0, cur = c;
+    while (cur && cur.parentId && byId[cur.parentId]) { d++; cur = byId[cur.parentId]; if (d > 8) break; }
+    return d;
+  }
+
+  const html = comments.map(c => {
+    const depth = depthOf(c);
+    const parent = c.parentId ? byId[c.parentId] : null;
+    const replyBtn = canReply()
+      ? `<button class="comment-reply-btn" onclick="openReplyBox('${itemId}', '${c.commentId}')">답장</button>`
+      : '';
+    return `
+      <div class="comment-item" style="margin-left:${depth * 20}px;">
+        <div class="comment-avatar">${escapeHtml(initials(c.authorName))}</div>
+        <div class="comment-body">
+          ${parent ? `<div class="reply-to">↳ ${escapeHtml(parent.authorName)}에게 답장</div>` : ''}
+          <div class="comment-head">
+            <span class="name">${escapeHtml(c.authorName)}</span><span class="role">${escapeHtml(c.authorRole || '')}</span><span class="time">${escapeHtml(fmtTime(c.createdAt))}</span>
+          </div>
+          <div class="comment-text">${escapeHtml(c.content)}</div>
+          ${replyBtn}
+          <div id="composer-${itemId}-${c.commentId}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  panel.innerHTML = html;
+}
+
+/* ---------------- 댓글 작성 ---------------- */
+function openReplyBox(itemId, parentId) {
+  const st = threadState[itemId];
+  // 이미 열려있으면 토글해서 닫기
+  if (st.replyOpenFor === (parentId || 'root')) {
+    st.replyOpenFor = null;
+    renderThread(itemId);
+    return;
+  }
+  st.replyOpenFor = parentId || 'root';
+  renderThread(itemId);
+
+  const mountId = parentId ? `composer-${itemId}-${parentId}` : `composer-${itemId}-root`;
+  const mount = document.getElementById(mountId);
+  if (!mount) return;
+  mount.innerHTML = `
+    <div class="reply-composer">
+      <textarea id="ta-${itemId}" placeholder="${parentId ? '답장을 입력하세요' : '확인 내용을 입력하세요'}"></textarea>
+      <button id="btn-send-${itemId}" onclick="submitComment('${itemId}', ${parentId ? `'${parentId}'` : 'null'})">등록</button>
+    </div>
+  `;
+  document.getElementById('ta-' + itemId).focus();
+}
+
+async function submitComment(itemId, parentId) {
+  const ta = document.getElementById('ta-' + itemId);
+  const btn = document.getElementById('btn-send-' + itemId);
+  const content = ta.value.trim();
+  if (!content) { ta.focus(); return; }
+
+  btn.disabled = true; btn.textContent = '등록 중...';
+  try {
+    const res = await callApi('postComment', { itemId, content, parentId });
+    if (!res.ok) {
+      alert(res.error === 'FORBIDDEN' ? '이 작업을 수행할 권한이 없어요.' : ('오류가 발생했어요 (' + res.error + ')'));
+      btn.disabled = false; btn.textContent = '등록';
+      return;
+    }
+    const st = threadState[itemId];
+    st.comments.push(res.comment);
+    st.replyOpenFor = null;
+
+    // 최초 댓글이었다면 피드 상단의 미확인 배지 상태도 갱신
+    const item = findItem(itemId);
+    if (item && !parentId) item.hasFirstComment = true;
+
+    renderThread(itemId);
+  } catch (e) {
+    alert('네트워크 오류로 등록하지 못했어요.');
+    btn.disabled = false; btn.textContent = '등록';
+  }
+}
+
+/* ---------------- 모바일 드로어 ---------------- */
+function toggleDrawer(open) {
+  document.getElementById('sidebar').classList.toggle('open', open);
+  document.getElementById('drawer-overlay').classList.toggle('open', open);
+}
+
+/* ---------------- 로그아웃 ---------------- */
+function doLogout() {
+  localStorage.removeItem('mro_session');
+  window.location.href = 'index.html';
+}
+</script>
+</body>
+</html>
