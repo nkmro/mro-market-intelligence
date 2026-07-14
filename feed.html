@@ -35,6 +35,10 @@
     background: var(--card);
     border-right: 1px solid var(--border);
     padding: 20px 12px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
   }
   .sidebar-title { font-size: 15px; font-weight: 700; margin: 4px 12px 18px; }
   .nav-item {
@@ -48,6 +52,7 @@
   .nav-item:hover:not(.active) { background: var(--bg); }
 
   .content { flex: 1; min-width: 0; }
+
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 16px 24px;
@@ -60,7 +65,7 @@
   }
   .team-select { font-size: 13px; color: var(--text-muted); cursor: pointer; }
 
-  .main { padding: 20px 24px 60px; max-width: 760px; margin: 0 auto; }
+  .main { padding: 20px 24px 60px; max-width: 760px; margin: 0; }
 
   .feed-empty, .feed-loading {
     text-align: center; color: var(--text-muted); font-size: 13px; padding: 60px 0;
@@ -93,6 +98,7 @@
     display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px;
   }
   .article-link:hover { text-decoration: underline; }
+
   .items-box { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .items-box-head {
     display: flex; align-items: center; gap: 6px;
@@ -145,6 +151,7 @@
     font-size: 11px; color: var(--blue); background: none; border: none;
     cursor: pointer; padding: 4px 0; margin-top: 2px;
   }
+
   .reply-composer { margin-top: 10px; display: flex; gap: 8px; }
   .reply-composer textarea {
     flex: 1; resize: none; font-family: inherit; font-size: 13px;
@@ -280,9 +287,9 @@ function renderPost(post) {
   return `
     <div class="post-card">
       <div class="post-head">
-        <div class="bot-icon">✦</div>
-        <div class="bot-name">AI 시황봇</div>
+        <div class="bot-icon">✨</div>
         <span class="material-badge">${escapeHtml(post.materialName || '')}</span>
+        <div class="bot-name">AI 시황봇</div>
         <span class="post-time">${escapeHtml(fmtTime(post.postedAt))}</span>
       </div>
       <div class="post-title">${escapeHtml(post.title || '')}</div>
@@ -317,11 +324,18 @@ async function toggleThread(itemId) {
   const row = document.getElementById('row-' + itemId);
   const panel = document.getElementById('thread-' + itemId);
   const st = threadState[itemId] || (threadState[itemId] = { loaded: false, comments: [], open: false, replyOpenFor: null });
+  const item = findItem(itemId);
 
   st.open = !st.open;
   panel.classList.toggle('open', st.open);
 
   if (st.open && !st.loaded) {
+    if (item && !item.hasFirstComment) {
+      st.loaded = true;
+      st.comments = [];
+      renderThread(itemId);
+      return;
+    }
     panel.innerHTML = `<div class="thread-empty">댓글 불러오는 중...</div>`;
     await loadComments(itemId);
   }
