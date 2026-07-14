@@ -185,7 +185,7 @@
         <div class="info-box" id="signup-sent-to"></div>
         <label for="signup-code">인증코드 6자리</label>
         <input type="text" id="signup-code" maxlength="6" placeholder="123456" style="letter-spacing:4px;">
-        <button class="primary" id="btn-signup-verify" onclick="doVerifySignup()">가입 완료</button>
+        <button class="primary" id="btn-signup-verify" onclick="doVerifySignup()"><span class="btn-label">가입 완료</span><span class="btn-load-base">NKMRO</span><span class="btn-load-fill">NKMRO</span></button>
         <div class="error-box" id="signup-verify-error"></div>
         <div class="link-row center"><a class="link" onclick="backToSignupStep1()">이메일 다시 입력</a></div>
       </div>
@@ -196,7 +196,7 @@
       <div id="reset-step1">
         <label for="reset-email">이메일</label>
         <input type="email" id="reset-email" placeholder="name@nkmro.com">
-        <button class="primary" id="btn-reset-request" onclick="doRequestReset()">인증코드 받기</button>
+        <button class="primary" id="btn-reset-request" onclick="doRequestReset()"><span class="btn-label">인증코드 받기</span><span class="btn-load-base">NKMRO</span><span class="btn-load-fill">NKMRO</span></button>
         <div class="error-box" id="reset-error"></div>
       </div>
       <div id="reset-step2" style="display:none;">
@@ -205,7 +205,7 @@
         <input type="text" id="reset-code" maxlength="6" placeholder="123456" style="letter-spacing:4px;">
         <label for="reset-newpassword">새 비밀번호</label>
         <input type="password" id="reset-newpassword" placeholder="6자 이상">
-        <button class="primary" id="btn-reset-confirm" onclick="doConfirmReset()">비밀번호 변경</button>
+        <button class="primary" id="btn-reset-confirm" onclick="doConfirmReset()"><span class="btn-label">비밀번호 변경</span><span class="btn-load-base">NKMRO</span><span class="btn-load-fill">NKMRO</span></button>
         <div class="error-box" id="reset-confirm-error"></div>
       </div>
       <div class="link-row center"><a class="link" onclick="showTab('login')">로그인으로 돌아가기</a></div>
@@ -363,17 +363,18 @@ async function doVerifySignup() {
   const code = document.getElementById('signup-code').value.trim();
   if (!code) { showError('signup-verify-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  setLoading('btn-signup-verify', true, '가입 완료');
+  startLoadingFill('btn-signup-verify');
   try {
     const res = await callApi('verifySignup', { email, code });
-    if (!res.ok) { showError('signup-verify-error', errMsg(res.error)); return; }
+    if (!res.ok) { cancelLoadingFill('btn-signup-verify'); showError('signup-verify-error', errMsg(res.error)); return; }
+    await finishLoadingFill('btn-signup-verify');
     document.getElementById('signup-password').value = document.getElementById('signup-password').value;
     showTab('login');
     document.getElementById('login-email').value = email;
+    cancelLoadingFill('btn-signup-verify');
   } catch (e) {
+    cancelLoadingFill('btn-signup-verify');
     showError('signup-verify-error', errMsg('SERVER_ERROR'));
-  } finally {
-    setLoading('btn-signup-verify', false, '가입 완료');
   }
 }
 
@@ -387,17 +388,18 @@ async function doRequestReset() {
   const email = document.getElementById('reset-email').value.trim();
   if (!email) { showError('reset-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  setLoading('btn-reset-request', true, '인증코드 받기');
+  startLoadingFill('btn-reset-request');
   try {
     const res = await callApi('requestPasswordReset', { email });
-    if (!res.ok) { showError('reset-error', errMsg(res.error)); return; }
+    if (!res.ok) { cancelLoadingFill('btn-reset-request'); showError('reset-error', errMsg(res.error)); return; }
+    await finishLoadingFill('btn-reset-request');
     document.getElementById('reset-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
     document.getElementById('reset-step1').style.display = 'none';
     document.getElementById('reset-step2').style.display = 'block';
+    cancelLoadingFill('btn-reset-request');
   } catch (e) {
+    cancelLoadingFill('btn-reset-request');
     showError('reset-error', errMsg('SERVER_ERROR'));
-  } finally {
-    setLoading('btn-reset-request', false, '인증코드 받기');
   }
 }
 
@@ -408,17 +410,18 @@ async function doConfirmReset() {
   const newPassword = document.getElementById('reset-newpassword').value;
   if (!code || !newPassword) { showError('reset-confirm-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  setLoading('btn-reset-confirm', true, '비밀번호 변경');
+  startLoadingFill('btn-reset-confirm');
   try {
     const res = await callApi('confirmPasswordReset', { email, code, newPassword });
-    if (!res.ok) { showError('reset-confirm-error', errMsg(res.error)); return; }
+    if (!res.ok) { cancelLoadingFill('btn-reset-confirm'); showError('reset-confirm-error', errMsg(res.error)); return; }
+    await finishLoadingFill('btn-reset-confirm');
     showTab('login');
     document.getElementById('login-email').value = email;
     document.getElementById('login-password').value = '';
+    cancelLoadingFill('btn-reset-confirm');
   } catch (e) {
+    cancelLoadingFill('btn-reset-confirm');
     showError('reset-confirm-error', errMsg('SERVER_ERROR'));
-  } finally {
-    setLoading('btn-reset-confirm', false, '비밀번호 변경');
   }
 }
 
@@ -433,11 +436,7 @@ function saveSession(res) {
 }
 
 function showSuccess(res) {
-  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-  document.getElementById('auth-area').style.display = 'none';
-  document.getElementById('pane-success').classList.add('active');
-  document.getElementById('success-name').textContent = res.name + '님, 환영합니다';
-  document.getElementById('success-role').textContent = res.team + ' · ' + res.role;
+  window.location.href = 'feed.html';
 }
 
 function doLogout() {
