@@ -106,12 +106,6 @@
     background: #26418f;
     color: #fff;
     clip-path: inset(0 100% 0 0);
-    animation: btnFillSweep 1.3s ease-in-out infinite;
-  }
-  @keyframes btnFillSweep {
-    0% { clip-path: inset(0 100% 0 0); }
-    60% { clip-path: inset(0 0% 0 0); }
-    100% { clip-path: inset(0 0% 0 0); }
   }
   .link-row { text-align: right; margin-top: 6px; }
   .link-row.center { text-align: center; margin-top: 14px; }
@@ -280,10 +274,46 @@ function setLoading(btnId, loading, label) {
   btn.textContent = loading ? '처리 중...' : label;
 }
 
-function setLoadingFill(btnId, loading) {
+function startLoadingFill(btnId) {
   const btn = document.getElementById(btnId);
-  btn.disabled = loading;
-  btn.classList.toggle('loading', loading);
+  btn.disabled = true;
+  btn.classList.add('loading');
+  const fill = btn.querySelector('.btn-load-fill');
+  fill.style.transition = 'none';
+  fill.style.clipPath = 'inset(0 100% 0 0)';
+  btn._loadCancelled = false;
+  const start = performance.now();
+  function step(ts) {
+    if (btn._loadCancelled) return;
+    const elapsed = ts - start;
+    const pct = 88 * (1 - Math.exp(-elapsed / 900));
+    fill.style.clipPath = 'inset(0 ' + (100 - pct) + '% 0 0)';
+    btn._raf = requestAnimationFrame(step);
+  }
+  btn._raf = requestAnimationFrame(step);
+}
+
+function finishLoadingFill(btnId) {
+  return new Promise(resolve => {
+    const btn = document.getElementById(btnId);
+    btn._loadCancelled = true;
+    if (btn._raf) cancelAnimationFrame(btn._raf);
+    const fill = btn.querySelector('.btn-load-fill');
+    fill.style.transition = 'clip-path .25s ease-out';
+    fill.style.clipPath = 'inset(0 0% 0 0)';
+    setTimeout(resolve, 260);
+  });
+}
+
+function cancelLoadingFill(btnId) {
+  const btn = document.getElementById(btnId);
+  btn._loadCancelled = true;
+  if (btn._raf) cancelAnimationFrame(btn._raf);
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  const fill = btn.querySelector('.btn-load-fill');
+  fill.style.transition = 'none';
+  fill.style.clipPath = 'inset(0 100% 0 0)';
 }
 
 async function doLogin() {
@@ -292,16 +322,16 @@ async function doLogin() {
   const password = document.getElementById('login-password').value;
   if (!email || !password) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  setLoadingFill('btn-login', true);
+  startLoadingFill('btn-login');
   try {
     const res = await callApi('login', { email, password });
-    if (!res.ok) { showError('login-error', errMsg(res.error)); return; }
+    if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
+    await finishLoadingFill('btn-login');
     saveSession(res);
     showSuccess(res);
   } catch (e) {
+    cancelLoadingFill('btn-login');
     showError('login-error', errMsg('SERVER_ERROR'));
-  } finally {
-    setLoadingFill('btn-login', false);
   }
 }
 
@@ -313,17 +343,17 @@ async function doRequestSignup() {
   const password = document.getElementById('signup-password').value;
   if (!email || !name || !password) { showError('signup-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  setLoadingFill('btn-signup-request', true);
+  startLoadingFill('btn-signup-request');
   try {
     const res = await callApi('requestSignup', { email, name, team, password });
-    if (!res.ok) { showError('signup-error', errMsg(res.error)); return; }
+    if (!res.ok) { cancelLoadingFill('btn-signup-request'); showError('signup-error', errMsg(res.error)); return; }
+    await finishLoadingFill('btn-signup-request');
     document.getElementById('signup-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
     document.getElementById('signup-step1').style.display = 'none';
     document.getElementById('signup-step2').style.display = 'block';
   } catch (e) {
+    cancelLoadingFill('btn-signup-request');
     showError('signup-error', errMsg('SERVER_ERROR'));
-  } finally {
-    setLoadingFill('btn-signup-request', false);
   }
 }
 
