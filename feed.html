@@ -417,8 +417,8 @@ function renderPost(post) {
         <div class="bot-name">AI 시황봇</div>
         <span class="post-time">${escapeHtml(fmtTime(post.createdAt))}</span>
       </div>
-      <div class="post-title">${escapeHtml(post.title || '')}</div>
-      <div class="post-summary">${escapeHtml(post.summary || '')}</div>
+      <div class="post-title">${escapeHtml(post.summary || '')}</div>
+      <div class="post-summary">${escapeHtml(post.title || '')}</div>
       ${post.link ? `<a class="article-link" href="${escapeHtml(post.link)}" target="_blank" rel="noopener">🔗 기사 원문 보기</a>` : ''}
       <div class="items-box">
         <div class="items-box-head">📊 이 원자재를 쓰는 품목 ${items.length}건 · 확인 ${post.confirmedCount || 0}/${post.totalCount || items.length}</div>
