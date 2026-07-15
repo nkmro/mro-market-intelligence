@@ -430,9 +430,10 @@ function renderPost(post) {
 
 function renderItemRow(post, item) {
   const checked = !!item.confirmed;
+  const key = post.id + '-' + item.itemId;
   return `
     <div>
-      <div class="item-row" id="row-${item.itemId}" onclick="toggleThread('${post.id}', '${item.itemId}')">
+      <div class="item-row" id="row-${key}" onclick="toggleThread('${post.id}', '${item.itemId}')">
         <div class="customer">${escapeHtml(item.customer || '')}</div>
         <div>${escapeHtml(item.itemName || '')}</div>
         <div class="status ${checked ? 'checked' : 'unchecked'}">
@@ -440,15 +441,16 @@ function renderItemRow(post, item) {
           <span>${escapeHtml(item.manager || '')}</span>
         </div>
       </div>
-      <div class="comment-thread" id="thread-${item.itemId}"></div>
+      <div class="comment-thread" id="thread-${key}"></div>
     </div>
   `;
 }
 
 async function toggleThread(postId, itemId) {
-  const panel = document.getElementById('thread-' + itemId);
-  const st = threadState[itemId] || (threadState[itemId] = { open: false, replyOpenFor: null });
-  const item = findItem(itemId);
+  const key = postId + '-' + itemId;
+  const panel = document.getElementById('thread-' + key);
+  const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
+  const item = findItem(postId, itemId);
 
   st.open = !st.open;
   panel.classList.toggle('open', st.open);
@@ -467,11 +469,11 @@ async function toggleThread(postId, itemId) {
   renderThread(postId, itemId);
 }
 
-function findItem(itemId) {
-  for (const post of feedState.posts) {
-    for (const item of (post.items || [])) {
-      if (String(item.itemId) === String(itemId)) return item;
-    }
+function findItem(postId, itemId) {
+  const post = findPost(postId);
+  if (!post) return null;
+  for (const item of (post.items || [])) {
+    if (String(item.itemId) === String(itemId)) return item;
   }
   return null;
 }
@@ -508,8 +510,9 @@ function roleClass(role) {
 }
 
 function renderThread(postId, itemId) {
-  const panel = document.getElementById('thread-' + itemId);
-  const item = findItem(itemId);
+  const key = postId + '-' + itemId;
+  const panel = document.getElementById('thread-' + key);
+  const item = findItem(postId, itemId);
   const pc = postComments[postId] || { comments: [] };
   const comments = (pc.comments || []).filter(c => String(c.itemId) === String(itemId));
 
@@ -521,7 +524,7 @@ function renderThread(postId, itemId) {
   if (!comments.length) {
     const startBtn = canStartFirstComment(item)
       ? `<button class="first-comment-btn" onclick="openReplyBox('${postId}', '${itemId}', null)">첫 댓글 남기기</button>
-         <div id="composer-${itemId}-root" class="first-comment-form"></div>`
+         <div id="composer-${key}-root" class="first-comment-form"></div>`
       : '';
     panel.innerHTML = `<div class="thread-empty">아직 확인 댓글이 없어요.</div>${startBtn}`;
     return;
@@ -550,7 +553,7 @@ function renderThread(postId, itemId) {
           </div>
           <div class="comment-text">${escapeHtml(c.content)}</div>
           ${replyBtn}
-          <div id="composer-${itemId}-${c.commentId}"></div>
+          <div id="composer-${key}-${c.commentId}"></div>
         </div>
       </div>
     `;
@@ -560,7 +563,8 @@ function renderThread(postId, itemId) {
 }
 
 function openReplyBox(postId, itemId, parentCommentId) {
-  const st = threadState[itemId];
+  const key = postId + '-' + itemId;
+  const st = threadState[key];
   if (st.replyOpenFor === (parentCommentId || 'root')) {
     st.replyOpenFor = null;
     renderThread(postId, itemId);
@@ -569,21 +573,22 @@ function openReplyBox(postId, itemId, parentCommentId) {
   st.replyOpenFor = parentCommentId || 'root';
   renderThread(postId, itemId);
 
-  const mountId = parentCommentId ? `composer-${itemId}-${parentCommentId}` : `composer-${itemId}-root`;
+  const mountId = parentCommentId ? `composer-${key}-${parentCommentId}` : `composer-${key}-root`;
   const mount = document.getElementById(mountId);
   if (!mount) return;
   mount.innerHTML = `
     <div class="reply-composer">
-      <textarea id="ta-${itemId}" placeholder="${parentCommentId ? '답장을 입력하세요' : '확인 내용을 입력하세요'}"></textarea>
-      <button id="btn-send-${itemId}" onclick="submitComment('${postId}', '${itemId}', ${parentCommentId ? `'${parentCommentId}'` : 'null'})">등록</button>
+      <textarea id="ta-${key}" placeholder="${parentCommentId ? '답장을 입력하세요' : '확인 내용을 입력하세요'}"></textarea>
+      <button id="btn-send-${key}" onclick="submitComment('${postId}', '${itemId}', ${parentCommentId ? `'${parentCommentId}'` : 'null'})">등록</button>
     </div>
   `;
-  document.getElementById('ta-' + itemId).focus();
+  document.getElementById('ta-' + key).focus();
 }
 
 async function submitComment(postId, itemId, parentCommentId) {
-  const ta = document.getElementById('ta-' + itemId);
-  const btn = document.getElementById('btn-send-' + itemId);
+  const key = postId + '-' + itemId;
+  const ta = document.getElementById('ta-' + key);
+  const btn = document.getElementById('btn-send-' + key);
   const content = ta.value.trim();
   if (!content) { ta.focus(); return; }
 
@@ -595,16 +600,16 @@ async function submitComment(postId, itemId, parentCommentId) {
       btn.disabled = false; btn.textContent = '등록';
       return;
     }
-    const st = threadState[itemId];
+    const st = threadState[key];
     st.replyOpenFor = null;
 
     await loadComments(postId);
     await loadFeed();
 
     renderThread(postId, itemId);
-    const panel = document.getElementById('thread-' + itemId);
+    const panel = document.getElementById('thread-' + key);
     if (panel) panel.classList.add('open');
-    if (threadState[itemId]) threadState[itemId].open = true;
+    if (threadState[key]) threadState[key].open = true;
   } catch (e) {
     alert('네트워크 오류로 등록하지 못했어요.');
     btn.disabled = false; btn.textContent = '등록';
