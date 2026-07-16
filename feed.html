@@ -195,6 +195,13 @@
   }
   .reply-composer button:disabled { background: #b8bcb8; cursor: not-allowed; }
 
+  .feed-load-more-btn {
+    display: block; width: 100%; margin: 12px 0 24px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text-muted);
+    border-radius: 10px; padding: 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .feed-load-more-btn:disabled { color: #b8bcb8; cursor: not-allowed; }
+
   .first-comment-btn {
     border: 1px solid var(--accent); color: var(--accent); background: #fff;
     border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -270,7 +277,7 @@
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 
 let session = null;
-let feedState = { posts: [] };
+let feedState = { posts: [], nextCursor: 0, loadingMore: false };
 const threadState = {};
 const postComments = {};
 
@@ -340,7 +347,7 @@ function switchView(view) {
 async function loadFeed() {
   const root = document.getElementById('feed-root');
   try {
-    const res = await callApi('getFeed', {});
+    const res = await callApi('getFeed', { cursor: 0 });
     if (!res.ok) {
       if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
         doLogout();
@@ -350,11 +357,50 @@ async function loadFeed() {
       return;
     }
     feedState.posts = res.posts || [];
+    feedState.nextCursor = res.nextCursor;
     renderFeed();
     updateNotifBadge();
   } catch (e) {
     root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요. 새로고침 후 다시 시도해주세요.</div>`;
   }
+}
+
+async function loadMoreFeed() {
+  if (feedState.loadingMore || feedState.nextCursor === null || feedState.nextCursor === undefined) return;
+  feedState.loadingMore = true;
+  renderLoadMoreButton();
+  try {
+    const res = await callApi('getFeed', { cursor: feedState.nextCursor });
+    if (!res.ok) {
+      if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
+        doLogout();
+        return;
+      }
+      feedState.loadingMore = false;
+      renderLoadMoreButton();
+      return;
+    }
+    feedState.posts = feedState.posts.concat(res.posts || []);
+    feedState.nextCursor = res.nextCursor;
+    feedState.loadingMore = false;
+    renderFeed();
+    updateNotifBadge();
+  } catch (e) {
+    feedState.loadingMore = false;
+    renderLoadMoreButton();
+  }
+}
+
+function renderLoadMoreButton() {
+  const el = document.getElementById('feed-load-more');
+  if (!el) return;
+  if (feedState.nextCursor === null || feedState.nextCursor === undefined) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.disabled = feedState.loadingMore;
+  el.textContent = feedState.loadingMore ? '불러오는 중...' : '더보기';
 }
 
 function updateNotifBadge() {
@@ -374,7 +420,9 @@ function renderFeed() {
     root.innerHTML = `<div class="feed-empty">아직 게시된 시황이 없어요.</div>`;
     return;
   }
-  root.innerHTML = feedState.posts.map(renderPost).join('');
+  const hasMore = feedState.nextCursor !== null && feedState.nextCursor !== undefined;
+  root.innerHTML = feedState.posts.map(renderPost).join('') +
+    (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 }
 
 function renderNotif() {
@@ -456,7 +504,7 @@ async function toggleThread(postId, itemId) {
   panel.classList.toggle('open', st.open);
   if (!st.open) return;
 
-  if (item && !item.confirmed) {
+  if  item && !item.confirmed) {
     renderThread(postId, itemId);
     return;
   }
