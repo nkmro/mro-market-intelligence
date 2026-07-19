@@ -504,7 +504,7 @@ async function toggleThread(postId, itemId) {
   panel.classList.toggle('open', st.open);
   if (!st.open) return;
 
-  if  item && !item.confirmed) {
+  if (item && !item.confirmed) {
     renderThread(postId, itemId);
     return;
   }
