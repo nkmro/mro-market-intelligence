@@ -169,7 +169,7 @@
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
-  .role-소장 { background: var(--accent); }
+  .role-담당 { background: var(--accent); }
   .role-팀장 { background: var(--blue); }
   .role-임원 { background: var(--purple); }
   .comment-body { flex: 1; min-width: 0; }
@@ -571,16 +571,16 @@ async function loadComments(postId) {
 
 function canStartFirstComment(item) {
   if (!session || !item) return false;
-  return session.role === '소장' && String(item.manager || '').trim() === String(session.name || '').trim();
+  return session.role === '담당' && String(item.manager || '').trim() === String(session.name || '').trim();
 }
 function canReply() {
-  return session && (session.role === '소장' || session.role === '팀장' || session.role === '임원');
+  return session && (session.role === '담당' || session.role === '팀장' || session.role === '임원');
 }
 function roleClass(role) {
-  if (role === '소장') return 'role-소장';
+  if (role === '담당') return 'role-담당';
   if (role === '팀장') return 'role-팀장';
   if (role === '임원') return 'role-임원';
-  return 'role-소장';
+  return 'role-담당';
 }
 
 function renderThread(postId, itemId) {
