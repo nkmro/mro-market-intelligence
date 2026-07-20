@@ -183,6 +183,26 @@
     font-size: 11px; color: var(--blue); background: none; border: none;
     cursor: pointer; padding: 4px 0; margin-top: 2px;
   }
+  .comment-actions { display: flex; gap: 12px; margin-top: 2px; }
+  .comment-actions button { margin-top: 0; }
+  .comment-edit-btn {
+    font-size: 11px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 4px 0;
+  }
+  .comment-delete-btn {
+    font-size: 11px; color: var(--danger); background: none; border: none; cursor: pointer; padding: 4px 0;
+  }
+  .edit-composer { margin-top: 4px; }
+  .edit-composer textarea {
+    width: 100%; resize: none; font-family: inherit; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    background: #fff; min-height: 40px; margin-bottom: 6px;
+  }
+  .edit-composer .edit-actions { display: flex; gap: 8px; }
+  .edit-composer button {
+    border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .edit-composer .save-btn { background: var(--accent); color: #fff; }
+  .edit-composer .cancel-btn { background: var(--bg); color: var(--text-muted); }
 
   .reply-composer { margin-top: 10px; display: flex; gap: 8px; }
   .reply-composer textarea {
@@ -614,8 +634,15 @@ function renderThread(postId, itemId) {
   const html = comments.map(c => {
     const depth = depthOf(c);
     const parent = c.parentCommentId ? byId[c.parentCommentId] : null;
+    const isMine = !!(session && session.email && c.authorEmail && String(c.authorEmail).toLowerCase() === String(session.email).toLowerCase());
     const replyBtn = canReply()
       ? `<button class="comment-reply-btn" onclick="openReplyBox('${postId}', '${itemId}', '${c.commentId}')">답장</button>`
+      : '';
+    const editBtn = isMine
+      ? `<button class="comment-edit-btn" onclick="startEditComment('${postId}', '${itemId}', '${c.commentId}')">수정</button>`
+      : '';
+    const deleteBtn = isMine
+      ? `<button class="comment-delete-btn" onclick="deleteCommentConfirm('${postId}', '${itemId}', '${c.commentId}')">삭제</button>`
       : '';
     return `
       <div class="comment-item${c.pending ? ' pending' : ''}" style="margin-left:${depth * 24}px;">
@@ -623,10 +650,10 @@ function renderThread(postId, itemId) {
         <div class="comment-body">
           ${parent ? `<div class="reply-to">↳ ${escapeHtml(parent.authorName)} ${escapeHtml(parent.authorRole || '')}에게 답장</div>` : ''}
           <div class="comment-head">
-            <span class="name">${escapeHtml(c.authorName)}</span><span class="role">· ${escapeHtml(c.authorRole || '')}</span>${!parent ? `<span class="role">· 최초 댓글</span>` : ''}<span class="time">· ${c.pending ? '전송 중...' : escapeHtml(fmtTime(c.createdAt))}</span>
+            <span class="role">${escapeHtml(c.authorRole || '')}</span>${!parent ? `<span class="role">· 최초 댓글</span>` : ''}<span class="time">· ${c.pending ? '전송 중...' : escapeHtml(fmtTime(c.createdAt))}</span>
           </div>
-          <div class="comment-text">${escapeHtml(c.content)}</div>
-          ${c.pending ? '' : replyBtn}
+          <div class="comment-text" id="text-${c.commentId}">${escapeHtml(c.content)}</div>
+          ${c.pending ? '' : `<div class="comment-actions">${replyBtn}${editBtn}${deleteBtn}</div>`}
           <div id="composer-${key}-${c.commentId}"></div>
         </div>
       </div>
@@ -673,7 +700,7 @@ async function submitComment(postId, itemId, parentCommentId) {
     commentId: tempId,
     postId: postId,
     itemId: itemId,
-    authorEmail: '',
+    authorEmail: session.email || '',
     authorName: session.name,
     authorRole: session.role,
     parentCommentId: parentCommentId || '',
@@ -718,6 +745,79 @@ async function submitComment(postId, itemId, parentCommentId) {
     }
     alert('네트워크 오류로 등록하지 못했어요.');
     btn.disabled = false; btn.textContent = '등록';
+  }
+}
+
+// 5-8: 댓글 수정
+function startEditComment(postId, itemId, commentId) {
+  const textEl = document.getElementById('text-' + commentId);
+  if (!textEl) return;
+  const pc = postComments[postId];
+  const comment = pc && pc.comments ? pc.comments.find(c => c.commentId === commentId) : null;
+  if (!comment) return;
+
+  textEl.dataset.original = textEl.innerHTML;
+  textEl.innerHTML = `
+    <div class="edit-composer">
+      <textarea id="edit-ta-${commentId}">${escapeHtml(comment.content)}</textarea>
+      <div class="edit-actions">
+        <button class="save-btn" onclick="submitEditComment('${postId}', '${itemId}', '${commentId}')">저장</button>
+        <button class="cancel-btn" onclick="cancelEditComment('${commentId}')">취소</button>
+      </div>
+    </div>
+  `;
+  const ta = document.getElementById('edit-ta-' + commentId);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function cancelEditComment(commentId) {
+  const textEl = document.getElementById('text-' + commentId);
+  if (textEl && textEl.dataset.original) {
+    textEl.innerHTML = textEl.dataset.original;
+  }
+}
+
+async function submitEditComment(postId, itemId, commentId) {
+  const ta = document.getElementById('edit-ta-' + commentId);
+  const content = ta.value.trim();
+  if (!content) { ta.focus(); return; }
+  ta.disabled = true;
+
+  try {
+    const res = await callApi('updateComment', { commentId, content });
+    if (!res.ok) {
+      alert(res.error === 'FORBIDDEN_NOT_AUTHOR' ? '본인이 작성한 댓글만 수정할 수 있어요.' : ('수정하지 못했어요. (' + res.error + ')'));
+      ta.disabled = false;
+      return;
+    }
+    await loadComments(postId);
+    renderThread(postId, itemId);
+    const panel = document.getElementById('thread-' + postId + '-' + itemId);
+    if (panel) panel.classList.add('open');
+  } catch (e) {
+    alert('네트워크 오류로 수정하지 못했어요.');
+    ta.disabled = false;
+  }
+}
+
+// 5-8: 댓글 삭제
+async function deleteCommentConfirm(postId, itemId, commentId) {
+  if (!confirm('이 댓글을 삭제할까요? 되돌릴 수 없어요.')) return;
+  try {
+    const res = await callApi('deleteComment', { commentId });
+    if (!res.ok) {
+      alert(res.error === 'FORBIDDEN_NOT_AUTHOR' ? '본인이 작성한 댓글만 삭제할 수 있어요.' : ('삭제하지 못했어요. (' + res.error + ')'));
+      return;
+    }
+    await loadComments(postId);
+    await loadFeed();
+    renderThread(postId, itemId);
+    const panel = document.getElementById('thread-' + postId + '-' + itemId);
+    if (panel) panel.classList.add('open');
+    if (threadState[postId + '-' + itemId]) threadState[postId + '-' + itemId].open = true;
+  } catch (e) {
+    alert('네트워크 오류로 삭제하지 못했어요.');
   }
 }
 
