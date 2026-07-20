@@ -162,6 +162,7 @@
   .thread-empty { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
 
   .comment-item { display: flex; gap: 8px; margin-bottom: 12px; }
+  .comment-item.pending { opacity: 0.55; }
   .avatar {
     width: 26px; height: 26px; border-radius: 50%;
     color: #fff; font-size: 11px; font-weight: 700;
@@ -595,15 +596,15 @@ function renderThread(postId, itemId) {
       ? `<button class="comment-reply-btn" onclick="openReplyBox('${postId}', '${itemId}', '${c.commentId}')">답장</button>`
       : '';
     return `
-      <div class="comment-item" style="margin-left:${depth * 24}px;">
+      <div class="comment-item${c.pending ? ' pending' : ''}" style="margin-left:${depth * 24}px;">
         <div class="avatar ${roleClass(c.authorRole)}">${escapeHtml(initials(c.authorName))}</div>
         <div class="comment-body">
           ${parent ? `<div class="reply-to">↳ ${escapeHtml(parent.authorName)} ${escapeHtml(parent.authorRole || '')}에게 답장</div>` : ''}
           <div class="comment-head">
-            <span class="name">${escapeHtml(c.authorName)}</span><span class="role">· ${escapeHtml(c.authorRole || '')}</span>${!parent ? `<span class="role">· 최초 댓글</span>` : ''}<span class="time">· ${escapeHtml(fmtTime(c.createdAt))}</span>
+            <span class="name">${escapeHtml(c.authorName)}</span><span class="role">· ${escapeHtml(c.authorRole || '')}</span>${!parent ? `<span class="role">· 최초 댓글</span>` : ''}<span class="time">· ${c.pending ? '전송 중...' : escapeHtml(fmtTime(c.createdAt))}</span>
           </div>
           <div class="comment-text">${escapeHtml(c.content)}</div>
-          ${replyBtn}
+          ${c.pending ? '' : replyBtn}
           <div id="composer-${key}-${c.commentId}"></div>
         </div>
       </div>
@@ -644,24 +645,55 @@ async function submitComment(postId, itemId, parentCommentId) {
   if (!content) { ta.focus(); return; }
 
   btn.disabled = true; btn.textContent = '등록 중...';
+
+  const tempId = 'temp-' + Date.now();
+  const optimisticComment = {
+    commentId: tempId,
+    postId: postId,
+    itemId: itemId,
+    authorEmail: '',
+    authorName: session.name,
+    authorRole: session.role,
+    parentCommentId: parentCommentId || '',
+    content: content,
+    createdAt: new Date().toISOString(),
+    pending: true
+  };
+  if (!postComments[postId]) postComments[postId] = { loaded: true, comments: [] };
+  postComments[postId].comments = (postComments[postId].comments || []).concat([optimisticComment]);
+  const st = threadState[key];
+  st.replyOpenFor = null;
+  renderThread(postId, itemId);
+
   try {
     const res = await callApi('postComment', { postId, itemId, content, parentCommentId });
     if (!res.ok) {
+      postComments[postId].comments = postComments[postId].comments.filter(c => c.commentId !== tempId);
+      renderThread(postId, itemId);
       alert(res.error === 'FORBIDDEN_VIEWER' ? '이 작업을 수행할 권한이 없어요.' : ('오류가 발생했어요 (' + res.error + ')'));
       btn.disabled = false; btn.textContent = '등록';
       return;
     }
-    const st = threadState[key];
-    st.replyOpenFor = null;
 
-    await loadComments(postId);
-    await loadFeed();
+    if (res.comments) {
+      postComments[postId] = { loaded: true, comments: res.comments };
+    }
+    if (res.updatedPost) {
+      const idx = feedState.posts.findIndex(p => String(p.id) === String(postId));
+      if (idx !== -1) feedState.posts[idx] = res.updatedPost;
+    }
+    renderFeed();
+    updateNotifBadge();
 
     renderThread(postId, itemId);
     const panel = document.getElementById('thread-' + key);
     if (panel) panel.classList.add('open');
     if (threadState[key]) threadState[key].open = true;
   } catch (e) {
+    if (postComments[postId]) {
+      postComments[postId].comments = postComments[postId].comments.filter(c => c.commentId !== tempId);
+      renderThread(postId, itemId);
+    }
     alert('네트워크 오류로 등록하지 못했어요.');
     btn.disabled = false; btn.textContent = '등록';
   }
