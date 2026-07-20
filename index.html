@@ -171,10 +171,6 @@
         <input type="text" id="signup-name" placeholder="홍길동">
         <label for="signup-team">소속팀</label>
         <select id="signup-team">
-          <option value="동부">동부팀</option>
-          <option value="서부">서부팀</option>
-          <option value="중부">중부팀</option>
-          <option value="영업지원">영업지원팀</option>
         </select>
         <label for="signup-password">비밀번호</label>
         <input type="password" id="signup-password" placeholder="6자 이상" autocomplete="new-password">
@@ -223,6 +219,24 @@
 
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
+
+  function teamLabel(team) {
+    return team === '본사' ? team : (team + '팀');
+  }
+
+  async function loadTeamOptions() {
+    const sel = document.getElementById('signup-team');
+    if (!sel) return;
+    const fallback = ['동부', '서부', '중부', '영업지원'];
+    try {
+      const res = await callApi('getTeams', {});
+      const teams = (res.ok && res.teams && res.teams.length) ? res.teams : fallback;
+      sel.innerHTML = teams.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
+    } catch (e) {
+      sel.innerHTML = fallback.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
+    }
+  }
+  loadTeamOptions();
 
 const ERROR_MESSAGES = {
   MISSING_FIELDS: '입력하지 않은 항목이 있어요.',
