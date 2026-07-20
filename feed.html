@@ -221,6 +221,10 @@
   .notif-item .top-line { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
   .notif-item .headline { font-size: 14px; font-weight: 600; }
   .notif-empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px; }
+  .notif-section-title {
+    padding: 10px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted);
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
 
   @media (max-width: 768px) {
     .sidebar {
@@ -436,15 +440,33 @@ function renderNotif() {
     root.innerHTML = `<div class="notif-panel"><div class="notif-empty">확인이 필요한 소식이 없어요.</div></div>`;
     return;
   }
-  root.innerHTML = `<div class="notif-panel">${items.map(p => `
-    <div class="notif-item" onclick="goToPost('${p.id}')">
-      <div class="flex1">
-        <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
-        <div class="headline">${escapeHtml(p.title || '')} · 확인 필요</div>
+
+  const newPosts = [];
+  const replyNeeded = [];
+  items.forEach(p => {
+    const hasUnconfirmed = (p.items || []).some(it => !it.confirmed);
+    if (hasUnconfirmed) newPosts.push(p);
+    else replyNeeded.push(p);
+  });
+
+  function renderNotifItem(p) {
+    return `
+      <div class="notif-item" onclick="goToPost('${p.id}')">
+        <div class="flex1">
+          <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
+          <div class="headline">${escapeHtml(p.summary || p.title || '')}</div>
+        </div>
+        <span>›</span>
       </div>
-      <span>›</span>
-    </div>
-  `).join('')}</div>`;
+    `;
+  }
+
+  function renderGroup(title, list) {
+    if (!list.length) return '';
+    return `<div class="notif-section-title">${title} ${list.length}건</div>${list.map(renderNotifItem).join('')}`;
+  }
+
+  root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts)}${renderGroup('확인 완료 · 댓글 필요', replyNeeded)}</div>`;
 }
 
 function goToPost(postId) {
