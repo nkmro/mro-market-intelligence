@@ -329,7 +329,10 @@ function switchView(view) {
   });
   document.getElementById('feed-view').style.display = view === 'feed' ? 'block' : 'none';
   document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
-  if (view === 'notif') renderNotif();
+  if (view === 'notif') {
+    renderNotif();
+    callApi('markChecked', {}).catch(() => {});
+  }
   toggleDrawer(false);
 }
 
