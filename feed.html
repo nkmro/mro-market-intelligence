@@ -361,14 +361,18 @@ function switchView(view) {
   toggleDrawer(false);
 }
 
+  function teamLabel(team) {
+    return team === '본사' ? team : (team + '팀');
+  }
+
 (async function init() {
   session = getSession();
   if (!session || !session.sessionToken) {
     window.location.href = 'index.html';
     return;
   }
-  document.getElementById('team-label').textContent = (session.team || '') + '팀 전체';
-  document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+    document.getElementById('team-label').textContent = teamLabel(session.team || '') + ' 전체';
+      document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
   await loadFeed();
 })();
 
