@@ -385,7 +385,7 @@ async function loadFeed() {
       return;
     }
     feedState.posts = res.posts || [];
-    feedState.nextCursor = res.nextCursor;
+    feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     renderFeed();
     updateNotifBadge();
   } catch (e) {
@@ -409,7 +409,7 @@ async function loadMoreFeed() {
       return;
     }
     feedState.posts = feedState.posts.concat(res.posts || []);
-    feedState.nextCursor = res.nextCursor;
+    feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     feedState.loadingMore = false;
     renderFeed();
     updateNotifBadge();
@@ -432,7 +432,7 @@ function renderLoadMoreButton() {
 }
 
 function updateNotifBadge() {
-  const count = feedState.posts.filter(p => p.needsAttention).length;
+  const count = feedState.totalNeedsAttention || 0;
   const badge = document.getElementById('notif-badge');
   if (count > 0) {
     badge.textContent = count;
