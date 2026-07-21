@@ -376,7 +376,19 @@ function switchView(view) {
   await loadFeed();
 })();
 
-async function loadFeed() {
+async function primeCommentsFromFeed(posts) {
+  // A. 댓글 예열: getFeed가 이미 품목별 comments를 실어보내므로, 스레드를 열 때마다
+  // getComments를 다시 호출하지 않도록 postComments 캐시를 미리 채워둔다.
+  (posts || []).forEach(function (post) {
+    let merged = [];
+    (post.items || []).forEach(function (it) {
+      if (it.comments && it.comments.length) merged = merged.concat(it.comments);
+    });
+    postComments[post.id] = { loaded: true, comments: merged };
+  });
+}
+
+function loadFeed() {
   const root = document.getElementById('feed-root');
   try {
     const res = await callApi('getFeed', { cursor: 0 });
@@ -389,6 +401,7 @@ async function loadFeed() {
       return;
     }
     feedState.posts = res.posts || [];
+    primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     renderFeed();
     updateNotifBadge();
@@ -413,6 +426,7 @@ async function loadMoreFeed() {
       return;
     }
     feedState.posts = feedState.posts.concat(res.posts || []);
+    primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     feedState.loadingMore = false;
     renderFeed();
