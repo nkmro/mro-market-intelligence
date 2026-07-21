@@ -374,18 +374,66 @@ function switchView(view) {
     document.getElementById('team-label').textContent = teamLabel(session.team || '') + ' 전체';
       document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
   await loadFeed();
+  startPolling();
 })();
+
+const itemCommentCounts = {};
 
 function primeCommentsFromFeed(posts) {
   // A. 댓글 예열: getFeed가 이미 품목별 comments를 실어보내므로, 스레드를 열 때마다
   // getComments를 다시 호출하지 않도록 postComments 캐시를 미리 채워둔다.
+  // B. 폴링 비교용으로 품목별 commentCount도 같이 기록해둔다.
   (posts || []).forEach(function (post) {
     let merged = [];
     (post.items || []).forEach(function (it) {
+      itemCommentCounts[post.id + '-' + it.itemId] = it.commentCount || 0;
       if (it.comments && it.comments.length) merged = merged.concat(it.comments);
     });
     postComments[post.id] = { loaded: true, comments: merged };
   });
+}
+
+let pollTimer = null;
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollForUpdates, 30000);
+}
+
+async function pollForUpdates() {
+  try {
+    const res = await callApi('pollSignal', {});
+    if (!res.ok) return;
+    feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
+    updateNotifBadge();
+
+    const postsToRefresh = new Set();
+    (res.signatures || []).forEach(function (sig) {
+      const key = sig.postId + '-' + sig.itemId;
+      const known = itemCommentCounts[key];
+      if (known === undefined) return;
+      if (known !== sig.commentCount) postsToRefresh.add(sig.postId);
+    });
+
+    for (const postId of postsToRefresh) {
+      await loadComments(postId);
+      const pc = postComments[postId];
+      if (pc && pc.comments) {
+        const counts = {};
+        pc.comments.forEach(function (c) { counts[c.itemId] = (counts[c.itemId] || 0) + 1; });
+        Object.keys(counts).forEach(function (itemId) {
+          itemCommentCounts[postId + '-' + itemId] = counts[itemId];
+        });
+      }
+      Object.keys(threadState).forEach(function (key) {
+        if (key.indexOf(postId + '-') === 0 && threadState[key].open) {
+          const itemId = key.slice((postId + '-').length);
+          renderThread(postId, itemId);
+        }
+      });
+    }
+  } catch (e) {
+    // 조용히 실패, 다음 주기에 재시도
+  }
 }
 
 async function loadFeed() {
