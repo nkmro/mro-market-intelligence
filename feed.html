@@ -376,7 +376,7 @@ function switchView(view) {
   await loadFeed();
 })();
 
-async function primeCommentsFromFeed(posts) {
+function primeCommentsFromFeed(posts) {
   // A. 댓글 예열: getFeed가 이미 품목별 comments를 실어보내므로, 스레드를 열 때마다
   // getComments를 다시 호출하지 않도록 postComments 캐시를 미리 채워둔다.
   (posts || []).forEach(function (post) {
@@ -388,7 +388,7 @@ async function primeCommentsFromFeed(posts) {
   });
 }
 
-function loadFeed() {
+async function loadFeed() {
   const root = document.getElementById('feed-root');
   try {
     const res = await callApi('getFeed', { cursor: 0 });
