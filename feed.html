@@ -245,6 +245,19 @@
     padding: 10px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted);
     background: var(--bg); border-bottom: 1px solid var(--border);
   }
+  .notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .notif-post-card:last-child { border-bottom: none; }
+  .notif-post-card .top-line { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+  .notif-post-card .headline { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .notif-reply-list { display: flex; flex-direction: column; gap: 6px; }
+  .notif-reply-row {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; background: var(--bg);
+  }
+  .notif-reply-row:hover { background: var(--accent-soft); }
+  .notif-reply-row .top-line { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+  .notif-reply-prev { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+  .notif-reply-curr { font-size: 12px; color: var(--text); font-weight: 500; }
 
   @media (max-width: 768px) {
     .sidebar {
@@ -535,6 +548,11 @@ function renderNotif() {
     else replyNeeded.push(p);
   });
 
+  function truncate(str, n) {
+    const s = String(str || '');
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
   function renderNotifItem(p) {
     return `
       <div class="notif-item" onclick="goToPost('${p.id}')">
@@ -547,12 +565,42 @@ function renderNotif() {
     `;
   }
 
-  function renderGroup(title, list) {
-    if (!list.length) return '';
-    return `<div class="notif-section-title">${title} ${list.length}건</div>${list.map(renderNotifItem).join('')}`;
+  // C. "확인 완료 · 댓글 필요" 섹션: 게시물로 묶고, 그 안에 품목별 행을 나열.
+  // 클릭 타겟은 여전히 품목(스레드) 단위 — 게시물 제목은 한 번만 보여주고 중복 표시 안 함.
+  function renderReplyItemRow(post, it) {
+    const comments = (it.comments || []).slice().sort(function (a, b) {
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+    const prev = comments.length >= 2 ? comments[comments.length - 2] : null;
+    const curr = comments.length >= 1 ? comments[comments.length - 1] : null;
+    return `
+      <div class="notif-reply-row" onclick="goToItem('${post.id}', '${it.itemId}')">
+        <div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
+        ${prev ? `<div class="notif-reply-prev">이전 답글: ${escapeHtml(truncate(prev.content, 40))}</div>` : ''}
+        ${curr ? `<div class="notif-reply-curr">현재 답글: ${escapeHtml(truncate(curr.content, 40))}</div>` : ''}
+      </div>
+    `;
   }
 
-  root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts)}${renderGroup('확인 완료 · 댓글 필요', replyNeeded)}</div>`;
+  function renderReplyPostCard(p) {
+    const needReplyItems = (p.items || []).filter(function (it) { return it.confirmed; });
+    return `
+      <div class="notif-post-card">
+        <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
+        <div class="headline">${escapeHtml(truncate(p.summary || p.title || '', 36))}</div>
+        <div class="notif-reply-list">
+          ${needReplyItems.map(function (it) { return renderReplyItemRow(p, it); }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGroup(title, list, renderer) {
+    if (!list.length) return '';
+    return `<div class="notif-section-title">${title} ${list.length}건</div>${list.map(renderer).join('')}`;
+  }
+
+  root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts, renderNotifItem)}${renderGroup('확인 완료 · 댓글 필요', replyNeeded, renderReplyPostCard)}</div>`;
 }
 
 function goToPost(postId) {
@@ -563,6 +611,22 @@ function goToPost(postId) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('flash');
     setTimeout(() => el.classList.remove('flash'), 1600);
+  }, 50);
+}
+
+// C. 알림함 "확인 완료 · 댓글 필요" 섹션 — 품목(스레드) 단위 클릭 타겟.
+// 게시물로 스크롤한 뒤, 해당 품목 행으로 다시 스크롤하고 스레드가 닫혀있으면 열어준다.
+function goToItem(postId, itemId) {
+  switchView('feed');
+  setTimeout(() => {
+    const key = postId + '-' + itemId;
+    const row = document.getElementById('row-' + key);
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('flash');
+    setTimeout(() => row.classList.remove('flash'), 1600);
+    const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
+    if (!st.open) toggleThread(postId, itemId);
   }, 50);
 }
 
