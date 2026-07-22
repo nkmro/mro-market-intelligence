@@ -259,7 +259,19 @@
   .notif-reply-prev { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
   .notif-reply-curr { font-size: 12px; color: var(--text); font-weight: 500; }
 
-  @media (max-width: 768px) {
+  .user-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.user-row select, .user-row input[type="text"] {
+font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff;
+}
+.user-row input[type="text"] { width: 110px; }
+.user-save-btn {
+border: none; background: var(--accent); color: #fff; border-radius: 6px;
+padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.user-save-btn:disabled { background: #b8bcb8; cursor: not-allowed; }
+.user-save-msg { font-size: 12px; color: var(--text-muted); }
+
+@media (max-width: 768px) {
     .sidebar {
       position: fixed; left: 0; top: 0; bottom: 0;
       transform: translateX(-100%);
@@ -285,7 +297,7 @@
     <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic">🏠</span> 피드</div>
     <div class="nav-item" data-view="notif" onclick="switchView('notif')"><span class="ic">🔔</span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
     <div class="nav-item"><span class="ic">📦</span> 품목 관리</div>
-    <div class="nav-item"><span class="ic">📈</span> 원자재 현황</div>
+    <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic">👥</span> 사용자 현황</div>
     <div class="nav-item"><span class="ic">⚙️</span> 설정</div>
     <div class="sidebar-bottom">
       <div class="sidebar-me" id="sidebar-me"></div>
@@ -307,12 +319,14 @@
         </div>
       </div>
       <div id="notif-view" style="display:none;"></div>
+<div id="users-view" style="display:none;"></div>
     </div>
   </div>
 </div>
 
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
+const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 
 let session = null;
 let feedState = { posts: [], nextCursor: 0, loadingMore: false };
@@ -362,16 +376,20 @@ function toggleDrawer(open) {
 }
 
 function switchView(view) {
-  document.querySelectorAll('.nav-item[data-view]').forEach(el => {
-    el.classList.toggle('active', el.dataset.view === view);
-  });
-  document.getElementById('feed-view').style.display = view === 'feed' ? 'block' : 'none';
-  document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
-  if (view === 'notif') {
-    renderNotif();
-    callApi('markChecked', {}).catch(() => {});
-  }
-  toggleDrawer(false);
+document.querySelectorAll('.nav-item[data-view]').forEach(el => {
+el.classList.toggle('active', el.dataset.view === view);
+});
+document.getElementById('feed-view').style.display = view === 'feed' ? 'block' : 'none';
+document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
+document.getElementById('users-view').style.display = view === 'users' ? 'block' : 'none';
+if (view === 'notif') {
+renderNotif();
+callApi('markChecked', {}).catch(() => {});
+}
+if (view === 'users') {
+loadUsers();
+}
+toggleDrawer(false);
 }
 
   function teamLabel(team) {
@@ -379,15 +397,18 @@ function switchView(view) {
   }
 
 (async function init() {
-  session = getSession();
-  if (!session || !session.sessionToken) {
-    window.location.href = 'index.html';
-    return;
-  }
-    document.getElementById('team-label').textContent = teamLabel(session.team || '') + ' 전체';
-      document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
-  await loadFeed();
-  startPolling();
+session = getSession();
+if (!session || !session.sessionToken) {
+window.location.href = 'index.html';
+return;
+}
+document.getElementById('team-label').textContent = teamLabel(session.team || '') + ' 전체';
+document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+if (session.email === ADMIN_EMAIL) {
+document.getElementById('nav-users').style.display = 'flex';
+}
+await loadFeed();
+startPolling();
 })();
 
 const itemCommentCounts = {};
@@ -949,6 +970,89 @@ async function deleteCommentConfirm(postId, itemId, commentId) {
   } catch (e) {
     alert('네트워크 오류로 삭제하지 못했어요.'); if (__target) { __target.deleting = false; renderThread(postId, itemId); }
   }
+}
+
+// ==== 사용자 현황 (관리자 전용) ====
+const ROLE_OPTIONS = ['일반', '담당', '팀장', '임원'];
+const TEAM_OPTIONS = ['동부', '서부', '중부', '영업지원', '소싱', '본사'];
+const STATUS_OPTIONS = ['활성', '비활성'];
+let usersState = { users: [], loaded: false };
+
+async function loadUsers() {
+const root = document.getElementById('users-view');
+root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
+try {
+const res = await callApi('getUsers', {});
+if (!res.ok) {
+root.innerHTML = `<div class="feed-empty">사용자 목록을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
+return;
+}
+usersState.users = res.users || [];
+usersState.loaded = true;
+renderUsers();
+} catch (e) {
+root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
+}
+}
+
+function renderUsers() {
+const root = document.getElementById('users-view');
+if (!usersState.users.length) {
+root.innerHTML = `<div class="feed-empty">등록된 사용자가 없어요.</div>`;
+return;
+}
+root.innerHTML = `<div class="notif-panel">${usersState.users.map(renderUserRow).join('')}</div>`;
+}
+
+function renderUserRow(u) {
+const rk = 'u' + u.row;
+return `
+<div class="notif-item" style="cursor:default; align-items:flex-start;">
+<div class="flex1">
+<div class="top-line">${escapeHtml(u.email)}</div>
+<div class="user-row">
+<input type="text" id="name-${rk}" value="${escapeHtml(u.name || '')}" placeholder="이름">
+<select id="role-${rk}">${ROLE_OPTIONS.map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select>
+<select id="team-${rk}">${TEAM_OPTIONS.map(t => `<option value="${t}" ${t === u.team ? 'selected' : ''}>${t}</option>`).join('')}</select>
+<select id="status-${rk}">${STATUS_OPTIONS.map(s => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+<button class="user-save-btn" id="btn-${rk}" onclick="saveUserRow(${u.row})">저장</button>
+<span class="user-save-msg" id="msg-${rk}"></span>
+</div>
+</div>
+</div>
+`;
+}
+
+async function saveUserRow(row) {
+const rk = 'u' + row;
+const nameEl = document.getElementById('name-' + rk);
+const roleEl = document.getElementById('role-' + rk);
+const teamEl = document.getElementById('team-' + rk);
+const statusEl = document.getElementById('status-' + rk);
+const btn = document.getElementById('btn-' + rk);
+const msg = document.getElementById('msg-' + rk);
+const name = nameEl.value.trim();
+const role = roleEl.value;
+const team = teamEl.value;
+const status = statusEl.value;
+btn.disabled = true;
+msg.textContent = '저장 중...';
+try {
+const res = await callApi('updateUser', { row, name, role, team, status });
+if (!res.ok) {
+msg.textContent = '실패: ' + (res.error || 'SERVER_ERROR');
+btn.disabled = false;
+return;
+}
+msg.textContent = '저장됨 ✓';
+btn.disabled = false;
+const u = usersState.users.find(x => x.row === row);
+if (u) { u.name = name; u.role = role; u.team = team; u.status = status; }
+setTimeout(() => { const m = document.getElementById('msg-' + rk); if (m) m.textContent = ''; }, 2000);
+} catch (e) {
+msg.textContent = '네트워크 오류';
+btn.disabled = false;
+}
 }
 
 function doLogout() {
