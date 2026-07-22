@@ -421,6 +421,7 @@ document.getElementById('nav-users').style.display = 'flex';
 }
 await loadFeed();
 startPolling();
+setupIdleTimer();
 })();
 
 const itemCommentCounts = {};
@@ -446,40 +447,45 @@ function startPolling() {
 }
 
 async function pollForUpdates() {
-  try {
-    const res = await callApi('pollSignal', {});
-    if (!res.ok) return;
-    feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
-    updateNotifBadge();
+try {
+const res = await callApi('pollSignal', {});
+if (!res.ok) {
+if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
+doLogout();
+}
+return;
+}
+feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
+updateNotifBadge();
 
-    const postsToRefresh = new Set();
-    (res.signatures || []).forEach(function (sig) {
-      const key = sig.postId + '-' + sig.itemId;
-      const known = itemCommentCounts[key];
-      if (known === undefined) return;
-      if (known !== sig.commentCount) postsToRefresh.add(sig.postId);
-    });
+const postsToRefresh = new Set();
+(res.signatures || []).forEach(function (sig) {
+const key = sig.postId + '-' + sig.itemId;
+const known = itemCommentCounts[key];
+if (known === undefined) return;
+if (known !== sig.commentCount) postsToRefresh.add(sig.postId);
+});
 
-    for (const postId of postsToRefresh) {
-      await loadComments(postId);
-      const pc = postComments[postId];
-      if (pc && pc.comments) {
-        const counts = {};
-        pc.comments.forEach(function (c) { counts[c.itemId] = (counts[c.itemId] || 0) + 1; });
-        Object.keys(counts).forEach(function (itemId) {
-          itemCommentCounts[postId + '-' + itemId] = counts[itemId];
-        });
-      }
-      Object.keys(threadState).forEach(function (key) {
-        if (key.indexOf(postId + '-') === 0 && threadState[key].open) {
-          const itemId = key.slice((postId + '-').length);
-          renderThread(postId, itemId);
-        }
-      });
-    }
-  } catch (e) {
-    // 조용히 실패, 다음 주기에 재시도
-  }
+for (const postId of postsToRefresh) {
+await loadComments(postId);
+const pc = postComments[postId];
+if (pc && pc.comments) {
+const counts = {};
+pc.comments.forEach(function (c) { counts[c.itemId] = (counts[c.itemId] || 0) + 1; });
+Object.keys(counts).forEach(function (itemId) {
+itemCommentCounts[postId + '-' + itemId] = counts[itemId];
+});
+}
+Object.keys(threadState).forEach(function (key) {
+if (key.indexOf(postId + '-') === 0 && threadState[key].open) {
+const itemId = key.slice((postId + '-').length);
+renderThread(postId, itemId);
+}
+});
+}
+} catch (e) {
+// 조용히 실패, 다음 주기에 재시도
+}
 }
 
 async function loadFeed() {
@@ -1098,6 +1104,25 @@ setTimeout(() => { const m = document.getElementById('msg-' + rk); if (m) m.text
 msg.textContent = '네트워크 오류';
 btn.disabled = false;
 }
+}
+
+// 자동 로그아웃: 30분 무활동 시 자동 로그아웃
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let idleTimer = null;
+
+function resetIdleTimer() {
+if (idleTimer) clearTimeout(idleTimer);
+idleTimer = setTimeout(function () {
+alert('30분 동안 활동이 없어 자동 로그아웃되었습니다.');
+doLogout();
+}, IDLE_TIMEOUT_MS);
+}
+
+function setupIdleTimer() {
+['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(function (evt) {
+document.addEventListener(evt, resetIdleTimer, { passive: true });
+});
+resetIdleTimer();
 }
 
 function doLogout() {
