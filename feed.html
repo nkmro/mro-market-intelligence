@@ -79,15 +79,27 @@
   .content { flex: 1; min-width: 0; }
 
   .topbar {
-    display: flex; align-items: center; gap: 10px; justify-content: space-between;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
-    background: var(--card);
-  }
+display: flex; align-items: center; gap: 10px; justify-content: space-between;
+padding: 16px 24px;
+border-bottom: 1px solid var(--border);
+background: var(--card);
+position: sticky; top: 0; z-index: 25;
+}
   .search-box {
-    display: flex; align-items: center; gap: 8px;
-    color: var(--text-muted); font-size: 14px;
-  }
+display: flex; align-items: center; gap: 8px;
+color: var(--text-muted); font-size: 14px;
+flex: 1; max-width: 320px;
+}
+.search-box input {
+border: none; outline: none; background: transparent;
+font-size: 14px; color: var(--text); width: 100%; font-family: inherit;
+}
+.search-box input::placeholder { color: var(--text-muted); }
+.search-clear-btn {
+background: none; border: none; color: var(--text-muted); cursor: pointer;
+font-size: 13px; padding: 2px 4px; display: none;
+}
+.search-clear-btn.show { display: inline-block; }
   .team-select { font-size: 13px; color: var(--text-muted); cursor: pointer; }
 
   .main { padding: 20px 24px 60px; max-width: 760px; margin: 0; }
@@ -308,7 +320,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
   <div class="content">
     <div class="topbar">
       <button class="hamburger" onclick="toggleDrawer(true)">☰</button>
-      <div class="search-box"><span>🔍</span> 품목, 원자재 검색</div>
+      <div class="search-box"><span>🔍</span><input type="text" id="search-input" placeholder="품목, 원자재 검색" oninput="handleSearchInput()"><button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()">✕</button></div>
       <div class="team-select" id="team-label">동부팀 전체</div>
     </div>
 
@@ -542,15 +554,48 @@ function updateNotifBadge() {
   }
 }
 
+// 6-5: 검색 기능 (현재 로드된 피드 안에서 클라이언트 사이드 필터링)
+function matchesSearch(post, query) {
+if ((post.materialName || '').toLowerCase().includes(query)) return true;
+return (post.items || []).some(function (it) {
+return (it.customer || '').toLowerCase().includes(query) || (it.itemName || '').toLowerCase().includes(query);
+});
+}
+
+function handleSearchInput() {
+const input = document.getElementById('search-input');
+const clearBtn = document.getElementById('search-clear-btn');
+feedState.searchQuery = input.value;
+clearBtn.classList.toggle('show', !!input.value);
+if (document.getElementById('feed-view').style.display !== 'none') {
+renderFeed();
+}
+}
+
+function clearSearch() {
+const input = document.getElementById('search-input');
+input.value = '';
+feedState.searchQuery = '';
+document.getElementById('search-clear-btn').classList.remove('show');
+renderFeed();
+input.focus();
+}
+
 function renderFeed() {
-  const root = document.getElementById('feed-root');
-  if (!feedState.posts.length) {
-    root.innerHTML = `<div class="feed-empty">아직 게시된 시황이 없어요.</div>`;
-    return;
-  }
-  const hasMore = feedState.nextCursor !== null && feedState.nextCursor !== undefined;
-  root.innerHTML = feedState.posts.map(renderPost).join('') +
-    (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
+const root = document.getElementById('feed-root');
+if (!feedState.posts.length) {
+root.innerHTML = `<div class="feed-empty">아직 게시된 시황이 없어요.</div>`;
+return;
+}
+const query = (feedState.searchQuery || '').trim().toLowerCase();
+const list = query ? feedState.posts.filter(function (p) { return matchesSearch(p, query); }) : feedState.posts;
+if (query && !list.length) {
+root.innerHTML = `<div class="feed-empty">"${escapeHtml(feedState.searchQuery)}"에 대한 검색 결과가 없어요.</div>`;
+return;
+}
+const hasMore = !query && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
+root.innerHTML = list.map(renderPost).join('') +
+(hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 }
 
 function renderNotif() {
