@@ -420,6 +420,7 @@ if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
 }
 await loadFeed();
+await loadIdleTimeoutSetting();
 startPolling();
 setupIdleTimer();
 })();
@@ -1107,13 +1108,29 @@ btn.disabled = false;
 }
 
 // 자동 로그아웃: 30분 무활동 시 자동 로그아웃
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let idleTimeoutMinutes = 30;
+
+async function loadIdleTimeoutSetting() {
+try {
+const res = await callApi('getSettings', {});
+if (res.ok && res.settings && res.settings['무활동로그아웃분'] !== undefined) {
+const minutes = Number(res.settings['무활동로그아웃분']);
+if (minutes > 0) {
+idleTimeoutMinutes = minutes;
+IDLE_TIMEOUT_MS = minutes * 60 * 1000;
+}
+}
+} catch (e) {
+// 설정값을 못 읽어오면 기본값(30분) 사용
+}
+}
 let idleTimer = null;
 
 function resetIdleTimer() {
 if (idleTimer) clearTimeout(idleTimer);
 idleTimer = setTimeout(function () {
-alert('30분 동안 활동이 없어 자동 로그아웃되었습니다.');
+alert(idleTimeoutMinutes + '분 동안 활동이 없어 자동 로그아웃되었습니다.');
 doLogout();
 }, IDLE_TIMEOUT_MS);
 }
