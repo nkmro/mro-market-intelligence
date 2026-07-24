@@ -273,7 +273,8 @@ font-size: 13px; padding: 2px 4px; display: none;
   .notif-reply-prev { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
   .notif-reply-curr { font-size: 12px; color: var(--text); font-weight: 500; }
 
-  .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
+  .items-search-input { flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+.items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
 .item-new-btn { border: none; background: var(--accent); color: #fff; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .items-table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
@@ -439,6 +440,10 @@ document.getElementById('feed-view').style.display = view === 'feed' ? 'block' :
 document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
 document.getElementById('users-view').style.display = view === 'users' ? 'block' : 'none';
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
+const searchBoxEl = document.querySelector('.search-box');
+const teamLabelEl = document.getElementById('team-label');
+if (searchBoxEl) searchBoxEl.style.display = view === 'feed' ? '' : 'none';
+if (teamLabelEl) teamLabelEl.style.display = view === 'feed' ? '' : 'none';
 if (view === 'notif') {
 renderNotif();
 callApi('markChecked', {}).catch(() => {});
@@ -1220,7 +1225,7 @@ resetIdleTimer();
 }
 
 // ==== 품목 관리 (팀장 전용) ====
-let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filterTeam: '', editingItemId: null, selectedMaterials: [] };
+let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filterTeam: '', searchQuery: '', editingItemId: null, selectedMaterials: [] };
 
 async function loadItems() {
 const root = document.getElementById('items-view');
@@ -1238,7 +1243,7 @@ return;
 }
 itemsState.items = itemsRes.items || [];
 itemsState.customers = customersRes.ok ? (customersRes.customers || []) : [];
-itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) { return u.team === session.team && u.status === '활성'; }) : [];
+itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) { return u.team === session.team && u.status === '활성' && u.role === '담당'; }) : [];
 itemsState.loaded = true;
 renderItemsView();
 } catch (e) {
@@ -1250,9 +1255,16 @@ function renderItemsView() {
 const root = document.getElementById('items-view');
 const filter = itemsState.filterTeam;
 const teams = Array.from(new Set(itemsState.items.map(function (it) { return it.team; }).filter(Boolean)));
-const list = filter ? itemsState.items.filter(function (it) { return it.team === filter; }) : itemsState.items;
+let list = filter ? itemsState.items.filter(function (it) { return it.team === filter; }) : itemsState.items;
+const q = (itemsState.searchQuery || '').trim().toLowerCase();
+if (q) {
+list = list.filter(function (it) {
+return (it.customer || '').toLowerCase().includes(q) || (it.itemName || '').toLowerCase().includes(q) || (it.manager || '').toLowerCase().includes(q);
+});
+}
 root.innerHTML = `
 <div class="items-toolbar">
+<input type="text" id="items-search-input" class="items-search-input" placeholder="고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${itemsState.searchQuery || ''}">
 <select id="items-team-filter" onchange="onItemsTeamFilterChange()">
 <option value="">전체 팀</option>
 ${teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === filter ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}
@@ -1278,6 +1290,13 @@ return `<tr onclick="openItemForm('${it.itemId}')">
 ${!list.length ? '<div class="feed-empty">등록된 품목이 없어요.</div>' : ''}
 </div>
 `;
+}
+
+function onItemsSearchInput() {
+itemsState.searchQuery = document.getElementById('items-search-input').value;
+renderItemsView();
+const input = document.getElementById('items-search-input');
+if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 
 function onItemsTeamFilterChange() {
