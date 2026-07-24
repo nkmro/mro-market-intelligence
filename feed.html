@@ -1286,8 +1286,31 @@ root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요
 
 function renderItemsView() {
 const root = document.getElementById('items-view');
-const filter = itemsState.filterTeam;
+root.innerHTML = `
+<div class="items-toolbar">
+<input type="text" id="items-search-input" class="items-search-input" placeholder="고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${escapeHtml(itemsState.searchQuery || '')}">
+<select id="items-team-filter" onchange="onItemsTeamFilterChange()"></select>
+<button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>
+</div>
+<div class="items-table-wrap" id="items-table-wrap"></div>
+`;
+renderItemsTeamFilterOptions();
+renderItemsTable();
+}
+
+function renderItemsTeamFilterOptions() {
+const select = document.getElementById('items-team-filter');
+if (!select) return;
 const teams = Array.from(new Set(itemsState.items.map(function (it) { return it.team; }).filter(Boolean)));
+select.innerHTML = '<option value="">전체 팀</option>' + teams.map(function (t) {
+return '<option value="' + escapeHtml(t) + '" ' + (t === itemsState.filterTeam ? 'selected' : '') + '>' + escapeHtml(t) + '</option>';
+}).join('');
+}
+
+function renderItemsTable() {
+const wrap = document.getElementById('items-table-wrap');
+if (!wrap) return;
+const filter = itemsState.filterTeam;
 let list = filter ? itemsState.items.filter(function (it) { return it.team === filter; }) : itemsState.items;
 const q = (itemsState.searchQuery || '').trim().toLowerCase();
 if (q) {
@@ -1295,16 +1318,7 @@ list = list.filter(function (it) {
 return (it.customer || '').toLowerCase().includes(q) || (it.itemName || '').toLowerCase().includes(q) || (it.manager || '').toLowerCase().includes(q);
 });
 }
-root.innerHTML = `
-<div class="items-toolbar">
-<input type="text" id="items-search-input" class="items-search-input" placeholder="고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${itemsState.searchQuery || ''}">
-<select id="items-team-filter" onchange="onItemsTeamFilterChange()">
-<option value="">전체 팀</option>
-${teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === filter ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}
-</select>
-<button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>
-</div>
-<div class="items-table-wrap">
+wrap.innerHTML = `
 <table class="items-table">
 <thead><tr><th>고객사</th><th>품목명</th><th>담당</th><th>팀</th><th>원자재</th><th>상태</th></tr></thead>
 <tbody>
@@ -1320,21 +1334,18 @@ return `<tr onclick="openItemForm('${it.itemId}')">
 }).join('')}
 </tbody>
 </table>
-${!list.length ? '<div class="feed-empty">등록된 품목이 없어요.</div>' : ''}
-</div>
+${!list.length ? '<div class="feed-empty">조건에 맞는 품목이 없어요.</div>' : ''}
 `;
 }
 
 function onItemsSearchInput() {
 itemsState.searchQuery = document.getElementById('items-search-input').value;
-renderItemsView();
-const input = document.getElementById('items-search-input');
-if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+renderItemsTable();
 }
 
 function onItemsTeamFilterChange() {
 itemsState.filterTeam = document.getElementById('items-team-filter').value;
-renderItemsView();
+renderItemsTable();
 }
 
 function openItemForm(itemId) {
