@@ -467,6 +467,14 @@ if (!session || !session.sessionToken) {
 window.location.href = 'index.html';
 return;
 }
+if (session.passwordExpired) {
+showForcedPasswordChangeOverlay();
+return;
+}
+await proceedAfterAuth();
+})();
+
+async function proceedAfterAuth() {
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -480,7 +488,74 @@ await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
 startPolling();
 setupIdleTimer();
-})();
+}
+
+function showForcedPasswordChangeOverlay() {
+document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+const overlay = document.createElement('div');
+overlay.className = 'item-form-overlay';
+overlay.id = 'pw-change-overlay';
+overlay.innerHTML = `
+<div class="item-form-card" style="width:380px;">
+<div class="item-form-head">
+<div>🔒 비밀번호 변경이 필요해요</div>
+</div>
+<div class="form-hint" style="margin-bottom:16px;">비밀번호를 마지막으로 바꾼 지 오래되어, 새 비밀번호로 변경해야 계속 이용하실 수 있어요.</div>
+<div class="form-group">
+<label class="form-label">현재 비밀번호</label>
+<input type="password" id="pw-current-input" class="form-input" autocomplete="current-password">
+</div>
+<div class="form-group">
+<label class="form-label">새 비밀번호</label>
+<input type="password" id="pw-new-input" class="form-input" autocomplete="new-password" placeholder="6자 이상">
+</div>
+<div class="form-group">
+<label class="form-label">새 비밀번호 확인</label>
+<input type="password" id="pw-new-confirm-input" class="form-input" autocomplete="new-password">
+</div>
+<div id="pw-change-msg" style="font-size:12px; color:#d35233; margin-bottom:8px;"></div>
+<div class="item-form-actions">
+<button class="btn-primary" onclick="submitForcedPasswordChange()">비밀번호 변경</button>
+</div>
+</div>
+`;
+document.body.appendChild(overlay);
+}
+
+async function submitForcedPasswordChange() {
+const currentPassword = document.getElementById('pw-current-input').value;
+const newPassword = document.getElementById('pw-new-input').value;
+const confirmPassword = document.getElementById('pw-new-confirm-input').value;
+const msg = document.getElementById('pw-change-msg');
+if (!currentPassword || !newPassword || !confirmPassword) {
+msg.textContent = '모든 항목을 입력해주세요.';
+return;
+}
+if (newPassword.length < 6) {
+msg.textContent = '새 비밀번호는 6자 이상이어야 해요.';
+return;
+}
+if (newPassword !== confirmPassword) {
+msg.textContent = '새 비밀번호가 서로 일치하지 않아요.';
+return;
+}
+msg.textContent = '변경 중...';
+try {
+const res = await callApi('changePassword', { currentPassword: currentPassword, newPassword: newPassword });
+if (!res.ok) {
+const errMap = { WRONG_PASSWORD: '현재 비밀번호가 올바르지 않아요.', PASSWORD_TOO_SHORT: '새 비밀번호는 6자 이상이어야 해요.' };
+msg.textContent = errMap[res.error] || ('변경 실패: ' + (res.error || 'SERVER_ERROR'));
+return;
+}
+session.passwordExpired = false;
+localStorage.setItem('mro_session', JSON.stringify(session));
+const overlay = document.getElementById('pw-change-overlay');
+if (overlay) overlay.remove();
+await proceedAfterAuth();
+} catch (e) {
+msg.textContent = '네트워크 오류가 발생했어요.';
+}
+}
 
 const itemCommentCounts = {};
 
