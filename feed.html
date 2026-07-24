@@ -367,6 +367,11 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function truncate(str, maxLen) {
+str = String(str || '');
+return str.length > maxLen ? str.slice(0, maxLen) + '…' : str;
+}
+
 function fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
