@@ -467,7 +467,6 @@ if (!session || !session.sessionToken) {
 window.location.href = 'index.html';
 return;
 }
-document.getElementById('team-label').textContent = teamLabel(session.team || '') + ' 전체';
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -476,6 +475,7 @@ if (session.role === '팀장' || session.email === ADMIN_EMAIL) {
 document.getElementById('nav-items').style.display = 'flex';
 }
 await loadFeed();
+setupTeamLabelControl();
 await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
 startPolling();
@@ -645,6 +645,32 @@ renderFeed();
 input.focus();
 }
 
+function setupTeamLabelControl() {
+const el = document.getElementById('team-label');
+if (!el) return;
+const isAdmin = session.email === ADMIN_EMAIL;
+if (!isAdmin) {
+el.textContent = teamLabel(session.team || '') + ' 전체';
+return;
+}
+const teams = Array.from(new Set(feedState.posts.flatMap(function (p) { return (p.items || []).map(function (it) { return it.team; }); }).filter(Boolean)));
+const optionsHtml = ['<option value="">전체 팀</option>'].concat(teams.map(function (t) {
+return '<option value="' + escapeHtml(t) + '">' + escapeHtml(teamLabel(t)) + '</option>';
+})).join('');
+const select = document.createElement('select');
+select.id = 'team-label';
+select.className = 'team-select';
+select.setAttribute('onchange', 'onTeamFilterChange()');
+select.innerHTML = optionsHtml;
+el.replaceWith(select);
+feedState.teamFilter = '';
+}
+
+function onTeamFilterChange() {
+feedState.teamFilter = document.getElementById('team-label').value;
+renderFeed();
+}
+
 function renderFeed() {
 const root = document.getElementById('feed-root');
 if (!feedState.posts.length) {
@@ -652,12 +678,19 @@ root.innerHTML = `<div class="feed-empty">아직 게시된 시황이 없어요.<
 return;
 }
 const query = (feedState.searchQuery || '').trim().toLowerCase();
-const list = query ? feedState.posts.filter(function (p) { return matchesSearch(p, query); }) : feedState.posts;
-if (query && !list.length) {
-root.innerHTML = `<div class="feed-empty">"${escapeHtml(feedState.searchQuery)}"에 대한 검색 결과가 없어요.</div>`;
+const teamFilter = feedState.teamFilter || '';
+let list = feedState.posts;
+if (teamFilter) {
+list = list.filter(function (p) { return (p.items || []).some(function (it) { return it.team === teamFilter; }); });
+}
+if (query) {
+list = list.filter(function (p) { return matchesSearch(p, query); });
+}
+if ((query || teamFilter) && !list.length) {
+root.innerHTML = `<div class="feed-empty">조건에 맞는 게시물이 없어요.</div>`;
 return;
 }
-const hasMore = !query && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
+const hasMore = !query && !teamFilter && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
 root.innerHTML = list.map(renderPost).join('') +
 (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 }
