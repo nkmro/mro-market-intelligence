@@ -445,7 +445,8 @@ function saveSession(res) {
     email: res.email,
     name: res.name,
     role: res.role,
-    team: res.team
+    team: res.team,
+    passwordExpired: res.passwordExpired || false
   }));
 }
 
