@@ -258,7 +258,8 @@ font-size: 13px; padding: 2px 4px; display: none;
     padding: 10px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted);
     background: var(--bg); border-bottom: 1px solid var(--border);
   }
-  .notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .notif-group-title { font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 14px 4px 6px; }
+.notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .notif-post-card:last-child { border-bottom: none; }
   .notif-post-card .top-line { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
   .notif-post-card .headline { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
@@ -422,6 +423,7 @@ document.getElementById('nav-users').style.display = 'flex';
 }
 await loadFeed();
 await loadIdleTimeoutSetting();
+await loadThreadSeenMap();
 startPolling();
 setupIdleTimer();
 })();
@@ -607,74 +609,63 @@ root.innerHTML = list.map(renderPost).join('') +
 }
 
 function renderNotif() {
-  const root = document.getElementById('notif-view');
-  const items = feedState.posts.filter(p => p.needsAttention);
-  if (!items.length) {
-    root.innerHTML = `<div class="notif-panel"><div class="notif-empty">확인이 필요한 소식이 없어요.</div></div>`;
-    return;
-  }
+const root = document.getElementById('notif-view');
 
-  const newPosts = [];
-  const replyNeeded = [];
-  items.forEach(p => {
-    const hasUnconfirmed = (p.items || []).some(it => !it.confirmed);
-    if (hasUnconfirmed) newPosts.push(p);
-    else replyNeeded.push(p);
-  });
+const newPosts = feedState.posts.filter(function (p) {
+return p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; });
+});
 
-  function truncate(str, n) {
-    const s = String(str || '');
-    return s.length > n ? s.slice(0, n) + '…' : s;
-  }
+const replyEntries = [];
+feedState.posts.forEach(function (p) {
+const unreadItems = (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); });
+if (unreadItems.length) replyEntries.push({ post: p, items: unreadItems });
+});
 
-  function renderNotifItem(p) {
-    return `
-      <div class="notif-item" onclick="goToPost('${p.id}')">
-        <div class="flex1">
-          <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
-          <div class="headline">${escapeHtml(p.summary || p.title || '')}</div>
-        </div>
-        <span>›</span>
-      </div>
-    `;
-  }
+if (!newPosts.length && !replyEntries.length) {
+root.innerHTML = `<div class="notif-panel"><div class="notif-empty">아직 확인할 알림이 없어요.</div></div>`;
+return;
+}
 
-  // C. "확인 완료 · 댓글 필요" 섹션: 게시물로 묶고, 그 안에 품목별 행을 나열.
-  // 클릭 타겟은 여전히 품목(스레드) 단위 — 게시물 제목은 한 번만 보여주고 중복 표시 안 함.
-  function renderReplyItemRow(post, it) {
-    const comments = (it.comments || []).slice().sort(function (a, b) {
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
-    const prev = comments.length >= 2 ? comments[comments.length - 2] : null;
-    const curr = comments.length >= 1 ? comments[comments.length - 1] : null;
-    return `
-      <div class="notif-reply-row" onclick="goToItem('${post.id}', '${it.itemId}')">
-        <div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
-        ${prev ? `<div class="notif-reply-prev">이전 답글: ${escapeHtml(truncate(prev.content, 40))}</div>` : ''}
-        ${curr ? `<div class="notif-reply-curr">현재 답글: ${escapeHtml(truncate(curr.content, 40))}</div>` : ''}
-      </div>
-    `;
-  }
+function renderGroup(title, count, html) {
+if (!count) return '';
+return `<div class="notif-group-title">${title} ${count}건</div>${html}`;
+}
 
-  function renderReplyPostCard(p) {
-    const needReplyItems = (p.items || []).filter(function (it) { return it.confirmed; });
-    return `
-      <div class="notif-post-card">
-        <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
-        <div class="headline">${escapeHtml(truncate(p.summary || p.title || '', 36))}</div>
-        <div class="notif-reply-list">
-          ${needReplyItems.map(function (it) { return renderReplyItemRow(p, it); }).join('')}
-        </div>
-      </div>
-    `;
-  }
+const newPostsHtml = newPosts.map(function (p) {
+return `
+<div class="notif-item" onclick="goToItem('${p.id}')">
+<div class="flex1">
+<div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
+<div class="headline">${escapeHtml(truncate(p.title || p.summary || '', 36))}</div>
+</div>
+</div>
+`;
+}).join('');
 
-  function renderGroup(title, list, renderer) {
-    if (!list.length) return '';
-    return `<div class="notif-section-title">${title} ${list.length}건</div>${list.map(renderer).join('')}`;
-  }
+const replyPostsHtml = replyEntries.map(function (entry) {
+const p = entry.post;
+const rowsHtml = entry.items.map(function (it) {
+const comments = (it.comments || []).slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+const prev = comments.length >= 2 ? comments[comments.length - 2] : null;
+const curr = comments.length >= 1 ? comments[comments.length - 1] : null;
+return `
+<div class="notif-reply-row" onclick="goToItem('${p.id}', '${it.itemId}')">
+<div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
+${prev ? `<div class="notif-reply-prev">이전 답글: ${escapeHtml(truncate(prev.content || '', 30))}</div>` : ''}
+${curr ? `<div class="notif-reply-curr">현재 답글: ${escapeHtml(truncate(curr.content || '', 30))}</div>` : ''}
+</div>
+`;
+}).join('');
+return `
+<div class="notif-post-card">
+<div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
+<div class="headline">${escapeHtml(truncate(p.title || p.summary || '', 36))}</div>
+<div class="notif-reply-list">${rowsHtml}</div>
+</div>
+`;
+}).join('');
 
-  root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts, renderNotifItem)}${renderGroup('확인 완료 · 댓글 필요', replyNeeded, renderReplyPostCard)}</div>`;
+root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts.length, newPostsHtml)}${renderGroup('확인 완료 · 댓글 필요', replyEntries.length, replyPostsHtml)}</div>`;
 }
 
 function goToPost(postId) {
@@ -754,6 +745,8 @@ async function toggleThread(postId, itemId) {
   st.open = !st.open;
   panel.classList.toggle('open', st.open);
   if (!st.open) return;
+
+  markThreadSeenLocal(postId, itemId);
 
   if (item && !item.confirmed) {
     renderThread(postId, itemId);
@@ -1128,6 +1121,39 @@ IDLE_TIMEOUT_MS = minutes * 60 * 1000;
 }
 }
 let idleTimer = null;
+
+// 6-4: 알림함 "댓글 필요" 정확도 개선 - 참여한 스레드의 미확인 답글만 표시
+let threadSeenMap = {};
+
+async function loadThreadSeenMap() {
+try {
+const res = await callApi('getThreadSeen', {});
+if (res.ok && res.seenMap) threadSeenMap = res.seenMap;
+} catch (e) {
+// 못 읽어오면 빈 맵(기본값)으로 계속 진행
+}
+}
+
+function hasUnreadReply(postId, item) {
+const comments = item.comments || [];
+if (!comments.length) return false;
+const participant = comments.some(function (c) { return c.authorEmail === session.email; });
+if (!participant) return false;
+const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+const last = sorted[sorted.length - 1];
+if (last.authorEmail === session.email) return false;
+const key = postId + '-' + item.itemId;
+const seenAt = threadSeenMap[key];
+if (!seenAt) return true;
+return new Date(last.createdAt) > new Date(seenAt);
+}
+
+function markThreadSeenLocal(postId, itemId) {
+const key = postId + '-' + itemId;
+threadSeenMap[key] = new Date().toISOString();
+callApi('markThreadSeen', { postId: postId, itemId: itemId }).catch(function () {});
+}
+
 
 function resetIdleTimer() {
 if (idleTimer) clearTimeout(idleTimer);
