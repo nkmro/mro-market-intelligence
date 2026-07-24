@@ -719,11 +719,12 @@ return `<div class="notif-group-title">${title} ${count}건</div>${html}`;
 }
 
 const newPostsHtml = newPosts.map(function (p) {
+const targetItem = (p.items || []).find(function (it) { return !it.confirmed; }) || (p.items || [])[0] || { itemId: '' };
 return `
-<div class="notif-item" onclick="goToItem('${p.id}')">
+<div class="notif-item" onclick="goToItem('${p.id}', '${targetItem.itemId}')">
 <div class="flex1">
 <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
-<div class="headline">${escapeHtml(truncate(p.title || p.summary || '', 36))}</div>
+<div class="headline">${escapeHtml(truncate(p.summary || p.title || '', 36))}</div>
 </div>
 </div>
 `;
@@ -746,7 +747,7 @@ ${curr ? `<div class="notif-reply-curr">현재 답글: ${escapeHtml(truncate(cur
 return `
 <div class="notif-post-card">
 <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
-<div class="headline">${escapeHtml(truncate(p.title || p.summary || '', 36))}</div>
+<div class="headline">${escapeHtml(truncate(p.summary || p.title || '', 36))}</div>
 <div class="notif-reply-list">${rowsHtml}</div>
 </div>
 `;
