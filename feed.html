@@ -729,8 +729,9 @@ el.textContent = teamLabel(session.team || '') + ' 전체';
 return;
 }
 const teams = Array.from(new Set(feedState.posts.flatMap(function (p) { return (p.items || []).map(function (it) { return it.team; }); }).filter(Boolean)));
+feedState.teamFilter = session.team || '';
 const optionsHtml = ['<option value="">전체 팀</option>'].concat(teams.map(function (t) {
-return '<option value="' + escapeHtml(t) + '">' + escapeHtml(teamLabel(t)) + '</option>';
+return '<option value="' + escapeHtml(t) + '" ' + (t === feedState.teamFilter ? 'selected' : '') + '>' + escapeHtml(teamLabel(t)) + '</option>';
 })).join('');
 const select = document.createElement('select');
 select.id = 'team-label';
@@ -738,7 +739,7 @@ select.className = 'team-select';
 select.setAttribute('onchange', 'onTeamFilterChange()');
 select.innerHTML = optionsHtml;
 el.replaceWith(select);
-feedState.teamFilter = '';
+renderFeed();
 }
 
 function onTeamFilterChange() {
@@ -1353,6 +1354,9 @@ return;
 itemsState.items = itemsRes.items || [];
 itemsState.customers = customersRes.ok ? (customersRes.customers || []) : [];
 itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) { return u.team === session.team && u.status === '활성' && u.role === '담당'; }) : [];
+if (!itemsState.loaded) {
+itemsState.filterTeam = session.team || '';
+}
 itemsState.loaded = true;
 renderItemsView();
 } catch (e) {
