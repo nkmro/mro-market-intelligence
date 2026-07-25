@@ -694,8 +694,8 @@ const showAwaiting = session.role === '팀장' || session.role === '임원';
 let count = 0;
 feedState.posts.forEach(function (p) {
 if (p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; })) count++;
-if ((p.items || []).some(function (it) { return hasUnreadReply(p.id, it); })) count++;
-if (showAwaiting && (p.items || []).some(function (it) { return hasAwaitingReply(it); })) count++;
+count += (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); }).length;
+if (showAwaiting) count += (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); }).length;
 });
 const badge = document.getElementById('notif-badge');
 if (count > 0) {
@@ -798,18 +798,20 @@ const awaitingEntries = [];
 feedState.posts.forEach(function (p) {
 const unreadItems = (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); });
 if (unreadItems.length) replyEntries.push({ post: p, items: unreadItems });
-const awaitingItems = (p.items || []).filter(function (it) { return hasAwaitingReply(it); });
+const awaitingItems = (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); });
 if (awaitingItems.length) awaitingEntries.push({ post: p, items: awaitingItems });
 });
 
 const showAwaitingTab = session.role === '팀장' || session.role === '임원';
 
+const replyItemCount = replyEntries.reduce(function (sum, e) { return sum + e.items.length; }, 0);
+const awaitingItemCount = awaitingEntries.reduce(function (sum, e) { return sum + e.items.length; }, 0);
 const tabs = [
 { key: '새 게시물', count: newPosts.length },
-{ key: '댓글 필요', count: replyEntries.length }
+{ key: '댓글 필요', count: replyItemCount }
 ];
 if (showAwaitingTab) {
-tabs.push({ key: '답변 요청', count: awaitingEntries.length });
+tabs.push({ key: '답변 요청', count: awaitingItemCount });
 }
 if (!tabs.some(function (t) { return t.key === notifActiveTab; })) {
 notifActiveTab = tabs[0].key;
@@ -1363,13 +1365,17 @@ if (!seenAt) return true;
 return new Date(last.createdAt) > new Date(seenAt);
 }
 
-function hasAwaitingReply(item) {
+function hasAwaitingReply(postId, item) {
 if (session.role !== '팀장' && session.role !== '임원') return false;
 const comments = item.comments || [];
 if (!comments.length) return false;
 const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
 const last = sorted[sorted.length - 1];
-return last.authorEmail === session.email;
+if (last.authorEmail !== session.email) return false;
+const key = postId + '-' + item.itemId;
+const seenAt = threadSeenMap[key];
+if (!seenAt) return true;
+return new Date(last.createdAt) > new Date(seenAt);
 }
 
 function markThreadSeenLocal(postId, itemId) {
