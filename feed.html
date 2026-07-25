@@ -709,8 +709,11 @@ function renderLoadMoreButton() {
 
 function updateNotifBadge() {
 const showAwaiting = session.role === '팀장' || session.role === '임원';
-let count = notifNewPostsCache.items.length;
-feedState.posts.forEach(function (p) {
+const newPostsCount = notifNewPostsCache.items.filter(function (p) {
+return p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; });
+}).length;
+let count = newPostsCount;
+notifNewPostsCache.items.forEach(function (p) {
 count += (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); }).length;
 if (showAwaiting) count += (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); }).length;
 });
@@ -806,11 +809,13 @@ let notifActiveTab = '새 게시물';
 function renderNotif() {
 const root = document.getElementById('notif-view');
 
-const newPosts = notifNewPostsCache.items;
+const newPosts = notifNewPostsCache.items.filter(function (p) {
+return p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; });
+});
 
 const replyEntries = [];
 const awaitingEntries = [];
-feedState.posts.forEach(function (p) {
+notifNewPostsCache.items.forEach(function (p) {
 const unreadItems = (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); });
 if (unreadItems.length) replyEntries.push({ post: p, items: unreadItems });
 const awaitingItems = (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); });
@@ -1363,7 +1368,7 @@ try {
 const res = await callApi('getNotifications', {});
 if (res.ok) {
 notifNewPostsCache.items = (res.items || []).map(function (it) {
-return { id: it.postId, materialName: it.materialName, title: it.title, summary: it.summary, createdAt: it.createdAt, items: it.items };
+return { id: it.postId, materialName: it.materialName, title: it.title, summary: it.summary, createdAt: it.createdAt, items: it.items, needsAttention: it.needsAttention };
 });
 notifNewPostsCache.loaded = true;
 }
