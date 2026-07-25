@@ -934,10 +934,27 @@ function goToPost(postId) {
 // 게시물로 스크롤한 뒤, 해당 품목 행으로 다시 스크롤하고 스레드가 닫혀있으면 열어준다.
 function goToItem(postId, itemId) {
   switchView('feed');
-  setTimeout(() => {
+  setTimeout(async () => {
     const key = postId + '-' + itemId;
-    const row = document.getElementById('row-' + key);
-    if (!row) return;
+    let row = document.getElementById('row-' + key);
+    if (!row) {
+      const existsInFeed = feedState.posts.some(function (p) { return p.id === postId; });
+      if (!existsInFeed) {
+        try {
+          const res = await callApi('getPostById', { postId: postId });
+          if (res.ok && res.post) {
+            feedState.posts.unshift(res.post);
+            renderFeed();
+          } else {
+            return;
+          }
+        } catch (e) {
+          return;
+        }
+      }
+      row = document.getElementById('row-' + key);
+      if (!row) return;
+    }
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     row.classList.add('flash');
     setTimeout(() => row.classList.remove('flash'), 1600);
