@@ -280,6 +280,14 @@ font-size: 13px; padding: 2px 4px; display: none;
   .notif-reply-curr { font-size: 12px; color: var(--text); font-weight: 500; }
 
   .items-search-input { flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+.settings-panel { max-width: 640px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 20px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.settings-row:last-of-type { border-bottom: none; }
+.settings-row-label { flex: 1; min-width: 0; }
+.settings-row-title { font-size: 14px; font-weight: 600; }
+.settings-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+.settings-row-input { width: 200px; flex-shrink: 0; }
+
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
 .item-new-btn { border: none; background: var(--accent); color: #fff; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -355,7 +363,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     <div class="nav-item" data-view="notif" onclick="switchView('notif')"><span class="ic">🔔</span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
     <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic">📦</span> 품목 관리</div>
     <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic">👥</span> 사용자 현황</div>
-    <div class="nav-item"><span class="ic">⚙️</span> 설정</div>
+    <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic">⚙️</span> 설정</div>
     <div class="sidebar-bottom">
       <div class="sidebar-me" id="sidebar-me"></div>
       <div class="sidebar-logout" onclick="doLogout()">🚪 로그아웃</div>
@@ -378,6 +386,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
       <div id="notif-view" style="display:none;"></div>
 <div id="users-view" style="display:none;"></div>
 <div id="items-view" style="display:none;"></div>
+<div id="settings-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -446,6 +455,7 @@ document.getElementById('feed-view').style.display = view === 'feed' ? 'block' :
 document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
 document.getElementById('users-view').style.display = view === 'users' ? 'block' : 'none';
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
+document.getElementById('settings-view').style.display = view === 'settings' ? 'block' : 'none';
 const searchBoxEl = document.querySelector('.search-box');
 const teamLabelEl = document.getElementById('team-label');
 if (searchBoxEl) searchBoxEl.style.display = view === 'feed' ? '' : 'none';
@@ -460,6 +470,9 @@ loadUsers();
 }
 if (view === 'items') {
 loadItems();
+}
+if (view === 'settings') {
+loadSettingsPage();
 }
 toggleDrawer(false);
 }
@@ -488,6 +501,9 @@ document.getElementById('nav-users').style.display = 'flex';
 }
 if (session.role === '팀장' || session.email === ADMIN_EMAIL) {
 document.getElementById('nav-items').style.display = 'flex';
+}
+if (session.email === ADMIN_EMAIL) {
+document.getElementById('nav-settings').style.display = 'flex';
 }
 await loadFeed();
 setupTeamLabelControl();
@@ -1413,6 +1429,80 @@ function setupIdleTimer() {
 document.addEventListener(evt, resetIdleTimer, { passive: true });
 });
 resetIdleTimer();
+}
+
+// ==== 설정 (관리자 전용) ====
+const SETTINGS_META = {
+'팀장_열람범위': { label: '팀장 열람 범위', desc: "값: '자기팀' 또는 '전체'. 팀장이 다른 팀 댓글까지 볼 수 있는지 여부." },
+'가격키워드': { label: '가격 키워드', desc: '가격 관련 뉴스 판단 키워드 (쉼표로 구분).' },
+'뉴스수집건수': { label: '뉴스 수집 건수', desc: '네이버 뉴스 API에서 한 번에 수집하는 건수.' },
+'트리거시각': { label: '트리거 시각', desc: '매일 뉴스 수집이 실행되는 시각(0~23시). 변경 시 트리거 재설치가 필요할 수 있어요.' },
+'시황게시물보관기간': { label: '시황 게시물 보관 기간', desc: '게시일 기준 보관 일수(일). 지나면 자동 삭제됩니다.' },
+'뉴스피드출력기간': { label: '뉴스피드 출력 기간', desc: '피드에 표시되는 최근 게시물 기간(일). 담당이 확인 안 한 게시물은 예외적으로 계속 노출됩니다.' },
+'수집로그보관기간': { label: '수집 로그 보관 기간', desc: '수집일시 기준 보관 일수(일). 지나면 자동 삭제됩니다.' },
+'기사최대경과일': { label: '기사 최대 경과일', desc: '발행일 기준 최대 허용 경과일수(일). 이보다 오래된 기사는 제외됩니다.' },
+'무활동로그아웃분': { label: '무활동 자동 로그아웃', desc: '프론트엔드에서 무활동 시 자동 로그아웃되는 시간(분).' },
+'비밀번호만료일수': { label: '비밀번호 만료 일수', desc: '비밀번호를 강제로 다시 변경해야 하는 주기(일).' }
+};
+
+async function loadSettingsPage() {
+const root = document.getElementById('settings-view');
+root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
+try {
+const res = await callApi('getSettings', {});
+if (!res.ok) {
+root.innerHTML = `<div class="feed-empty">설정을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
+return;
+}
+renderSettingsPage(res.settings || {});
+} catch (e) {
+root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
+}
+}
+
+function renderSettingsPage(settings) {
+const root = document.getElementById('settings-view');
+const rowsHtml = Object.keys(settings).map(function (key) {
+const meta = SETTINGS_META[key] || { label: key, desc: '' };
+return `
+<div class="settings-row">
+<div class="settings-row-label">
+<div class="settings-row-title">${escapeHtml(meta.label)}</div>
+${meta.desc ? `<div class="settings-row-desc">${escapeHtml(meta.desc)}</div>` : ''}
+</div>
+<input type="text" class="form-input settings-row-input" data-key="${escapeHtml(key)}" value="${escapeHtml(String(settings[key]))}">
+</div>
+`;
+}).join('');
+root.innerHTML = `
+<div class="settings-panel">
+${rowsHtml}
+<div id="settings-save-msg" class="form-hint" style="margin:10px 0;"></div>
+<div class="item-form-actions">
+<button class="btn-primary" onclick="saveSettingsPage()">저장</button>
+</div>
+</div>
+`;
+}
+
+async function saveSettingsPage() {
+const inputs = document.querySelectorAll('.settings-row-input');
+const updates = {};
+inputs.forEach(function (input) {
+updates[input.dataset.key] = input.value;
+});
+const msg = document.getElementById('settings-save-msg');
+msg.textContent = '저장 중...';
+try {
+const res = await callApi('updateSettings', { settings: updates });
+if (!res.ok) {
+msg.textContent = '저장 실패: ' + (res.error || 'SERVER_ERROR');
+return;
+}
+msg.textContent = '저장됐어요.';
+} catch (e) {
+msg.textContent = '네트워크 오류가 발생했어요.';
+}
 }
 
 // ==== 품목 관리 (팀장 전용) ====
