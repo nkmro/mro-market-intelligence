@@ -160,6 +160,7 @@
       <input type="password" id="login-password" placeholder="6자 이상" autocomplete="current-password">
       <div class="link-row"><a class="link" onclick="showTab('reset')">비밀번호를 잊으셨나요?</a></div>
       <button class="primary" id="btn-login" onclick="doLogin()"><span class="btn-label">로그인</span><span class="btn-load-base">NKMRO</span><span class="btn-load-fill">NKMRO</span></button>
+<label style="display:flex; align-items:center; gap:6px; margin-top:10px; font-size:13px; color:var(--text-muted, #888);"><input type="checkbox" id="notif-optin" checked style="width:15px; height:15px;">브라우저 알림 받기</label>
       <div class="error-box" id="login-error"></div>
     </div>
 
@@ -453,6 +454,10 @@ function saveSession(res) {
 }
 
 function showSuccess(res) {
+  const optIn = document.getElementById('notif-optin');
+  if (optIn && optIn.checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    try { Notification.requestPermission(); } catch (e) {}
+  }
   window.location.href = 'feed.html';
 }
 
