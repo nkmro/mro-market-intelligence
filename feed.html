@@ -258,7 +258,13 @@ font-size: 13px; padding: 2px 4px; display: none;
     padding: 10px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted);
     background: var(--bg); border-bottom: 1px solid var(--border);
   }
-  .notif-group-title { font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 14px 4px 6px; }
+  .notif-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.notif-tab { border: none; background: transparent; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; }
+.notif-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.notif-tab-count { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+.notif-tab.active .notif-tab-count { background: var(--accent); color: #fff; }
+.notif-tab-content { display: flex; flex-direction: column; gap: 10px; }
+.notif-group-title { font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 14px 4px 6px; }
 .notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .notif-post-card:last-child { border-bottom: none; }
   .notif-post-card .top-line { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
@@ -486,6 +492,7 @@ await loadFeed();
 setupTeamLabelControl();
 await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
+updateNotifBadge();
 startPolling();
 setupIdleTimer();
 }
@@ -683,14 +690,20 @@ function renderLoadMoreButton() {
 }
 
 function updateNotifBadge() {
-  const count = feedState.totalNeedsAttention || 0;
-  const badge = document.getElementById('notif-badge');
-  if (count > 0) {
-    badge.textContent = count;
-    badge.style.display = 'inline-block';
-  } else {
-    badge.style.display = 'none';
-  }
+const showAwaiting = session.role === '팀장' || session.role === '임원';
+let count = 0;
+feedState.posts.forEach(function (p) {
+if (p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; })) count++;
+if ((p.items || []).some(function (it) { return hasUnreadReply(p.id, it); })) count++;
+if (showAwaiting && (p.items || []).some(function (it) { return hasAwaitingReply(it); })) count++;
+});
+const badge = document.getElementById('notif-badge');
+if (count > 0) {
+badge.textContent = count;
+badge.style.display = 'inline-block';
+} else {
+badge.style.display = 'none';
+}
 }
 
 // 6-5: 검색 기능 (현재 로드된 피드 안에서 클라이언트 사이드 필터링)
@@ -771,6 +784,8 @@ root.innerHTML = list.map(renderPost).join('') +
 (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 }
 
+let notifActiveTab = '새 게시물';
+
 function renderNotif() {
 const root = document.getElementById('notif-view');
 
@@ -779,22 +794,56 @@ return p.needsAttention && (p.items || []).some(function (it) { return !it.confi
 });
 
 const replyEntries = [];
+const awaitingEntries = [];
 feedState.posts.forEach(function (p) {
 const unreadItems = (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); });
 if (unreadItems.length) replyEntries.push({ post: p, items: unreadItems });
+const awaitingItems = (p.items || []).filter(function (it) { return hasAwaitingReply(it); });
+if (awaitingItems.length) awaitingEntries.push({ post: p, items: awaitingItems });
 });
 
-if (!newPosts.length && !replyEntries.length) {
-root.innerHTML = `<div class="notif-panel"><div class="notif-empty">아직 확인할 알림이 없어요.</div></div>`;
-return;
+const showAwaitingTab = session.role === '팀장' || session.role === '임원';
+
+const tabs = [
+{ key: '새 게시물', count: newPosts.length },
+{ key: '댓글 필요', count: replyEntries.length }
+];
+if (showAwaitingTab) {
+tabs.push({ key: '답변 요청', count: awaitingEntries.length });
+}
+if (!tabs.some(function (t) { return t.key === notifActiveTab; })) {
+notifActiveTab = tabs[0].key;
 }
 
-function renderGroup(title, count, html) {
-if (!count) return '';
-return `<div class="notif-group-title">${title} ${count}건</div>${html}`;
+const tabsHtml = tabs.map(function (t) {
+return `<button class="notif-tab ${t.key === notifActiveTab ? 'active' : ''}" onclick="switchNotifTab('${t.key}')">${t.key} <span class="notif-tab-count">${t.count}</span></button>`;
+}).join('');
+
+let contentHtml = '';
+if (notifActiveTab === '새 게시물') {
+contentHtml = renderNotifNewPosts(newPosts);
+} else if (notifActiveTab === '댓글 필요') {
+contentHtml = renderNotifReplyEntries(replyEntries, false);
+} else if (notifActiveTab === '답변 요청') {
+contentHtml = renderNotifReplyEntries(awaitingEntries, true);
 }
 
-const newPostsHtml = newPosts.map(function (p) {
+root.innerHTML = `
+<div class="notif-panel">
+<div class="notif-tabs">${tabsHtml}</div>
+<div class="notif-tab-content">${contentHtml || '<div class="notif-empty">여기엔 알림이 없어요.</div>'}</div>
+</div>
+`;
+}
+
+function switchNotifTab(key) {
+notifActiveTab = key;
+renderNotif();
+}
+
+function renderNotifNewPosts(newPosts) {
+if (!newPosts.length) return '';
+return newPosts.map(function (p) {
 const targetItem = (p.items || []).find(function (it) { return !it.confirmed; }) || (p.items || [])[0] || { itemId: '' };
 return `
 <div class="notif-item" onclick="goToItem('${p.id}', '${targetItem.itemId}')">
@@ -805,8 +854,11 @@ return `
 </div>
 `;
 }).join('');
+}
 
-const replyPostsHtml = replyEntries.map(function (entry) {
+function renderNotifReplyEntries(entries, isAwaiting) {
+if (!entries.length) return '';
+return entries.map(function (entry) {
 const p = entry.post;
 const rowsHtml = entry.items.map(function (it) {
 const comments = (it.comments || []).slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
@@ -816,7 +868,7 @@ return `
 <div class="notif-reply-row" onclick="goToItem('${p.id}', '${it.itemId}')">
 <div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
 ${prev ? `<div class="notif-reply-prev">이전 답글: ${escapeHtml(truncate(prev.content || '', 30))}</div>` : ''}
-${curr ? `<div class="notif-reply-curr">현재 답글: ${escapeHtml(truncate(curr.content || '', 30))}</div>` : ''}
+${curr ? `<div class="notif-reply-curr">${isAwaiting ? '내 답글' : '현재 답글'}: ${escapeHtml(truncate(curr.content || '', 30))}</div>` : ''}
 </div>
 `;
 }).join('');
@@ -828,8 +880,6 @@ return `
 </div>
 `;
 }).join('');
-
-root.innerHTML = `<div class="notif-panel">${renderGroup('새 게시물', newPosts.length, newPostsHtml)}${renderGroup('확인 완료 · 댓글 필요', replyEntries.length, replyPostsHtml)}</div>`;
 }
 
 function goToPost(postId) {
@@ -856,6 +906,7 @@ function goToItem(postId, itemId) {
     setTimeout(() => row.classList.remove('flash'), 1600);
     const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
     if (!st.open) toggleThread(postId, itemId);
+    markThreadSeenLocal(postId, itemId);
   }, 50);
 }
 
@@ -1312,10 +1363,20 @@ if (!seenAt) return true;
 return new Date(last.createdAt) > new Date(seenAt);
 }
 
+function hasAwaitingReply(item) {
+if (session.role !== '팀장' && session.role !== '임원') return false;
+const comments = item.comments || [];
+if (!comments.length) return false;
+const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+const last = sorted[sorted.length - 1];
+return last.authorEmail === session.email;
+}
+
 function markThreadSeenLocal(postId, itemId) {
 const key = postId + '-' + itemId;
 threadSeenMap[key] = new Date().toISOString();
 callApi('markThreadSeen', { postId: postId, itemId: itemId }).catch(function () {});
+updateNotifBadge();
 }
 
 
