@@ -6,11 +6,26 @@ self.addEventListener('install', function (event) {
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(function (names) {
+      return Promise.all(names.map(function (name) { return caches.delete(name); }));
+    }).then(function () {
+      return self.clients.claim();
+    })
+  );
 });
 
 self.addEventListener('fetch', function (event) {
-  // 캐싱 없이 그대로 통과 (추후 오프라인 지원 필요 시 확장)
+  // 항상 네트워크에서 최신 버전을 가져오도록 강제 (브라우저/CDN 캐시로 인해
+  // 배포한 새 버전이 안 뜨는 문제를 방지하기 위함 - 절대 이 로직을 캐싱 전략으로
+  // 바꾸지 말 것. 문제가 반복 발생했던 원인이었음)
+  if (event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(function () {
+        return fetch(event.request);
+      })
+    );
+  }
 });
 
 self.addEventListener('notificationclick', function (event) {
