@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MRO 자재 시황 관리 시스템 - 로그인</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#1a6b52">
 <style>
   :root {
     --accent: #1a6b52;
@@ -470,6 +472,10 @@ function doLogout() {
     } catch (e) { localStorage.removeItem('mro_session'); }
   }
 })();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(function () {});
+}
 </script>
 </body>
 </html>
