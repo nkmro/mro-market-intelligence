@@ -646,7 +646,7 @@ async function loadFeed() {
     primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     renderFeed();
-    updateNotifBadge();
+    if (notifNewPostsCache.loaded) updateNotifBadge();
   } catch (e) {
     root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요. 새로고침 후 다시 시도해주세요.</div>`;
   }
