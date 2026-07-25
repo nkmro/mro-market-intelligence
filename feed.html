@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MRO 자재 시황 관리 시스템 - 피드</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#1a6b52">
 <style>
   :root {
     --accent: #1a6b52;
@@ -724,6 +726,17 @@ badge.style.display = 'inline-block';
 } else {
 badge.style.display = 'none';
 }
+
+if ('setAppBadge' in navigator) {
+if (count > 0) navigator.setAppBadge(count).catch(function () {});
+else navigator.clearAppBadge().catch(function () {});
+}
+
+if (lastNotifCount !== null && count > lastNotifCount && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+const diff = count - lastNotifCount;
+showLocalNotification('MRO 자재 시황', '새 알림이 ' + diff + '건 있어요.');
+}
+lastNotifCount = count;
 }
 
 // 6-5: 검색 기능 (현재 로드된 피드 안에서 클라이언트 사이드 필터링)
@@ -852,10 +865,12 @@ contentHtml = renderNotifReplyEntries(awaitingEntries, true);
 
 root.innerHTML = `
 <div class="notif-panel">
+<button id="notif-perm-btn" class="btn-secondary" style="display:none; margin-bottom:10px;" onclick="requestNotifPermission()">🔔 브라우저 알림 켜기</button>
 <div class="notif-tabs">${tabsHtml}</div>
 <div class="notif-tab-content">${contentHtml || '<div class="notif-empty">여기엔 알림이 없어요.</div>'}</div>
 </div>
 `;
+updateNotifPermButton();
 }
 
 function switchNotifTab(key) {
@@ -1362,6 +1377,46 @@ let idleTimer = null;
 // 6-4: 알림함 "댓글 필요" 정확도 개선 - 참여한 스레드의 미확인 답글만 표시
 let threadSeenMap = {};
 let notifNewPostsCache = { loaded: false, items: [] };
+let lastNotifCount = null;
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(function () {});
+}
+
+function showLocalNotification(title, body) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(function (reg) {
+      reg.showNotification(title, { body: body, icon: './icon-192.png', badge: './icon-192.png' });
+    }).catch(function () {
+      try { new Notification(title, { body: body, icon: './icon-192.png' }); } catch (e) {}
+    });
+  } else {
+    try { new Notification(title, { body: body, icon: './icon-192.png' }); } catch (e) {}
+  }
+}
+
+function requestNotifPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(function (perm) {
+      updateNotifPermButton();
+    });
+  }
+}
+
+function updateNotifPermButton() {
+  const btn = document.getElementById('notif-perm-btn');
+  if (!btn) return;
+  if (typeof Notification === 'undefined') { btn.style.display = 'none'; return; }
+  if (Notification.permission === 'granted') {
+    btn.style.display = 'none';
+  } else if (Notification.permission === 'denied') {
+    btn.style.display = 'none';
+  } else {
+    btn.style.display = 'inline-flex';
+  }
+}
 
 async function loadNotifNewPosts() {
 try {
