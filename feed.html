@@ -453,6 +453,7 @@ if (teamLabelEl) teamLabelEl.style.display = view === 'feed' ? '' : 'none';
 if (view === 'notif') {
 renderNotif();
 callApi('markChecked', {}).catch(() => {});
+loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); });
 }
 if (view === 'users') {
 loadUsers();
@@ -492,6 +493,7 @@ await loadFeed();
 setupTeamLabelControl();
 await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
+await loadNotifNewPosts();
 updateNotifBadge();
 startPolling();
 setupIdleTimer();
@@ -691,9 +693,8 @@ function renderLoadMoreButton() {
 
 function updateNotifBadge() {
 const showAwaiting = session.role === '팀장' || session.role === '임원';
-let count = 0;
+let count = notifNewPostsCache.items.length;
 feedState.posts.forEach(function (p) {
-if (p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; })) count++;
 count += (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); }).length;
 if (showAwaiting) count += (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); }).length;
 });
@@ -789,9 +790,7 @@ let notifActiveTab = '새 게시물';
 function renderNotif() {
 const root = document.getElementById('notif-view');
 
-const newPosts = feedState.posts.filter(function (p) {
-return p.needsAttention && (p.items || []).some(function (it) { return !it.confirmed; });
-});
+const newPosts = notifNewPostsCache.items;
 
 const replyEntries = [];
 const awaitingEntries = [];
@@ -1341,6 +1340,21 @@ let idleTimer = null;
 
 // 6-4: 알림함 "댓글 필요" 정확도 개선 - 참여한 스레드의 미확인 답글만 표시
 let threadSeenMap = {};
+let notifNewPostsCache = { loaded: false, items: [] };
+
+async function loadNotifNewPosts() {
+try {
+const res = await callApi('getNotifications', {});
+if (res.ok) {
+notifNewPostsCache.items = (res.items || []).map(function (it) {
+return { id: it.postId, materialName: it.materialName, title: it.title, summary: it.summary, createdAt: it.createdAt, items: it.items };
+});
+notifNewPostsCache.loaded = true;
+}
+} catch (e) {
+// 실패하면 빈 배열 유지
+}
+}
 
 async function loadThreadSeenMap() {
 try {
