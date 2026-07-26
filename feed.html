@@ -835,6 +835,8 @@ return p.needsAttention && (p.items || []).some(function (it) { return !it.confi
 
 const newPostsItemCount = newPosts.reduce(function (sum, p) { return sum + (p.items || []).filter(function (it) { return !it.confirmed; }).length; }, 0);
 
+const newPostEntries = newPosts.map(function (p) { return { post: p, items: (p.items || []).filter(function (it) { return !it.confirmed; }) }; });
+
 const replyEntries = [];
 const awaitingEntries = [];
 notifNewPostsCache.items.forEach(function (p) {
@@ -865,7 +867,7 @@ return `<button class="notif-tab ${t.key === notifActiveTab ? 'active' : ''}" on
 
 let contentHtml = '';
 if (notifActiveTab === '새 게시물') {
-contentHtml = renderNotifNewPosts(newPosts);
+contentHtml = renderNotifNewPosts(newPostEntries);
 } else if (notifActiveTab === '댓글 필요') {
 contentHtml = renderNotifReplyEntries(replyEntries, false);
 } else if (notifActiveTab === '답변 요청') {
@@ -886,16 +888,22 @@ notifActiveTab = key;
 renderNotif();
 }
 
-function renderNotifNewPosts(newPosts) {
-if (!newPosts.length) return '';
-return newPosts.map(function (p) {
-const targetItem = (p.items || []).find(function (it) { return !it.confirmed; }) || (p.items || [])[0] || { itemId: '' };
+function renderNotifNewPosts(entries) {
+if (!entries.length) return '';
+return entries.map(function (entry) {
+const p = entry.post;
+const rowsHtml = entry.items.map(function (it) {
 return `
-<div class="notif-item" onclick="goToItem('${p.id}', '${targetItem.itemId}')">
-<div class="flex1">
+<div class="notif-reply-row" onclick="goToItem('${p.id}', '${it.itemId}')">
+<div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
+</div>
+`;
+}).join('');
+return `
+<div class="notif-post-card">
 <div class="top-line"><span class="material-badge" style="font-size:11px;padding:1px 8px;">${escapeHtml(p.materialName || '')}</span> ${escapeHtml(fmtTime(p.createdAt))}</div>
 <div class="headline">${escapeHtml(truncate(p.summary || p.title || '', 36))}</div>
-</div>
+<div class="notif-reply-list">${rowsHtml}</div>
 </div>
 `;
 }).join('');
