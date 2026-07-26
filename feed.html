@@ -501,7 +501,7 @@ document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
 }
-if (session.role === '팀장' || session.role === '임원' || session.email === ADMIN_EMAIL) {
+if (session.role !== '일반') {
 document.getElementById('nav-notif').style.display = 'flex';
 }
 
