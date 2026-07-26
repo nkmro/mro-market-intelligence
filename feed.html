@@ -936,6 +936,25 @@ function goToItem(postId, itemId) {
   switchView('feed');
   setTimeout(async () => {
     const key = postId + '-' + itemId;
+
+    // 팀 필터/검색어가 걸려 있으면 대상 게시물이 렌더링에서 제외되어 row가 안 만들어질 수 있으므로 먼저 해제
+    let filtersCleared = false;
+    if (feedState.teamFilter) {
+      feedState.teamFilter = '';
+      const teamSelectEl = document.getElementById('team-label');
+      if (teamSelectEl && teamSelectEl.tagName === 'SELECT') teamSelectEl.value = '';
+      filtersCleared = true;
+    }
+    if (feedState.searchQuery) {
+      feedState.searchQuery = '';
+      const searchInputEl = document.getElementById('search-input');
+      if (searchInputEl) searchInputEl.value = '';
+      const clearBtnEl = document.getElementById('search-clear-btn');
+      if (clearBtnEl) clearBtnEl.classList.remove('show');
+      filtersCleared = true;
+    }
+    if (filtersCleared) renderFeed();
+
     let row = document.getElementById('row-' + key);
     if (!row) {
       const existsInFeed = feedState.posts.some(function (p) { return p.id === postId; });
