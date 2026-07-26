@@ -453,10 +453,10 @@ function saveSession(res) {
   }));
 }
 
-function showSuccess(res) {
+async function showSuccess(res) {
   const optIn = document.getElementById('notif-optin');
   if (optIn && optIn.checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    try { Notification.requestPermission(); } catch (e) {}
+    try { await Notification.requestPermission(); } catch (e) {}
   }
   window.location.href = 'feed.html';
 }
