@@ -1488,8 +1488,9 @@ if (res.ok && res.seenMap) threadSeenMap = res.seenMap;
 function hasUnreadReply(postId, item) {
 const comments = item.comments || [];
 if (!comments.length) return false;
+const isOverseer = session.role === '팀장' || session.role === '임원' || session.email === ADMIN_EMAIL;
 const participant = comments.some(function (c) { return c.authorEmail === session.email; });
-if (!participant) return false;
+if (!isOverseer && !participant) return false;
 const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
 const last = sorted[sorted.length - 1];
 if (last.authorEmail === session.email) return false;
