@@ -621,6 +621,7 @@ doLogout();
 return;
 }
 feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
+await loadNotifNewPosts();
 updateNotifBadge();
 
 const postsToRefresh = new Set();
