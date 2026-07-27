@@ -366,6 +366,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic">📦</span> 품목 관리</div>
     <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic">👥</span> 사용자 현황</div>
     <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic">⚙️</span> 설정</div>
+    <div class="nav-item" id="nav-gas-admin" onclick="openGasAdmin()" style="display:none;"><span class="ic">🔧</span> Gmail 재인증</div>
     <div class="sidebar-bottom">
       <div class="sidebar-me" id="sidebar-me"></div>
       <div class="sidebar-logout" onclick="doLogout()">🚪 로그아웃</div>
@@ -396,6 +397,11 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
+const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
+function openGasAdmin() {
+  alert('Apps Script 편집기가 새 탭으로 열립니다.\n\n1) 상단 함수 선택 드롭다운에서 testGmailAuthReauth 선택\n2) ▶ 실행 클릭\n3) 권한 요청 팝업이 뜨면: 권한 검토 → 계정 선택 → 고급 → 이동(안전하지 않음) → 허용\n\n이 과정은 Gmail 비밀번호를 바꾸신 후 등 권한이 풀렸을 때만 필요합니다.');
+  window.open(GAS_PROJECT_URL, '_blank');
+}
 
 let session = null;
 let feedState = { posts: [], nextCursor: 0, loadingMore: false };
@@ -510,6 +516,7 @@ document.getElementById('nav-items').style.display = 'flex';
 }
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-settings').style.display = 'flex';
+document.getElementById('nav-gas-admin').style.display = 'flex';
 }
 await loadFeed();
 setupTeamLabelControl();
