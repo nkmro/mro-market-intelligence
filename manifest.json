@@ -1,6 +1,6 @@
 {
-  "name": "MRO 자재시황관리",
-  "short_name": "MRO 시황",
+  "name": "MRO 시황관리",
+  "short_name": "MRO 시황관리",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
