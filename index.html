@@ -504,6 +504,7 @@ if ('serviceWorker' in navigator) {
   const wrap = document.getElementById('install-prompt-wrap');
   const link = document.getElementById('install-app-link');
   if (isStandalone || !wrap) return;
+  wrap.style.display = 'block';
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let deferredPrompt = null;
