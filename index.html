@@ -26,6 +26,7 @@
     color: var(--text);
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 24px;
@@ -151,10 +152,11 @@
   </div>
 </div>
 
+<div class="install-prompt-wrap" id="install-prompt-wrap" style="max-width:380px; margin:0 auto 12px; text-align:center; font-size:13px; color:#6b6a66; line-height:1.5; display:none;">
+  첫 방문이시면, <a href="#" id="install-app-link" style="color:#1a6b52; text-decoration:underline; font-weight:700;">앱 바로가기 설치</a>를 권장해요
+</div>
+
 <div class="card">
-  <div class="install-prompt-wrap" id="install-prompt-wrap" style="margin:0 0 16px; text-align:center; font-size:13px; color:#6b6a66; line-height:1.5; display:none;">
-    첫 방문이시면, <a href="#" id="install-app-link" style="color:#1a6b52; text-decoration:underline; font-weight:500;">앱 바로가기 설치</a>를 권장해요
-  </div>
   <div class="brand">
     <div class="brand-title">MRO 자재 시황</div>
     <div class="brand-sub">AI 기반 원자재 뉴스 모니터링 시스템</div>
