@@ -376,7 +376,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
   <div class="content">
     <div class="topbar">
       <button class="hamburger" onclick="toggleDrawer(true)">☰</button>
-      <div class="search-box"><span>🔍</span><input type="text" id="search-input" placeholder="품목, 원자재 검색" oninput="handleSearchInput()"><button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()">✕</button></div>
+      <div class="search-box"><span>🔍</span><input type="text" id="search-input" placeholder="품목, 원자재, 뉴스 검색" oninput="handleSearchInput()"><button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()">✕</button></div>
       <div class="team-select" id="team-label">동부팀 전체</div>
     </div>
 
@@ -772,6 +772,7 @@ lastNotifCount = count;
 // 6-5: 검색 기능 (현재 로드된 피드 안에서 클라이언트 사이드 필터링)
 function matchesSearch(post, query) {
 if ((post.materialName || '').toLowerCase().includes(query)) return true;
+if ((post.summary || '').toLowerCase().includes(query)) return true;
 return (post.items || []).some(function (it) {
 return (it.customer || '').toLowerCase().includes(query) || (it.itemName || '').toLowerCase().includes(query);
 });
