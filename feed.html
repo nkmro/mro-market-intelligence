@@ -1579,7 +1579,8 @@ const SETTINGS_META = {
 '수집로그보관기간': { label: '수집 로그 보관 기간', desc: '수집일시 기준 보관 일수(일). 지나면 자동 삭제됩니다.' },
 '기사최대경과일': { label: '기사 최대 경과일', desc: '발행일 기준 최대 허용 경과일수(일). 이보다 오래된 기사는 제외됩니다.' },
 '무활동로그아웃분': { label: '무활동 자동 로그아웃', desc: '프론트엔드에서 무활동 시 자동 로그아웃되는 시간(분).' },
-'비밀번호만료일수': { label: '비밀번호 만료 일수', desc: '비밀번호를 강제로 다시 변경해야 하는 주기(일).' }
+'비밀번호만료일수': { label: '비밀번호 만료 일수', desc: '비밀번호를 강제로 다시 변경해야 하는 주기(일).' },
+'백업시각': { label: '백업 시각', desc: '매일 자동 백업이 실행되는 시각(0~23시). Drive에 DB/백엔드/프론트 스냅샷을 저장하고, 15일 지난 폴더는 자동 삭제됩니다.' }
 };
 
 async function loadSettingsPage() {
@@ -1591,21 +1592,22 @@ if (!res.ok) {
 root.innerHTML = `<div class="feed-empty">설정을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
 return;
 }
-renderSettingsPage(res.settings || {});
+renderSettingsPage(res.settings || {}, res.descriptions || {});
 } catch (e) {
 root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
 }
 }
 
-function renderSettingsPage(settings) {
+function renderSettingsPage(settings, descriptions) {
 const root = document.getElementById('settings-view');
 const rowsHtml = Object.keys(settings).map(function (key) {
 const meta = SETTINGS_META[key] || { label: key, desc: '' };
+const desc = (descriptions && descriptions[key]) || meta.desc || '';
 return `
 <div class="settings-row">
 <div class="settings-row-label">
 <div class="settings-row-title">${escapeHtml(meta.label)}</div>
-${meta.desc ? `<div class="settings-row-desc">${escapeHtml(meta.desc)}</div>` : ''}
+${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}
 </div>
 <input type="text" class="form-input settings-row-input" data-key="${escapeHtml(key)}" value="${escapeHtml(String(settings[key]))}">
 </div>
