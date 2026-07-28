@@ -1760,7 +1760,7 @@ overlay.innerHTML = `
 <div class="form-group">
 <label class="form-label">주요 원자재 (한글)</label>
 <div id="material-tags" class="material-tags"></div>
-<button type="button" class="ai-suggest-btn" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button>
+<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button>
 <div class="form-hint">품목명을 바꾸면 자동으로 다시 추천됩니다</div>
 </div>
 <div class="form-group">
@@ -1807,13 +1807,19 @@ const nameInput = document.getElementById('item-name-input');
 if (!nameInput) return;
 const itemName = nameInput.value.trim();
 if (!itemName) return;
+const btn = document.getElementById('ai-suggest-btn');
+const btnOrigText = btn ? btn.textContent : null;
+if (btn) { btn.disabled = true; btn.textContent = '⏳ 추천 받는 중...'; }
 try {
 const res = await callApi('suggestMaterials', { itemName: itemName });
 if (res.ok && res.materials) {
 itemsState.selectedMaterials = res.materials;
 renderMaterialTags();
 }
-} catch (e) {}
+} catch (e) {
+} finally {
+if (btn) { btn.disabled = false; btn.textContent = btnOrigText; }
+}
 }
 
 function onCustomerInput() {
