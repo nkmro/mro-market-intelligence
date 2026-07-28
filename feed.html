@@ -639,6 +639,7 @@ if (known === undefined) return;
 if (known !== sig.commentCount) postsToRefresh.add(sig.postId);
 });
 
+let feedNeedsRerender = false;
 for (const postId of postsToRefresh) {
 await loadComments(postId);
 const pc = postComments[postId];
@@ -648,6 +649,19 @@ pc.comments.forEach(function (c) { counts[c.itemId] = (counts[c.itemId] || 0) + 
 Object.keys(counts).forEach(function (itemId) {
 itemCommentCounts[postId + '-' + itemId] = counts[itemId];
 });
+// 확인 N/6 배지가 폴링 때 갱신되지 않던 문제 수정: 댓글 여부에 따라
+// 품목별 confirmed/commentCount와 게시물의 confirmedCount를 다시 계산한다.
+const post = feedState.posts.find(function (p) { return String(p.id) === String(postId); });
+if (post && post.items) {
+post.items.forEach(function (it) {
+const c = counts[it.itemId] || 0;
+it.commentCount = c;
+it.confirmed = c > 0;
+});
+post.confirmedCount = post.items.filter(function (it) { return it.confirmed; }).length;
+post.totalCount = post.items.length;
+feedNeedsRerender = true;
+}
 }
 Object.keys(threadState).forEach(function (key) {
 if (key.indexOf(postId + '-') === 0 && threadState[key].open) {
@@ -656,6 +670,7 @@ renderThread(postId, itemId);
 }
 });
 }
+if (feedNeedsRerender) renderFeed();
 } catch (e) {
 // 조용히 실패, 다음 주기에 재시도
 }
