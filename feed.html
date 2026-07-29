@@ -806,7 +806,7 @@ el.textContent = teamLabel(session.team || '') + ' 전체';
 return;
 }
 const teams = Array.from(new Set(feedState.posts.flatMap(function (p) { return (p.items || []).map(function (it) { return it.team; }); }).filter(Boolean)));
-feedState.teamFilter = session.team || '';
+feedState.teamFilter = session.team || '동부';
 const optionsHtml = ['<option value="">전체 팀</option>'].concat(teams.map(function (t) {
 return '<option value="' + escapeHtml(t) + '" ' + (t === feedState.teamFilter ? 'selected' : '') + '>' + escapeHtml(teamLabel(t)) + '</option>';
 })).join('');
