@@ -270,11 +270,16 @@ const ERROR_MESSAGES = {
   CODE_EXPIRED_OR_NOT_FOUND: '인증코드가 만료됐어요. 다시 요청해주세요.',
   CODE_MISMATCH: '인증코드가 일치하지 않아요.',
   CODE_MISMATCH_OR_EXPIRED: '인증코드가 일치하지 않거나 만료됐어요.',
-  SERVER_ERROR: '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.'
+  SERVER_ERROR: '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.',
+    TOO_MANY_ATTEMPTS: '시도 횟수를 초과했어요. 인증코드를 다시 요청해주세요.',
+    TOO_MANY_REQUESTS: '너무 많이 요청하셨어요. 1시간 후 다시 시도해주세요.'
 };
 
-function errMsg(code) {
-  return ERROR_MESSAGES[code] || ('오류가 발생했어요 (' + code + ')');
+function errMsg(code, res) {
+    if ((code === 'CODE_MISMATCH' || code === 'CODE_MISMATCH_OR_EXPIRED') && res && typeof res.remainingAttempts === 'number') {
+          return '인증코드가 일치하지 않아요. (5회 중 ' + res.remainingAttempts + '회 남았습니다!)';
+    }
+    return ERROR_MESSAGES[code] || ('오류가 발생했어요 (' + code + ')');
 }
 
 async function callApi(action, body) {
@@ -400,7 +405,7 @@ async function doVerifySignup() {
   startLoadingFill('btn-signup-verify');
   try {
     const res = await callApi('verifySignup', { email, code });
-    if (!res.ok) { cancelLoadingFill('btn-signup-verify'); showError('signup-verify-error', errMsg(res.error)); return; }
+        if (!res.ok) { cancelLoadingFill('btn-signup-verify'); showError('signup-verify-error', errMsg(res.error, res)); return; }
     await finishLoadingFill('btn-signup-verify');
     document.getElementById('signup-password').value = document.getElementById('signup-password').value;
     showTab('login');
@@ -447,7 +452,7 @@ async function doConfirmReset() {
   startLoadingFill('btn-reset-confirm');
   try {
     const res = await callApi('confirmPasswordReset', { email, code, newPassword });
-    if (!res.ok) { cancelLoadingFill('btn-reset-confirm'); showError('reset-confirm-error', errMsg(res.error)); return; }
+        if (!res.ok) { cancelLoadingFill('btn-reset-confirm'); showError('reset-confirm-error', errMsg(res.error, res)); return; }
     await finishLoadingFill('btn-reset-confirm');
     showTab('login');
     document.getElementById('login-email').value = email;
