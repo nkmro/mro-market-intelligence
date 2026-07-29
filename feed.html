@@ -1019,7 +1019,7 @@ function goToItem(postId, itemId) {
     setTimeout(() => row.classList.remove('flash'), 1600);
     const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
     if (!st.open) toggleThread(postId, itemId);
-    markThreadSeenLocal(postId, itemId);
+        if (session.role !== '담당') { markThreadSeenLocal(postId, itemId); }
   }, 50);
 }
 
@@ -1074,7 +1074,7 @@ async function toggleThread(postId, itemId) {
   panel.classList.toggle('open', st.open);
   if (!st.open) return;
 
-  markThreadSeenLocal(postId, itemId);
+    if (session.role !== '담당') { markThreadSeenLocal(postId, itemId); }
 
   if (item && !item.confirmed) {
     renderThread(postId, itemId);
@@ -1257,7 +1257,8 @@ async function submitComment(postId, itemId, parentCommentId) {
       const idx = feedState.posts.findIndex(p => String(p.id) === String(postId));
       if (idx !== -1) feedState.posts[idx] = res.updatedPost;
     }
-    renderFeed();
+        markThreadSeenLocal(postId, itemId);
+        renderFeed();
     updateNotifBadge();
 
     renderThread(postId, itemId);
