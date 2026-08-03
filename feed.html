@@ -843,7 +843,7 @@ if ((query || teamFilter) && !list.length) {
 root.innerHTML = `<div class="feed-empty">조건에 맞는 게시물이 없어요.</div>`;
 return;
 }
-const hasMore = !query && !teamFilter && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
+const hasMore = !query && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
 root.innerHTML = list.map(renderPost).join('') +
 (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 }
