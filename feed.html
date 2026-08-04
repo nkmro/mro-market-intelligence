@@ -1671,13 +1671,17 @@ let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filte
 async function loadItems() {
 const root = document.getElementById('items-view');
 root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
-try {
-const results = await Promise.all([
+// Promise.all 대신 allSettled 사용: 셋 중 하나가 일시적으로 실패해도
+// 나머지가 성공했으면 화면은 정상적으로 띄운다 (구글 앱스 스크립트는 동시 요청에
+// 가끔 삐끗할 수 있어, 하나의 실패가 전체를 막아버리지 않도록 하기 위함).
+const settled = await Promise.allSettled([
 callApi('getItems', {}),
 callApi('getCustomers', {}),
 callApi('getUsers', {})
 ]);
-const itemsRes = results[0], customersRes = results[1], usersRes = results[2];
+const itemsRes = settled[0].status === 'fulfilled' ? settled[0].value : { ok: false, error: 'NETWORK_ERROR' };
+const customersRes = settled[1].status === 'fulfilled' ? settled[1].value : { ok: false };
+const usersRes = settled[2].status === 'fulfilled' ? settled[2].value : { ok: false };
 if (!itemsRes.ok) {
 root.innerHTML = `<div class="feed-empty">품목 목록을 불러오지 못했어요. (${escapeHtml(itemsRes.error || 'SERVER_ERROR')})</div>`;
 return;
@@ -1690,9 +1694,6 @@ itemsState.filterTeam = session.team || '';
 }
 itemsState.loaded = true;
 renderItemsView();
-} catch (e) {
-root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
-}
 }
 
 function renderItemsView() {
