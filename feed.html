@@ -625,6 +625,17 @@ function startPolling() {
   pollTimer = setInterval(pollForUpdates, 30000);
 }
 
+// PWA/브라우저가 백그라운드에서 동결(freeze)됐다가 다시 화면에 보이게 될 때(iOS PWA 복귀, PC 절전 복귀,
+// 크롬 메모리 절약 모드 복귀 등) 오래된(stale) 알림/피드 상태가 잠깐 잘못 보이는 문제를 막기 위해,
+// 화면이 다시 보이는 즉시 최신 데이터로 강제 갱신한다.
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && session && session.sessionToken) {
+    loadFeed();
+    loadNotifNewPosts().then(updateNotifBadge);
+    pollForUpdates();
+  }
+});
+
 async function pollForUpdates() {
 try {
 const res = await callApi('pollSignal', {});
