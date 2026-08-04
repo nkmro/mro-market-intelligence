@@ -356,9 +356,11 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 </head>
 <body>
 
+<div id="auth-loading-overlay" style="position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;color:#666;z-index:9999;">불러오는 중...</div>
+
 <div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer(false)"></div>
 
-<div class="shell">
+<div class="shell" id="app-shell" style="display:none;">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-title-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px;"><div class="sidebar-title">MRO 시황</div><button id="notif-perm-btn" style="display:none; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:13px; color:var(--accent); padding:2px 4px; white-space:nowrap;" onclick="requestNotifPermission()"><span style="font-size:15px;">🔔</span>알림 켜기</button></div>
     <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic">🏠</span> 피드</div>
@@ -503,6 +505,10 @@ await proceedAfterAuth();
 })();
 
 async function proceedAfterAuth() {
+const feedOk = await loadFeed();
+if (!feedOk) return; // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
+document.getElementById('app-shell').style.display = 'flex';
+document.getElementById('auth-loading-overlay').style.display = 'none';
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -518,7 +524,6 @@ if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-settings').style.display = 'flex';
 document.getElementById('nav-gas-admin').style.display = 'flex';
 }
-await loadFeed();
 setupTeamLabelControl();
 await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
@@ -530,6 +535,8 @@ setupIdleTimer();
 }
 
 function showForcedPasswordChangeOverlay() {
+document.getElementById('app-shell').style.display = 'flex';
+document.getElementById('auth-loading-overlay').style.display = 'none';
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 const overlay = document.createElement('div');
 overlay.className = 'item-form-overlay';
@@ -683,18 +690,20 @@ async function loadFeed() {
     if (!res.ok) {
       if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
         doLogout();
-        return;
+        return false;
       }
       root.innerHTML = `<div class="feed-empty">피드를 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
-      return;
+      return true;
     }
     feedState.posts = res.posts || [];
     primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     renderFeed();
     if (notifNewPostsCache.loaded) updateNotifBadge();
+    return true;
   } catch (e) {
     root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요. 새로고침 후 다시 시도해주세요.</div>`;
+    return true;
   }
 }
 
