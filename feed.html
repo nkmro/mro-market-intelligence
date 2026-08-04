@@ -642,8 +642,7 @@ function refreshOnResume() {
   // 살짝 지연 후 요청하고, 그래도 실패하면 한번 더 재시도한다.
   setTimeout(function () {
     loadFeed();
-    loadNotifNewPosts().then(updateNotifBadge);
-    pollForUpdates();
+    pollForUpdates(); // 알림 배지 갱신은 pollForUpdates 내부에서 처리. (예전엔 여기서 loadNotifNewPosts를 또 호출해 동시에 두 번 요청이 나가면서, 나중에 도착한 오래된 응답이 배지/푸시를 잘못된 값으로 갱신했다가 몇 초 뒤 저절로 정정되는 레이스가 있었음)
     if (currentView === 'items') loadItems();
     if (currentView === 'notif') { loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); }); }
     if (currentView === 'users') loadUsers();
@@ -1498,6 +1497,7 @@ let idleTimer = null;
 let threadSeenMap = {};
 let notifNewPostsCache = { loaded: false, items: [] };
 let lastNotifCount = null;
+let notifFetchSeq = 0; // 알림 갱신 요청의 최신 순번 추적: 오래된 응답이 새 응답을 덮어써 배지/푸시가 잘못된 값으로 떴다가 몇 초 뒤 저절로 정정되는 레이스 방지
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(function () {});
@@ -1539,8 +1539,10 @@ function updateNotifPermButton() {
 }
 
 async function loadNotifNewPosts() {
+const mySeq = ++notifFetchSeq;
 try {
 const res = await callApi('getNotifications', {});
+if (mySeq !== notifFetchSeq) return; // 이미 더 최신 요청이 시작됐으면 이 오래된 응답은 폐기 (out-of-order 응답이 최신 데이터를 덮어쓰는 레이스 방지)
 if (res.ok) {
 notifNewPostsCache.items = (res.items || []).map(function (it) {
 return { id: it.postId, materialName: it.materialName, title: it.title, summary: it.summary, createdAt: it.createdAt, items: it.items, needsAttention: it.needsAttention };
