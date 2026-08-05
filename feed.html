@@ -790,6 +790,35 @@ notifNewPostsCache.items.forEach(function (p) {
 count += (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); }).length;
 if (showAwaiting) count += (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); }).length;
 });
+try {
+  callApi('clientDebugLog', {
+    kind: 'notifBadge',
+    at: new Date().toISOString(),
+    count: count,
+    newItemsCount: newItemsCount,
+    threadSeenMapSize: Object.keys(threadSeenMap || {}).length,
+    posts: notifNewPostsCache.items.map(function (p) {
+      return {
+        postId: p.id,
+        needsAttention: p.needsAttention,
+        items: (p.items || []).map(function (it) {
+          var c = it.comments || [];
+          var sorted = c.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+          var last = sorted.length ? sorted[sorted.length - 1] : null;
+          return {
+            itemId: it.itemId,
+            confirmed: it.confirmed,
+            commentCount: c.length,
+            lastAuthor: last ? last.authorEmail : null,
+            lastAt: last ? last.createdAt : null,
+            seenAt: threadSeenMap[p.id + '-' + it.itemId] || null,
+            unread: hasUnreadReply(p.id, it)
+          };
+        })
+      };
+    })
+  }).catch(function () {});
+} catch (e) {}
 const badge = document.getElementById('notif-badge');
 if (count > 0) {
 badge.textContent = count;
