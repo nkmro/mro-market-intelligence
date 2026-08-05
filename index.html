@@ -283,11 +283,21 @@ function errMsg(code, res) {
 }
 
 async function callApi(action, body) {
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify(Object.assign({ action: action }, body))
-  });
-  return res.json();
+  // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
+  // 요청을 중단시킨다. 이렇게 abort되면 fetch가 예외를 던지고, 그 예외는 각 호출부(doLogin 등)의
+  // catch(e)로 이어져 기존 재시도/에러 표시 로직이 정상적으로 작동한다.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify(Object.assign({ action: action }, body)),
+      signal: controller.signal
+    });
+    return await res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function showTab(name) {
