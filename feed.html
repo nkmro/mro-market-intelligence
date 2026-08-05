@@ -431,16 +431,23 @@ async function callApi(action, body) {
   const maxAttempts = RETRYABLE_API_ACTIONS.has(action) ? 3 : 1;
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
+    // 요청을 중단시킨다. abort되면 fetch가 예외를 던져 아래 catch(e)의 재시도 루프로 이어진다.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
-        body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body))
+        body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body)),
+        signal: controller.signal
       });
       return await res.json();
     } catch (e) {
       lastErr = e;
       // 구글 앱스스크립트 응답이 간헐적으로 실패(HTML 오류 페이지 등)하는 경우 대비 재시도.
       if (attempt < maxAttempts - 1) await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
   throw lastErr;
