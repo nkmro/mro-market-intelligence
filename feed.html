@@ -744,6 +744,11 @@ async function loadFeed(isRetry) {
         doLogout();
         return false;
       }
+      // loadItems()는 !ok 응답에 대해 한번 자동 재시도하는데 loadFeed()는 그렇지 않았던 것이
+      // 실제 원인으로 확인됨: 백그라운드 복귀 직후 POST 요청이 앱스스크립트 인프라의 리다이렉트
+      // 과정에서 간헐적으로 GET으로 바뀌어 처리되며 ok:false, error:'NOT_FOUND' 응답이 오는
+      // 사례를 실제 화면(스크린샷)과 코드로 확인했다. loadItems()와 동일하게 한번만 재시도한다.
+      if (!isRetry) { setTimeout(function () { loadFeed(true); }, 1800); return true; }
       root.innerHTML = `<div class="feed-empty">피드를 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
       return true;
     }
