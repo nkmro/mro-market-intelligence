@@ -355,13 +355,13 @@ function cancelLoadingFill(btnId) {
   fill.style.clipPath = 'inset(0 100% 0 0)';
 }
 
-async function doLogin() {
-  hideError('login-error');
+async function doLogin(isRetry) {
+  if (!isRetry) hideError('login-error');
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
-  if (!email || !password) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+  if (!isRetry && (!email || !password)) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  startLoadingFill('btn-login');
+  if (!isRetry) startLoadingFill('btn-login');
   try {
     const res = await callApi('login', { email, password });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
@@ -369,6 +369,11 @@ async function doLogin() {
     saveSession(res);
     showSuccess(res);
   } catch (e) {
+    // 앱스스크립트 웹앱이 간헐적으로 응답에 실패(콜드 스타트, 리다이렉트 중 POST->GET 전환 등)하는
+    // 경우에 대비해 한번만 자동 재시도한다. catch(e)로 온다는 건 서버의 login 로직 자체가 실행되지
+    // 않았다는 뜻이라(응답을 못 받았을 뿐 서버가 비밀번호를 검사하지도 않았음), 재시도해도 로그인
+    // 실패 횟수(계정 잠금 카운터)가 중복으로 올라갈 위험이 없다.
+    if (!isRetry) { setTimeout(function () { doLogin(true); }, 1500); return; }
     cancelLoadingFill('btn-login');
     showError('login-error', errMsg('SERVER_ERROR'));
   }
