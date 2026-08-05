@@ -324,6 +324,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .material-tag-remove { cursor: pointer; color: var(--text-muted); font-weight: 700; }
 .ai-suggest-btn { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.item-code-hint { font-weight: 400; color: var(--text-muted); }
 .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .btn-secondary { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 9px 18px; font-size: 13px; cursor: pointer; }
 .btn-primary { border: none; background: var(--text); color: #fff; border-radius: 6px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -1930,7 +1931,7 @@ overlay.innerHTML = `
 </div>
 </div>
 <div class="form-group">
-<label class="form-label">품목명</label>
+<label class="form-label">품목명${item ? ` <span class="item-code-hint">(${escapeHtml(item.itemId)})</span>` : ''}</label>
 <input type="text" id="item-name-input" class="form-input" placeholder="예: 산업용 고무장갑" value="${item ? escapeHtml(item.itemName) : ''}" oninput="onItemNameChange()">
 </div>
 <div class="form-row">
