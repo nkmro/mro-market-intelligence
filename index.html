@@ -171,7 +171,10 @@
 
     <!-- 로그인 -->
     <div class="pane active" id="pane-login">
-      <label for="login-email">이메일</label>
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+      <label for="login-email" style="margin:10px 0 4px;">이메일</label>
+      <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted, #888); font-weight:400; cursor:pointer; margin:0;"><input type="checkbox" id="remember-email" checked style="width:13px; height:13px;">이메일 저장</label>
+      </div>
       <input type="email" id="login-email" placeholder="name@nkmro.com" autocomplete="username">
       <label for="login-password">비밀번호</label>
       <input type="password" id="login-password" placeholder="6자 이상" autocomplete="current-password">
@@ -371,6 +374,14 @@ async function doLogin(isRetry) {
   const password = document.getElementById('login-password').value;
   if (!isRetry && (!email || !password)) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
+  if (!isRetry) {
+    const rememberEmail = document.getElementById('remember-email');
+    if (rememberEmail && rememberEmail.checked) {
+      localStorage.setItem('mro_saved_email', email);
+    } else {
+      localStorage.removeItem('mro_saved_email');
+    }
+  }
   if (!isRetry) startLoadingFill('btn-login');
   try {
     const res = await callApi('login', { email, password });
@@ -504,6 +515,26 @@ function doLogout() {
   document.getElementById('pane-success').classList.remove('active');
   showTab('login');
 }
+
+(function initRememberEmail() {
+  const checkbox = document.getElementById('remember-email');
+  const emailInput = document.getElementById('login-email');
+  if (!checkbox || !emailInput) return;
+  const rememberSetting = localStorage.getItem('mro_remember_email');
+  const savedEmail = localStorage.getItem('mro_saved_email');
+  checkbox.checked = rememberSetting === null ? true : rememberSetting === '1';
+  if (checkbox.checked && savedEmail) {
+    emailInput.value = savedEmail;
+  }
+  checkbox.addEventListener('change', function () {
+    localStorage.setItem('mro_remember_email', checkbox.checked ? '1' : '0');
+    if (!checkbox.checked) {
+      localStorage.removeItem('mro_saved_email');
+    } else if (emailInput.value.trim()) {
+      localStorage.setItem('mro_saved_email', emailInput.value.trim());
+    }
+  });
+})();
 
 (function init() {
   const saved = localStorage.getItem('mro_session');
