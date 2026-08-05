@@ -548,7 +548,7 @@ if (session.role !== '일반') {
 document.getElementById('nav-notif').style.display = 'flex';
 }
 
-if (session.role === '팀장' || session.email === ADMIN_EMAIL) {
+if (session.role === '팀장' || session.role === '담당' || session.email === ADMIN_EMAIL) {
 document.getElementById('nav-items').style.display = 'flex';
 }
 if (session.email === ADMIN_EMAIL) {
@@ -1777,8 +1777,15 @@ msg.textContent = '네트워크 오류가 발생했어요.';
 }
 }
 
-// ==== 품목 관리 (팀장 전용) ====
+// ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
 let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filterTeam: '', searchQuery: '', editingItemId: null, selectedMaterials: [] };
+
+// 담당은 품목 목록을 볼 수는 있지만(백엔드 getItems도 팀장/담당 모두 허용하며, 담당인 경우 자기 팀 항목만 반환하도록 서버측에서 필터링됨),
+// 등록/수정/저장(upsertItem)은 백엔드에서 팀장만 허용하므로 프론트에서도 버튼/입력을 미리 막아
+// 사용자가 눌러봤자 실패하는 상황(저장 실패 알림 등)을 겪지 않도록 한다.
+function canEditItems() {
+return session.role === '팀장' || session.email === ADMIN_EMAIL;
+}
 
 async function loadItems(isRetry) {
 const root = document.getElementById('items-view');
@@ -1831,8 +1838,8 @@ const root = document.getElementById('items-view');
 root.innerHTML = `
 <div class="items-toolbar">
 <input type="text" id="items-search-input" class="items-search-input" placeholder="자재코드, 고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${escapeHtml(itemsState.searchQuery || '')}">
-<select id="items-team-filter" onchange="onItemsTeamFilterChange()"></select>
-<button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>
+${canEditItems() ? '<select id="items-team-filter" onchange="onItemsTeamFilterChange()"></select>' : ''}
+${canEditItems() ? '<button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>' : ''}
 </div>
 <div class="items-scroll-top" id="items-scroll-top"><div id="items-scroll-top-inner"></div></div>
 <div class="items-table-wrap" id="items-table-wrap"></div>
@@ -1908,36 +1915,39 @@ renderItemsTable();
 }
 
 function openItemForm(itemId) {
+const canEdit = canEditItems();
+if (!itemId && !canEdit) return; // 방어: 뷰어 권한(담당)으로는 신규 등록 진입 불가 (버튼 자체가 없지만 이중 방어)
 const item = itemId ? itemsState.items.find(function (it) { return it.itemId === itemId; }) : null;
 itemsState.editingItemId = itemId;
 itemsState.selectedMaterials = item && item.materials ? item.materials.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
 const managerOptions = itemsState.teamUsers.map(function (u) {
 return `<option value="${escapeHtml(u.name)}" ${item && item.manager === u.name ? 'selected' : ''}>${escapeHtml(u.name)}</option>`;
 }).join('');
+const dis = canEdit ? '' : 'disabled';
 const overlay = document.createElement('div');
 overlay.className = 'item-form-overlay';
 overlay.id = 'item-form-overlay';
 overlay.innerHTML = `
 <div class="item-form-card">
 <div class="item-form-head">
-<div>📦 품목 ${item ? '수정' : '등록'}</div>
-<span class="team-lead-badge">팀장 전용</span>
+<div>📦 품목 ${canEdit ? (item ? '수정' : '등록') : '상세'}</div>
+<span class="team-lead-badge">${canEdit ? '팀장 전용' : '보기 전용'}</span>
 </div>
 <div class="form-group">
 <label class="form-label">고객사</label>
 <div class="customer-search-wrap">
-<input type="text" id="item-customer-input" class="form-input" placeholder="고객사명 검색 또는 입력" value="${item ? escapeHtml(item.customer) : ''}" oninput="onCustomerInput()" onblur="setTimeout(function(){ var b=document.getElementById('customer-suggestions'); if(b) b.style.display='none'; }, 200)" autocomplete="off">
+<input type="text" id="item-customer-input" class="form-input" placeholder="고객사명 검색 또는 입력" value="${item ? escapeHtml(item.customer) : ''}" ${canEdit ? `oninput="onCustomerInput()" onblur="setTimeout(function(){ var b=document.getElementById('customer-suggestions'); if(b) b.style.display='none'; }, 200)"` : dis} autocomplete="off">
 <div id="customer-suggestions" class="customer-suggestions" style="display:none;"></div>
 </div>
 </div>
 <div class="form-group">
 <label class="form-label">품목명${item ? ` <span class="item-code-hint">(${escapeHtml(item.itemId)})</span>` : ''}</label>
-<input type="text" id="item-name-input" class="form-input" placeholder="예: 산업용 고무장갑" value="${item ? escapeHtml(item.itemName) : ''}" oninput="onItemNameChange()">
+<input type="text" id="item-name-input" class="form-input" placeholder="예: 산업용 고무장갑" value="${item ? escapeHtml(item.itemName) : ''}" ${canEdit ? 'oninput="onItemNameChange()"' : dis}>
 </div>
 <div class="form-row">
 <div class="form-group">
 <label class="form-label">담당</label>
-<select id="item-manager-select" class="form-input">${managerOptions}</select>
+<select id="item-manager-select" class="form-input" ${dis}>${managerOptions}</select>
 </div>
 <div class="form-group">
 <label class="form-label">팀 / 지역</label>
@@ -1947,17 +1957,15 @@ overlay.innerHTML = `
 <div class="form-group">
 <label class="form-label">주요 원자재 (한글)</label>
 <div id="material-tags" class="material-tags"></div>
-<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button>
-<div class="form-hint">품목명을 바꾸면 자동으로 다시 추천됩니다</div>
+${canEdit ? '<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button><div class="form-hint">품목명을 바꾸면 자동으로 다시 추천됩니다</div>' : ''}
 </div>
 <div class="form-group">
 <label class="form-label">상태</label>
-<label style="margin-right:16px;"><input type="radio" name="item-status" value="활성" ${!item || item.status === '활성' ? 'checked' : ''}> 활성</label>
-<label><input type="radio" name="item-status" value="비활성" ${item && item.status === '비활성' ? 'checked' : ''}> 비활성</label>
+<label style="margin-right:16px;"><input type="radio" name="item-status" value="활성" ${!item || item.status === '활성' ? 'checked' : ''} ${dis}> 활성</label>
+<label><input type="radio" name="item-status" value="비활성" ${item && item.status === '비활성' ? 'checked' : ''} ${dis}> 비활성</label>
 </div>
 <div class="item-form-actions">
-<button class="btn-secondary" onclick="closeItemForm()">취소</button>
-<button class="btn-primary" onclick="saveItemForm()">저장</button>
+${canEdit ? '<button class="btn-secondary" onclick="closeItemForm()">취소</button><button class="btn-primary" onclick="saveItemForm()">저장</button>' : '<button class="btn-secondary" onclick="closeItemForm()">닫기</button>'}
 </div>
 </div>
 `;
@@ -1973,8 +1981,9 @@ if (overlay) overlay.remove();
 function renderMaterialTags() {
 const wrap = document.getElementById('material-tags');
 if (!wrap) return;
+const canEdit = canEditItems();
 wrap.innerHTML = itemsState.selectedMaterials.map(function (m, i) {
-return `<span class="material-tag">${escapeHtml(m)} <span class="material-tag-remove" onclick="removeMaterialTag(${i})">×</span></span>`;
+return `<span class="material-tag">${escapeHtml(m)}${canEdit ? ` <span class="material-tag-remove" onclick="removeMaterialTag(${i})">×</span>` : ''}</span>`;
 }).join('');
 }
 
@@ -2049,6 +2058,7 @@ alert('네트워크 오류가 발생했어요.');
 }
 
 async function saveItemForm() {
+if (!canEditItems()) return; // 방어: 뷰어 권한(담당)에서는 저장 버튼 자체가 없지만 이중 방어
 const customer = document.getElementById('item-customer-input').value.trim();
 const itemName = document.getElementById('item-name-input').value.trim();
 const manager = document.getElementById('item-manager-select').value;
