@@ -384,7 +384,7 @@ async function doLogin(isRetry) {
   }
   if (!isRetry) startLoadingFill('btn-login');
   try {
-    const res = await callApi('login', { email, password });
+    const res = await callApi('login', { email, password, isRetry: !!isRetry });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-login');
     saveSession(res);
