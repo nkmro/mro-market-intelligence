@@ -417,12 +417,31 @@ function getSession() {
   try { return JSON.parse(raw); } catch (e) { return null; }
 }
 
+// 재시도해도 안전한(부작용 없는 순수 조회) 액션만 나열. 댓글 작성/수정 등 쓰기 액션은
+// 서버가 이미 처리했는데 응답만 유실된 경우 재시도하면 중복 실행될 위험이 있어 제외한다.
+const RETRYABLE_API_ACTIONS = new Set([
+  'getFeed', 'getNotifications', 'getThreadSeen', 'getComments', 'getCustomers',
+  'getItems', 'getPostById', 'getSettings', 'getUsers', 'suggestMaterials',
+  'pollSignal', 'clientDebugLog'
+]);
+
 async function callApi(action, body) {
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body))
-  });
-  return res.json();
+  const maxAttempts = RETRYABLE_API_ACTIONS.has(action) ? 3 : 1;
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body))
+      });
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      // 구글 앱스스크립트 응답이 간헐적으로 실패(HTML 오류 페이지 등)하는 경우 대비 재시도.
+      if (attempt < maxAttempts - 1) await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
+    }
+  }
+  throw lastErr;
 }
 
 function escapeHtml(str) {
