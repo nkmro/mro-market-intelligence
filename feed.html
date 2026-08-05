@@ -1876,6 +1876,8 @@ const wrap = document.getElementById('items-table-wrap');
 const table = wrap ? wrap.querySelector('.items-table') : null;
 if (!topBar || !topInner || !wrap || !table) return;
 topInner.style.width = table.scrollWidth + 'px';
+// TEMP DEBUG (상단 스크롤바가 다른 탭 재진입 시 사라지는 문제 실측용, 원인 확인 후 제거 예정)
+console.log('[scrolltop-debug]', JSON.stringify({ t: new Date().toISOString(), view: (typeof currentView !== 'undefined' ? currentView : null), topBarScrollWidth: topBar.scrollWidth, topBarClientWidth: topBar.clientWidth, topInnerOffsetWidth: topInner.offsetWidth, wrapScrollWidth: wrap.scrollWidth, wrapClientWidth: wrap.clientWidth, overflowExists: (topInner.offsetWidth > topBar.clientWidth) }));
 topBar.onscroll = function () { wrap.scrollLeft = topBar.scrollLeft; };
 wrap.onscroll = function () { topBar.scrollLeft = wrap.scrollLeft; };
 }
