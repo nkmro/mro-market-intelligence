@@ -1829,7 +1829,7 @@ function renderItemsView() {
 const root = document.getElementById('items-view');
 root.innerHTML = `
 <div class="items-toolbar">
-<input type="text" id="items-search-input" class="items-search-input" placeholder="고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${escapeHtml(itemsState.searchQuery || '')}">
+<input type="text" id="items-search-input" class="items-search-input" placeholder="자재코드, 고객사, 품목명, 담당 검색" oninput="onItemsSearchInput()" value="${escapeHtml(itemsState.searchQuery || '')}">
 <select id="items-team-filter" onchange="onItemsTeamFilterChange()"></select>
 <button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>
 </div>
@@ -1857,15 +1857,16 @@ let list = filter ? itemsState.items.filter(function (it) { return it.team === f
 const q = (itemsState.searchQuery || '').trim().toLowerCase();
 if (q) {
 list = list.filter(function (it) {
-return (it.customer || '').toLowerCase().includes(q) || (it.itemName || '').toLowerCase().includes(q) || (it.manager || '').toLowerCase().includes(q);
+return (it.itemId || '').toLowerCase().includes(q) || (it.customer || '').toLowerCase().includes(q) || (it.itemName || '').toLowerCase().includes(q) || (it.manager || '').toLowerCase().includes(q);
 });
 }
 wrap.innerHTML = `
 <table class="items-table">
-<thead><tr><th>고객사</th><th>품목명</th><th>담당</th><th>팀</th><th>원자재</th><th>상태</th></tr></thead>
+<thead><tr><th>자재코드</th><th>고객사</th><th>품목명</th><th>담당</th><th>팀</th><th>원자재</th><th>상태</th></tr></thead>
 <tbody>
 ${list.map(function (it) {
 return `<tr onclick="openItemForm('${it.itemId}')">
+<td>${escapeHtml(it.itemId || '')}</td>
 <td>${escapeHtml(it.customer || '')}</td>
 <td>${escapeHtml(it.itemName || '')}</td>
 <td>${escapeHtml(it.manager || '')}</td>
