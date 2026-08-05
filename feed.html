@@ -1524,6 +1524,7 @@ let idleTimer = null;
 
 // 6-4: 알림함 "댓글 필요" 정확도 개선 - 참여한 스레드의 미확인 답글만 표시
 let threadSeenMap = {};
+let threadSeenMapLoaded = false;
 let notifNewPostsCache = { loaded: false, items: [] };
 let lastNotifCount = null;
 let notifFetchSeq = 0; // 알림 갱신 요청의 최신 순번 추적: 오래된 응답이 새 응답을 덮어써 배지/푸시가 잘못된 값으로 떴다가 몇 초 뒤 저절로 정정되는 레이스 방지
@@ -1584,15 +1585,25 @@ notifNewPostsCache.loaded = true;
 }
 
 async function loadThreadSeenMap() {
+for (let attempt = 0; attempt < 3; attempt++) {
 try {
 const res = await callApi('getThreadSeen', {});
-if (res.ok && res.seenMap) threadSeenMap = res.seenMap;
-} catch (e) {
-// 못 읽어오면 빈 맵(기본값)으로 계속 진행
+if (res.ok && res.seenMap) {
+threadSeenMap = res.seenMap;
+threadSeenMapLoaded = true;
+return;
 }
+} catch (e) {
+// 실패 시 아래에서 대기 후 재시도 (구글 앱스스크립트 응답이 간헐적으로 실패하는 경우 대비)
+}
+if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 700 * (attempt + 1)); });
+}
+// 3회 재시도에도 실패하면 threadSeenMapLoaded는 false로 남는다.
+// 이 경우 hasUnreadReply/hasAwaitingReply가 "읽음 기록 없음 [EQ] 안읽음"으로 오판하지 않도록 안전하게 처리한다.
 }
 
 function hasUnreadReply(postId, item) {
+if (!threadSeenMapLoaded) return false;
 const comments = item.comments || [];
 if (!comments.length) return false;
 const isOverseer = session.role === '팀장' || session.role === '임원' || session.email === ADMIN_EMAIL;
@@ -1608,6 +1619,7 @@ return new Date(last.createdAt) > new Date(seenAt);
 }
 
 function hasAwaitingReply(postId, item) {
+if (!threadSeenMapLoaded) return false;
 if (session.role !== '팀장' && session.role !== '임원') return false;
 const comments = item.comments || [];
 if (!comments.length) return false;
