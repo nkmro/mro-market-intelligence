@@ -355,11 +355,87 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     .item-row { grid-template-columns: 1fr; gap: 4px; }
     .item-row .status { justify-content: flex-start; }
   }
+
+  #auth-loading-overlay {
+    position: fixed; inset: 0; background: #fff; z-index: 9999;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity .35s ease;
+  }
+  .auth-center-logo {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    height: 56px;
+    padding: 0 22px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap;
+    box-shadow: 0 0 0 8px rgba(26,107,82,0.10), 0 6px 18px rgba(26,107,82,0.25);
+    z-index: 5;
+    animation: authLoadingPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes authLoadingPulse {
+    0%, 100% { box-shadow: 0 0 0 8px rgba(26,107,82,0.10), 0 6px 18px rgba(26,107,82,0.25); }
+    50% { box-shadow: 0 0 0 14px rgba(26,107,82,0.06), 0 6px 18px rgba(26,107,82,0.25); }
+  }
+  .auth-caption {
+    position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%);
+    font-size: 13px; color: var(--text-muted); white-space: nowrap; z-index: 5;
+  }
+  .auth-caption b { color: var(--accent-dark); }
+  .auth-news-card {
+    position: absolute; left: 50%; top: 50%;
+    width: 78px; height: 40px;
+    margin: -20px 0 0 -39px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.14);
+    padding: 5px 7px 5px 20px;
+    z-index: 3;
+  }
+  .auth-news-card::before {
+    content: "📰";
+    position: absolute; left: 5px; top: 6px;
+    font-size: 11px;
+  }
+  .auth-news-card .l1 { height: 4px; border-radius: 2px; background: var(--accent); width: 80%; margin-bottom: 5px; }
+  .auth-news-card .l2 { height: 3px; border-radius: 2px; background: #d8d6cf; width: 60%; }
+  .auth-orbit-wrap {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    animation-name: authOrbitSpin;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+  @keyframes authOrbitSpin {
+    from { transform: rotate(var(--start-angle)); }
+    to   { transform: rotate(var(--end-angle)); }
+  }
+  .auth-orbit-radius {
+    animation-name: authOrbitShrink;
+    animation-timing-function: cubic-bezier(.4,.4,.3,1);
+    animation-fill-mode: forwards;
+  }
+  @keyframes authOrbitShrink {
+    0%   { transform: translateX(var(--radius)); opacity: 0; }
+    12%  { opacity: 1; }
+    78%  { opacity: 1; }
+    100% { transform: translateX(0); opacity: 0; }
+  }
+  .auth-orbit-radius .auth-news-card { margin: -20px 0 0 -39px; transform: rotate(calc(-1 * var(--start-angle))); }
+  @media (max-width: 480px) {
+    .auth-news-card { width: 62px; height: 34px; margin: -17px 0 0 -31px; }
+    .auth-orbit-radius .auth-news-card { margin: -17px 0 0 -31px; }
+  }
 </style>
 </head>
 <body>
 
-<div id="auth-loading-overlay" style="position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;color:#666;z-index:9999;">불러오는 중...</div>
+<div id="auth-loading-overlay">
+  <div class="auth-center-logo">MRO NEWS</div>
+  <div class="auth-caption">시황 뉴스를 <b>모으는 중</b>이에요...</div>
+</div>
 
 <div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer(false)"></div>
 
@@ -522,6 +598,48 @@ toggleDrawer(false);
     return team === '본사' ? team : (team + '팀');
   }
 
+
+let __authOrbitTimer = null;
+function startAuthLoadingAnim() {
+const stage = document.getElementById('auth-loading-overlay');
+if (!stage || __authOrbitTimer) return;
+__authOrbitTimer = setInterval(function () { spawnAuthOrbitCard(stage); }, 340);
+}
+function spawnAuthOrbitCard(stage) {
+const wrap = document.createElement('div');
+wrap.className = 'auth-orbit-wrap';
+const startAngle = Math.random() * 360;
+const spinDir = Math.random() < 0.5 ? 1 : -1;
+const endAngle = startAngle + spinDir * (200 + Math.random() * 100);
+wrap.style.setProperty('--start-angle', startAngle.toFixed(1) + 'deg');
+wrap.style.setProperty('--end-angle', endAngle.toFixed(1) + 'deg');
+const dur = (1.5 + Math.random() * 0.6).toFixed(2) + 's';
+wrap.style.animationDuration = dur;
+const radiusEl = document.createElement('div');
+radiusEl.className = 'auth-orbit-radius';
+const baseRadius = Math.max(220, Math.min(window.innerWidth, window.innerHeight) * 0.42);
+const radius = baseRadius * (0.85 + Math.random() * 0.3);
+radiusEl.style.setProperty('--radius', radius.toFixed(1) + 'px');
+radiusEl.style.setProperty('--start-angle', startAngle.toFixed(1) + 'deg');
+radiusEl.style.animationDuration = dur;
+const card = document.createElement('div');
+card.className = 'auth-news-card';
+card.style.position = 'static';
+card.innerHTML = '<div class="l1"></div><div class="l2"></div>';
+radiusEl.appendChild(card);
+wrap.appendChild(radiusEl);
+stage.appendChild(wrap);
+wrap.addEventListener('animationend', function () { wrap.remove(); });
+}
+function hideAuthLoadingOverlay() {
+const el = document.getElementById('auth-loading-overlay');
+if (!el) return;
+if (__authOrbitTimer) { clearInterval(__authOrbitTimer); __authOrbitTimer = null; }
+el.style.opacity = '0';
+setTimeout(function () { el.style.display = 'none'; }, 350);
+}
+startAuthLoadingAnim();
+
 (async function init() {
 session = getSession();
 if (!session || !session.sessionToken) {
@@ -539,7 +657,7 @@ async function proceedAfterAuth() {
 const feedOk = await loadFeed();
 if (!feedOk) return; // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
 document.getElementById('app-shell').style.display = 'flex';
-document.getElementById('auth-loading-overlay').style.display = 'none';
+hideAuthLoadingOverlay();
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -567,7 +685,7 @@ setupIdleTimer();
 
 function showForcedPasswordChangeOverlay() {
 document.getElementById('app-shell').style.display = 'flex';
-document.getElementById('auth-loading-overlay').style.display = 'none';
+hideAuthLoadingOverlay();
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 const overlay = document.createElement('div');
 overlay.className = 'item-form-overlay';
