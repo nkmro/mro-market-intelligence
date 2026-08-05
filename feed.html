@@ -293,6 +293,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
 .item-new-btn { border: none; background: var(--accent); color: #fff; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.items-scroll-top { overflow-x: auto; overflow-y: hidden; height: 14px; margin-bottom: 6px; }
+#items-scroll-top-inner { height: 1px; }
 .items-table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
 .items-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .items-table th { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 600; white-space: nowrap; }
@@ -1791,6 +1793,7 @@ root.innerHTML = `
 <select id="items-team-filter" onchange="onItemsTeamFilterChange()"></select>
 <button class="item-new-btn" onclick="openItemForm(null)">+ 신규 등록</button>
 </div>
+<div class="items-scroll-top" id="items-scroll-top"><div id="items-scroll-top-inner"></div></div>
 <div class="items-table-wrap" id="items-table-wrap"></div>
 `;
 renderItemsTeamFilterOptions();
@@ -1835,6 +1838,21 @@ return `<tr onclick="openItemForm('${it.itemId}')">
 </table>
 ${!list.length ? '<div class="feed-empty">조건에 맞는 품목이 없어요.</div>' : ''}
 `;
+syncItemsScrollTop();
+}
+
+// 품목 테이블이 길어지면 가로 스크롤바가 표에서 가장 아래에만 나타나 화면을
+// 끝까지 내려야 보이는 문제가 있었다. 표 위쪽에 스크롤 위치가 서로 연동되는
+// 얇은 스크롤바를 추가로 두어, 목록을 내리지 않아도 가로 스크롤이 가능하게 한다.
+function syncItemsScrollTop() {
+const topBar = document.getElementById('items-scroll-top');
+const topInner = document.getElementById('items-scroll-top-inner');
+const wrap = document.getElementById('items-table-wrap');
+const table = wrap ? wrap.querySelector('.items-table') : null;
+if (!topBar || !topInner || !wrap || !table) return;
+topInner.style.width = table.scrollWidth + 'px';
+topBar.onscroll = function () { wrap.scrollLeft = topBar.scrollLeft; };
+wrap.onscroll = function () { topBar.scrollLeft = wrap.scrollLeft; };
 }
 
 function onItemsSearchInput() {
