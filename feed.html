@@ -1469,7 +1469,10 @@ return;
 }
 usersState.users = res.users || [];
 usersState.loaded = true;
+// loadItems()와 동일한 이유로, 응답이 오는 사이 다른 탭으로 이동했을 수 있어 보이는 상태일 때만 렌더링
+if (currentView === 'users') {
 renderUsers();
+}
 } catch (e) {
 if (isFirstLoad) {
 root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
@@ -1807,7 +1810,12 @@ if (!itemsState.loaded) {
 itemsState.filterTeam = session.team || '';
 }
 itemsState.loaded = true;
+// 응답을 기다리는 사이 사용자가 이미 다른 탭으로 이동했을 수 있다. 이때 items-view는 display:none이라
+// scrollWidth 등 폭 계산이 전부 0으로 나와 상단 스크롤바 폭이 0px로 잘못 확정되는 문제가 실측으로 확인됨.
+// 화면이 실제로 보이는 상태일 때만 다시 그린다.
+if (currentView === 'items') {
 renderItemsView();
+}
 }
 
 function renderItemsView() {
@@ -1876,8 +1884,6 @@ const wrap = document.getElementById('items-table-wrap');
 const table = wrap ? wrap.querySelector('.items-table') : null;
 if (!topBar || !topInner || !wrap || !table) return;
 topInner.style.width = table.scrollWidth + 'px';
-// TEMP DEBUG (상단 스크롤바가 다른 탭 재진입 시 사라지는 문제 실측용, 원인 확인 후 제거 예정)
-console.log('[scrolltop-debug]', JSON.stringify({ t: new Date().toISOString(), view: (typeof currentView !== 'undefined' ? currentView : null), topBarScrollWidth: topBar.scrollWidth, topBarClientWidth: topBar.clientWidth, topInnerOffsetWidth: topInner.offsetWidth, wrapScrollWidth: wrap.scrollWidth, wrapClientWidth: wrap.clientWidth, overflowExists: (topInner.offsetWidth > topBar.clientWidth) }));
 topBar.onscroll = function () { wrap.scrollLeft = topBar.scrollLeft; };
 wrap.onscroll = function () { topBar.scrollLeft = wrap.scrollLeft; };
 }
