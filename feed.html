@@ -771,12 +771,15 @@ document.getElementById('nav-settings').style.display = 'flex';
 document.getElementById('nav-gas-admin').style.display = 'flex';
 }
 setupTeamLabelControl();
-await loadIdleTimeoutSetting();
-const __authTIdle = Date.now();
-await loadThreadSeenMap();
-const __authTSeen = Date.now();
-await loadNotifNewPosts();
-const __authTNotif = Date.now();
+// idle/threadSeen/notif 3개는 서로 결과를 참조하지 않는 순수 조회라 병렬로 실행한다.
+// (예전엔 하나씩 await로 순서대로 불러서, 앱스스크립트 호출 1번당 지연이 3번 그대로 쌓여
+// 로그인 후 애니메이션이 불필요하게 오래 걸렸음 - 디버그로그로 확인함)
+const __authTGroupStart = Date.now();
+const [__authTIdle, __authTSeen, __authTNotif] = await Promise.all([
+loadIdleTimeoutSetting().then(() => Date.now()),
+loadThreadSeenMap().then(() => Date.now()),
+loadNotifNewPosts().then(() => Date.now())
+]);
 updateNotifBadge();
 // 알림 개수 집계가 완전히 끝난 뒤에야 "MRO 뉴스 수집 중" 애니메이션을 종료한다.
 // (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
@@ -784,10 +787,11 @@ updateNotifBadge();
 // "MRO 뉴스 수집 중" 애니메이션이 실제로 어느 단계에서 오래 걸리는지 확인하기 위한 타이밍 기록(운영 확인용).
 callApi('clientDebugLog', { kind: 'authLoadTiming', at: new Date().toISOString(), ms: {
 feed: __authTFeed - __authT0,
-idle: __authTIdle - __authTFeed,
-seen: __authTSeen - __authTIdle,
-notif: __authTNotif - __authTSeen,
-total: __authTNotif - __authT0
+idle: __authTIdle - __authTGroupStart,
+seen: __authTSeen - __authTGroupStart,
+notif: __authTNotif - __authTGroupStart,
+group: Math.max(__authTIdle, __authTSeen, __authTNotif) - __authTGroupStart,
+total: Math.max(__authTIdle, __authTSeen, __authTNotif) - __authT0
 } }).catch(() => {});
 hideAuthLoadingOverlay();
 hideGenericLoading();
