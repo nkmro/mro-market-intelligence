@@ -889,7 +889,16 @@ function primeCommentsFromFeed(posts) {
 let pollTimer = null;
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(pollForUpdates, 30000);
+  // setInterval 대신 재귀 setTimeout을 쓴다: pollForUpdates 한 번이 재시도 때문에 30초보다
+  // 오래 걸리는 경우가 실제로 있었는데, setInterval은 그 이전 호출이 아직 안 끝났어도 다음
+  // 틱을 그냥 또 쏴버려서 요청이 겹쳐 쌓이는 문제가 있었다(디버그로그에서 확인). 재귀 setTimeout은
+  // 이전 호출이 끝난 뒤에야 다음 타이머를 거니까 구조적으로 겹칠 수가 없다.
+  const scheduleNext = function () {
+    pollTimer = setTimeout(function () {
+      pollForUpdates().finally(scheduleNext);
+    }, 30000);
+  };
+  scheduleNext();
 }
 
 // PWA/브라우저가 백그라운드에서 동결(freeze)됐다가 다시 화면에 보이게 될 때(iOS PWA 복귀, PC 절전 복귀,
@@ -1060,35 +1069,10 @@ notifNewPostsCache.items.forEach(function (p) {
 count += (p.items || []).filter(function (it) { return hasUnreadReply(p.id, it); }).length;
 if (showAwaiting) count += (p.items || []).filter(function (it) { return hasAwaitingReply(p.id, it); }).length;
 });
-try {
-  callApi('clientDebugLog', {
-    kind: 'notifBadge',
-    at: new Date().toISOString(),
-    count: count,
-    newItemsCount: newItemsCount,
-    threadSeenMapSize: Object.keys(threadSeenMap || {}).length,
-    posts: notifNewPostsCache.items.map(function (p) {
-      return {
-        postId: p.id,
-        needsAttention: p.needsAttention,
-        items: (p.items || []).map(function (it) {
-          var c = it.comments || [];
-          var sorted = c.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
-          var last = sorted.length ? sorted[sorted.length - 1] : null;
-          return {
-            itemId: it.itemId,
-            confirmed: it.confirmed,
-            commentCount: c.length,
-            lastAuthor: last ? last.authorEmail : null,
-            lastAt: last ? last.createdAt : null,
-            seenAt: threadSeenMap[p.id + '-' + it.itemId] || null,
-            unread: hasUnreadReply(p.id, it)
-          };
-        })
-      };
-    })
-  }).catch(function () {});
-} catch (e) {}
+// [TEMP-DIAG 임시 디버그였던 코드 제거 2026-08-06] updateNotifBadge()는 피드 렌더/댓글 로드/탭 전환 등
+// 10곳 넘는 곳에서 계속 호출되는데, 그때마다 매번 전체 posts/items 배열을 clientDebugLog로 서버에 통째로
+// 보내고 있었다(시트에 append까지 함). 애니메이션 지연 진단이 끝나서 더 이상 필요 없고, 오히려 사용자
+// 인터랙션마다 불필요한 앱스스크립트 호출(+시트 쓰기)을 계속 발생시켜 백엔드 부하에 기여하고 있었다.
 const badge = document.getElementById('notif-badge');
 if (count > 0) {
 badge.textContent = count;
@@ -1880,6 +1864,11 @@ notifNewPostsCache.loaded = true;
 }
 
 async function loadThreadSeenMap() {
+// getThreadSeen은 RETRYABLE_API_ACTIONS에 있어서 callApi()가 네트워크 예외(타임아웃 등)에 대해
+// 이미 내부적으로 최대 3회(회당 20초)까지 재시도한다. 여기서 그 위에 또 3회를 겹쳐 재시도하면
+// 최악의 경우 3x3=9번, 최대 3분 가까이 걸릴 수 있어서(실제로 로그에서 확인됨) 네트워크 예외는
+// 여기서 다시 재시도하지 않는다. 대신 "응답은 왔지만 ok:false/seenMap 없음"처럼 callApi가
+// 재시도 대상으로 보지 않는 실패만 여기서 재시도한다(이건 보통 빠르게 응답이 오는 경우라 재시도 비용이 적다).
 for (let attempt = 0; attempt < 3; attempt++) {
 try {
 const res = await callApi('getThreadSeen', {});
@@ -1889,7 +1878,9 @@ threadSeenMapLoaded = true;
 return;
 }
 } catch (e) {
-// 실패 시 아래에서 대기 후 재시도 (구글 앱스스크립트 응답이 간헐적으로 실패하는 경우 대비)
+// callApi가 이미 네트워크 예외에 대해 재시도를 다 해본 뒤 던진 것이므로, 여기서 또
+// 700ms~2.1초씩 기다리며 재시도하지 않고 바로 포기한다.
+return;
 }
 if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 700 * (attempt + 1)); });
 }
