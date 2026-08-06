@@ -106,9 +106,14 @@ font-size: 13px; padding: 2px 4px; display: none;
 
   .main { padding: 20px 24px 60px; max-width: 760px; margin: 0; }
 
-  .feed-empty, .feed-loading {
+  .feed-empty {
     text-align: center; color: var(--text-muted); font-size: 13px; padding: 60px 0;
   }
+  .feed-loading {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    color: var(--text-muted); font-size: 13px; padding: 60px 0;
+  }
+  .feed-loading .mro-spinner { width: 15px; height: 15px; border-width: 2px; }
 
   .post-card {
     background: var(--card);
@@ -494,7 +499,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     <div class="main">
       <div id="feed-view">
         <div id="feed-root">
-          <div class="feed-loading" id="feed-loading">불러오는 중...</div>
+          <div class="feed-loading" id="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>
         </div>
       </div>
       <div id="notif-view" style="display:none;"></div>
@@ -748,8 +753,6 @@ async function proceedAfterAuth() {
 const feedOk = await loadFeed();
 if (!feedOk) return; // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
 document.getElementById('app-shell').style.display = 'flex';
-hideAuthLoadingOverlay();
-hideGenericLoading();
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -770,6 +773,11 @@ await loadIdleTimeoutSetting();
 await loadThreadSeenMap();
 await loadNotifNewPosts();
 updateNotifBadge();
+// 알림 개수 집계가 완전히 끝난 뒤에야 "MRO 뉴스 수집 중" 애니메이션을 종료한다.
+// (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
+// 시작도 안 한 상태라 애니메이션이 끝나고 알림 탭에 들어가도 집계가 안 돼 있었음)
+hideAuthLoadingOverlay();
+hideGenericLoading();
 updateNotifPermButton();
 startPolling();
 setupIdleTimer();
@@ -1676,7 +1684,7 @@ const root = document.getElementById('users-view');
 // 화면을 비우지 않고 기존 목록을 유지한 채 조용히 갱신한다.
 const isFirstLoad = !usersState.loaded;
 if (isFirstLoad) {
-root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 }
 try {
 const res = await callApi('getUsers', {});
@@ -1943,7 +1951,7 @@ const SETTINGS_META = {
 
 async function loadSettingsPage() {
 const root = document.getElementById('settings-view');
-root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 try {
 const res = await callApi('getSettings', {});
 if (!res.ok) {
@@ -2020,7 +2028,7 @@ const root = document.getElementById('items-view');
 // 하던 문제를 없앤다. 최초 진입(아직 한번도 못 불러온 경우)에는 기존처럼 로딩 화면을 보여준다.
 const isFirstLoad = !itemsState.loaded;
 if (isFirstLoad) {
-root.innerHTML = `<div class="feed-loading">불러오는 중...</div>`;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 }
 // Promise.all 대신 allSettled 사용: 셋 중 하나가 일시적으로 실패해도
 // 나머지가 성공했으면 화면은 정상적으로 띄운다 (구글 앱스 스크립트는 동시 요청에
