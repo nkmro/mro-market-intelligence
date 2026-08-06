@@ -156,7 +156,7 @@
   첫 방문이시면, <a href="#" id="install-app-link" style="color:#1a6b52; text-decoration:underline; font-weight:700;">앱 바로가기 설치</a>를 권장해요
 </div>
 
-<div class="card">
+<div class="card" style="display:none;">
   <div class="brand">
     <div class="brand-title">MRO 자재 시황</div>
     <div class="brand-sub">AI 기반 원자재 뉴스 모니터링 시스템</div>
@@ -557,9 +557,18 @@ function doLogout() {
   });
 })();
 
+// 로그인 화면(.card)은 기본적으로 숨겨둔다(HTML에 style="display:none"). 세션 유무를 판정하기
+// 전까지는 화면에 아무것도 보여주지 않고, 정말로 로그인 화면을 보여줘야 하는 경우(세션이 없거나
+// 무활동 시간이 초과된 경우)에만 여기서 명시적으로 다시 보여준다 - 유효한 세션으로 feed.html로
+// 바로 넘어가는 경우에 로그인 폼이 잠깐 화면에 찍혔다가 사라지는 현상을 막기 위함.
+function showLoginCard() {
+  const card = document.querySelector('.card');
+  if (card) card.style.display = 'block';
+}
+
 (function init() {
   const saved = localStorage.getItem('mro_session');
-  if (!saved) return;
+  if (!saved) { showLoginCard(); return; }
   try {
     const session = JSON.parse(saved);
     // 앱이 완전히 재시작된 경우(백그라운드 종료 후 재실행 등) 이 화면이 먼저 실행된다.
@@ -568,10 +577,11 @@ function doLogout() {
     if (isIdleTimedOut()) {
       localStorage.removeItem('mro_session');
       localStorage.removeItem('mro_last_activity');
+      showLoginCard();
       return;
     }
     showSuccess(session);
-  } catch (e) { localStorage.removeItem('mro_session'); }
+  } catch (e) { localStorage.removeItem('mro_session'); showLoginCard(); }
 })();
 
 if ('serviceWorker' in navigator) {
