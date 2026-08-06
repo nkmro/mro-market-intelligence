@@ -243,6 +243,21 @@
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 
+// 무활동 로그아웃 판정을 feed.html과 동일한 기준으로 여기서도 사용한다 (앱이 완전히 재시작되면
+// index.html이 먼저 실행되어, 기존 세션으로 feed.html로 바로 넘길지 여부를 결정하기 때문).
+// 서버 설정을 못 읽어왔을 때 쓰는 안전한 기본값 - 실제 운영 설정값과 같게 맞춰둔다.
+const IDLE_TIMEOUT_FALLBACK_MINUTES = 600;
+function getEffectiveIdleTimeoutMinutes() {
+  const cached = Number(localStorage.getItem('mro_idle_timeout_minutes'));
+  return cached > 0 ? cached : IDLE_TIMEOUT_FALLBACK_MINUTES;
+}
+function isIdleTimedOut() {
+  const lastActivityRaw = localStorage.getItem('mro_last_activity');
+  if (!lastActivityRaw) return false;
+  const elapsedMs = Date.now() - Number(lastActivityRaw);
+  return elapsedMs > getEffectiveIdleTimeoutMinutes() * 60 * 1000;
+}
+
   function teamLabel(team) {
     return team === '본사' ? team : (team + '팀');
   }
@@ -499,6 +514,11 @@ function saveSession(res) {
     team: res.team,
     passwordExpired: res.passwordExpired || false
   }));
+  // 방금 실제로 로그인에 성공한 경우에만 세워지는 표시. feed.html이 이 표시를 보고
+  // "새로 로그인한 것"과 "기존 세션으로 앱이 재시작된 것"을 구분해 뉴스 수집 애니메이션을
+  // 새 로그인일 때만 보여준다. sessionStorage라서 앱이 완전히 재시작되면 자동으로 사라진다.
+  sessionStorage.setItem('mro_fresh_login', '1');
+  localStorage.setItem('mro_last_activity', String(Date.now()));
 }
 
 async function showSuccess(res) {
@@ -511,6 +531,7 @@ async function showSuccess(res) {
 
 function doLogout() {
   localStorage.removeItem('mro_session');
+  localStorage.removeItem('mro_last_activity');
   document.getElementById('auth-area').style.display = 'block';
   document.getElementById('pane-success').classList.remove('active');
   showTab('login');
@@ -538,12 +559,19 @@ function doLogout() {
 
 (function init() {
   const saved = localStorage.getItem('mro_session');
-  if (saved) {
-    try {
-      const session = JSON.parse(saved);
-      showSuccess(session);
-    } catch (e) { localStorage.removeItem('mro_session'); }
-  }
+  if (!saved) return;
+  try {
+    const session = JSON.parse(saved);
+    // 앱이 완전히 재시작된 경우(백그라운드 종료 후 재실행 등) 이 화면이 먼저 실행된다.
+    // 무활동 시간을 이미 초과했다면 feed.html로 넘기지 않고, 여기서 곧바로 세션을 정리해
+    // 로그인 화면을 그대로 보여준다 (수집 애니메이션 등 어떤 화면도 거치지 않음).
+    if (isIdleTimedOut()) {
+      localStorage.removeItem('mro_session');
+      localStorage.removeItem('mro_last_activity');
+      return;
+    }
+    showSuccess(session);
+  } catch (e) { localStorage.removeItem('mro_session'); }
 })();
 
 if ('serviceWorker' in navigator) {
