@@ -243,6 +243,20 @@
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 
+// 로그인진단로그에 접속 기기 종류(iOS/Android/Windows/Mac 등)를 남기기 위한 판별 함수.
+// navigator.userAgentData(최신 표준)는 사파리/파이어폭스가 지원을 안 해서 iOS 전체가 빠지므로
+// 쓰지 않고, 기존 isIOS 판별과 같은 방식으로 navigator.userAgent 문자열을 그대로 사용한다.
+function detectPlatform() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS) return 'iOS';
+  if (/Android/.test(ua)) return 'Android';
+  if (/Windows/.test(ua)) return 'Windows';
+  if (/Macintosh|Mac OS X/.test(ua)) return 'Mac';
+  if (/Linux/.test(ua)) return 'Linux';
+  return 'Other';
+}
+
 // 무활동 로그아웃 판정을 feed.html과 동일한 기준으로 여기서도 사용한다 (앱이 완전히 재시작되면
 // index.html이 먼저 실행되어, 기존 세션으로 feed.html로 바로 넘길지 여부를 결정하기 때문).
 // 서버 설정을 못 읽어왔을 때 쓰는 안전한 기본값 - 실제 운영 설정값과 같게 맞춰둔다.
@@ -399,7 +413,7 @@ async function doLogin(isRetry) {
   }
   if (!isRetry) startLoadingFill('btn-login');
   try {
-    const res = await callApi('login', { email, password, isRetry: !!isRetry });
+    const res = await callApi('login', { email, password, isRetry: !!isRetry, platform: detectPlatform() });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-login');
     saveSession(res);
