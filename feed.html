@@ -782,7 +782,7 @@ updateNotifBadge();
 // (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
 // 시작도 안 한 상태라 애니메이션이 끝나고 알림 탭에 들어가도 집계가 안 돼 있었음)
 // "MRO 뉴스 수집 중" 애니메이션이 실제로 어느 단계에서 오래 걸리는지 확인하기 위한 타이밍 기록(운영 확인용).
-callApi('clientDebugLog', { type: 'authLoadTiming', ms: {
+callApi('clientDebugLog', { kind: 'authLoadTiming', at: new Date().toISOString(), ms: {
 feed: __authTFeed - __authT0,
 idle: __authTIdle - __authTFeed,
 seen: __authTSeen - __authTIdle,
