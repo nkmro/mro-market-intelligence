@@ -638,7 +638,28 @@ if (__authOrbitTimer) { clearInterval(__authOrbitTimer); __authOrbitTimer = null
 el.style.opacity = '0';
 setTimeout(function () { el.style.display = 'none'; }, 350);
 }
-startAuthLoadingAnim();
+
+// 무활동 로그아웃 설정을 서버에서 못 읽어왔을 때 쓰는 안전한 기본값.
+// 실제 운영 설정값(설정 시트의 '무활동로그아웃분')과 같은 값으로 맞춰둔다 - 임의로 짧은 값을
+// 기본값으로 쓰면 설정 조회가 실패했을 때 의도치 않게 너무 빨리 로그아웃되는 문제가 생긴다.
+const IDLE_TIMEOUT_FALLBACK_MINUTES = 600;
+
+// 무활동 로그아웃 판정은 브라우저를 계속 열어둔 경우엔 자바스크립트 타이머(resetIdleTimer)로,
+// 앱이 완전히 재시작된 경우(백그라운드에서 종료 후 재실행 등)엔 localStorage에 남겨둔
+// "마지막 활동 시각"과 현재 시각의 차이로 판정한다. 둘 다 같은 기준(설정된 분 수)을 쓴다.
+function getEffectiveIdleTimeoutMinutes() {
+const cached = Number(localStorage.getItem('mro_idle_timeout_minutes'));
+return cached > 0 ? cached : IDLE_TIMEOUT_FALLBACK_MINUTES;
+}
+function isIdleTimedOut() {
+const lastActivityRaw = localStorage.getItem('mro_last_activity');
+if (!lastActivityRaw) return false; // 기록이 없으면(예: 최초 로그인 직후) 초과로 판단하지 않는다.
+const elapsedMs = Date.now() - Number(lastActivityRaw);
+return elapsedMs > getEffectiveIdleTimeoutMinutes() * 60 * 1000;
+}
+function clearIdleTracking() {
+localStorage.removeItem('mro_last_activity');
+}
 
 (async function init() {
 session = getSession();
@@ -646,6 +667,22 @@ if (!session || !session.sessionToken) {
 window.location.href = 'index.html';
 return;
 }
+
+// 애니메이션이나 화면을 보여주기 전에 먼저 무활동 시간 초과 여부를 판정한다.
+// 초과했다면 어떤 화면도 잠깐이라도 보여주지 않고 곧바로 로그인 화면으로 이동한다.
+if (isIdleTimedOut()) {
+localStorage.removeItem('mro_session');
+clearIdleTracking();
+window.location.href = 'index.html';
+return;
+}
+
+// 로그인 화면에서 방금 실제로 로그인한 경우에만 뉴스 수집 애니메이션을 보여준다.
+// 기존 세션으로 앱이 재시작/복귀한 경우엔 애니메이션 없이 조용히 이어서 보여준다.
+const isFreshLogin = sessionStorage.getItem('mro_fresh_login') === '1';
+sessionStorage.removeItem('mro_fresh_login');
+if (isFreshLogin) startAuthLoadingAnim();
+
 if (session.passwordExpired) {
 showForcedPasswordChangeOverlay();
 return;
@@ -1666,9 +1703,12 @@ btn.disabled = false;
 }
 }
 
-// 자동 로그아웃: 30분 무활동 시 자동 로그아웃
-let IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-let idleTimeoutMinutes = 30;
+// 자동 로그아웃: 설정 시트의 '무활동로그아웃분' 값만큼 무활동 시 자동 로그아웃.
+// 초기값은 localStorage에 캐시된 마지막 설정값(없으면 안전 기본값)으로 시작하고,
+// 서버 조회에 성공하면 그 값으로 갱신 + 캐시를 갱신한다. 조회에 실패해도 하드코딩된
+// 짧은 값으로 떨어지지 않고 캐시(또는 안전 기본값)를 그대로 유지한다.
+let idleTimeoutMinutes = getEffectiveIdleTimeoutMinutes();
+let IDLE_TIMEOUT_MS = idleTimeoutMinutes * 60 * 1000;
 
 async function loadIdleTimeoutSetting() {
 try {
@@ -1678,13 +1718,23 @@ const minutes = Number(res.settings['무활동로그아웃분']);
 if (minutes > 0) {
 idleTimeoutMinutes = minutes;
 IDLE_TIMEOUT_MS = minutes * 60 * 1000;
+localStorage.setItem('mro_idle_timeout_minutes', String(minutes));
 }
 }
 } catch (e) {
-// 설정값을 못 읽어오면 기본값(30분) 사용
+// 설정값을 못 읽어오면 위에서 초기화해둔 캐시값(또는 안전 기본값)을 그대로 사용
 }
 }
 let idleTimer = null;
+let lastActivityWriteAt = 0;
+// 마지막 활동 시각을 localStorage에 남긴다. 앱이 완전히 재시작돼도(백그라운드 종료 후 재실행 등)
+// "얼마나 방치됐는지" 판단할 수 있게 하기 위함. 너무 자주 쓰지 않도록 살짝 스로틀한다.
+function touchLastActivity() {
+const now = Date.now();
+if (now - lastActivityWriteAt < 10000) return;
+lastActivityWriteAt = now;
+localStorage.setItem('mro_last_activity', String(now));
+}
 
 // 6-4: 알림함 "댓글 필요" 정확도 개선 - 참여한 스레드의 미확인 답글만 표시
 let threadSeenMap = {};
@@ -1805,6 +1855,7 @@ updateNotifBadge();
 
 
 function resetIdleTimer() {
+touchLastActivity();
 if (idleTimer) clearTimeout(idleTimer);
 idleTimer = setTimeout(function () {
 alert(idleTimeoutMinutes + '분 동안 활동이 없어 자동 로그아웃되었습니다.');
@@ -2208,6 +2259,7 @@ alert('네트워크 오류가 발생했어요.');
 
 function doLogout() {
   localStorage.removeItem('mro_session');
+  clearIdleTracking();
   window.location.href = 'index.html';
 }
 </script>
