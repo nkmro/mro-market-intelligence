@@ -432,7 +432,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 </head>
 <body>
 
-<div id="auth-loading-overlay">
+<div id="auth-loading-overlay" style="display:none;">
   <div class="auth-center-logo">MRO NEWS</div>
   <div class="auth-caption">시황 뉴스를 <b>모으는 중</b>이에요...</div>
 </div>
@@ -603,6 +603,9 @@ let __authOrbitTimer = null;
 function startAuthLoadingAnim() {
 const stage = document.getElementById('auth-loading-overlay');
 if (!stage || __authOrbitTimer) return;
+// 기존 세션으로 재시작/복귀한 경우엔 이 오버레이 자체를 계속 숨겨둔 채로 두고(HTML에 기본
+// display:none), 실제로 새로 로그인한 경우에만 여기서 명시적으로 보여준다.
+stage.style.display = 'flex';
 __authOrbitTimer = setInterval(function () { spawnAuthOrbitCard(stage); }, 340);
 }
 function spawnAuthOrbitCard(stage) {
