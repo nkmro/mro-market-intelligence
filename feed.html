@@ -428,6 +428,31 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     .auth-news-card { width: 62px; height: 34px; margin: -17px 0 0 -31px; }
     .auth-orbit-radius .auth-news-card { margin: -17px 0 0 -31px; }
   }
+
+  /* 범용 로딩 표시 - "뉴스 수집중" 애니메이션과는 별개로, 화면 어디서든 "그냥 로딩 중"을
+     나타낼 때 재사용하는 심플한 스피너. 품목관리/사용자 현황/설정 등 다른 탭에서도 같은
+     클래스를 그대로 가져다 쓸 수 있다. */
+  .mro-spinner {
+    display: inline-block;
+    border-radius: 50%;
+    border: 3px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    animation: mroSpin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes mroSpin { to { transform: rotate(360deg); } }
+  #generic-loading-overlay {
+    position: fixed; inset: 0; background: #fff; z-index: 9998;
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px;
+  }
+  #generic-loading-overlay .mro-spinner { width: 34px; height: 34px; border-width: 3px; }
+  #generic-loading-overlay .mro-loading-text { font-size: 13px; color: var(--text-muted); }
+  .mro-loading-inline {
+    display: flex; align-items: center; gap: 8px;
+    padding: 16px 18px; font-size: 13px; color: var(--text-muted);
+  }
+  .mro-loading-inline .mro-spinner { width: 15px; height: 15px; border-width: 2px; }
 </style>
 </head>
 <body>
@@ -435,6 +460,11 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 <div id="auth-loading-overlay" style="display:none;">
   <div class="auth-center-logo">MRO NEWS</div>
   <div class="auth-caption">시황 뉴스를 <b>모으는 중</b>이에요...</div>
+</div>
+
+<div id="generic-loading-overlay">
+  <div class="mro-spinner"></div>
+  <div class="mro-loading-text" id="generic-loading-text">불러오는 중이에요...</div>
 </div>
 
 <div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer(false)"></div>
@@ -642,6 +672,21 @@ el.style.opacity = '0';
 setTimeout(function () { el.style.display = 'none'; }, 350);
 }
 
+// 범용 로딩 표시 - "뉴스 수집중" 애니메이션(위의 auth-loading-overlay)과는 별개의, 화면 전체를
+// 가리는 심플한 스피너. 기존 세션으로 재개할 때 feed 데이터를 불러오는 동안 아무 표시도 없어서
+// 멈춘 것처럼 보이는 문제를 막기 위해 쓴다.
+function showGenericLoading(text) {
+const el = document.getElementById('generic-loading-overlay');
+if (!el) return;
+if (text) document.getElementById('generic-loading-text').textContent = text;
+el.style.display = 'flex';
+}
+function hideGenericLoading() {
+const el = document.getElementById('generic-loading-overlay');
+if (!el) return;
+el.style.display = 'none';
+}
+
 // 무활동 로그아웃 설정을 서버에서 못 읽어왔을 때 쓰는 안전한 기본값.
 // 실제 운영 설정값(설정 시트의 '무활동로그아웃분')과 같은 값으로 맞춰둔다 - 임의로 짧은 값을
 // 기본값으로 쓰면 설정 조회가 실패했을 때 의도치 않게 너무 빨리 로그아웃되는 문제가 생긴다.
@@ -684,7 +729,13 @@ return;
 // 기존 세션으로 앱이 재시작/복귀한 경우엔 애니메이션 없이 조용히 이어서 보여준다.
 const isFreshLogin = sessionStorage.getItem('mro_fresh_login') === '1';
 sessionStorage.removeItem('mro_fresh_login');
-if (isFreshLogin) startAuthLoadingAnim();
+if (isFreshLogin) {
+startAuthLoadingAnim();
+} else {
+// 기존 세션으로 재개하는 경우, 뉴스 수집 애니메이션은 안 보여주지만 데이터를 불러오는
+// 동안 화면이 완전히 빈 채로 있으면 멈춘 것처럼 보이니 심플한 로딩 표시는 띄워둔다.
+showGenericLoading('불러오는 중이에요...');
+}
 
 if (session.passwordExpired) {
 showForcedPasswordChangeOverlay();
@@ -698,6 +749,7 @@ const feedOk = await loadFeed();
 if (!feedOk) return; // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
 document.getElementById('app-shell').style.display = 'flex';
 hideAuthLoadingOverlay();
+hideGenericLoading();
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
@@ -726,6 +778,7 @@ setupIdleTimer();
 function showForcedPasswordChangeOverlay() {
 document.getElementById('app-shell').style.display = 'flex';
 hideAuthLoadingOverlay();
+hideGenericLoading();
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 const overlay = document.createElement('div');
 overlay.className = 'item-form-overlay';
