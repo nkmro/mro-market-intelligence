@@ -750,8 +750,10 @@ await proceedAfterAuth();
 })();
 
 async function proceedAfterAuth() {
+const __authT0 = Date.now();
 const feedOk = await loadFeed();
 if (!feedOk) return; // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
+const __authTFeed = Date.now();
 document.getElementById('app-shell').style.display = 'flex';
 document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
 if (session.email === ADMIN_EMAIL) {
@@ -770,12 +772,23 @@ document.getElementById('nav-gas-admin').style.display = 'flex';
 }
 setupTeamLabelControl();
 await loadIdleTimeoutSetting();
+const __authTIdle = Date.now();
 await loadThreadSeenMap();
+const __authTSeen = Date.now();
 await loadNotifNewPosts();
+const __authTNotif = Date.now();
 updateNotifBadge();
 // 알림 개수 집계가 완전히 끝난 뒤에야 "MRO 뉴스 수집 중" 애니메이션을 종료한다.
 // (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
 // 시작도 안 한 상태라 애니메이션이 끝나고 알림 탭에 들어가도 집계가 안 돼 있었음)
+// "MRO 뉴스 수집 중" 애니메이션이 실제로 어느 단계에서 오래 걸리는지 확인하기 위한 타이밍 기록(운영 확인용).
+callApi('clientDebugLog', { type: 'authLoadTiming', ms: {
+feed: __authTFeed - __authT0,
+idle: __authTIdle - __authTFeed,
+seen: __authTSeen - __authTIdle,
+notif: __authTNotif - __authTSeen,
+total: __authTNotif - __authT0
+} }).catch(() => {});
 hideAuthLoadingOverlay();
 hideGenericLoading();
 updateNotifPermButton();
