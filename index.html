@@ -314,22 +314,44 @@ function errMsg(code, res) {
     return ERROR_MESSAGES[code] || ('오류가 발생했어요 (' + code + ')');
 }
 
+// [2026-08-06] feed.html의 callApi와 동일한 재시도 정책으로 통일. 예전에는 여기 재시도가 전혀
+// 없어서 doLogin이 자체적으로 1.5초 뒤 1회만 재시도했는데, 앱스스크립트 콜드 스타트가 5~10초까지
+// 걸릴 수 있는 걸 감안하면 횟수도 간격도 부족했다. feed.html과 똑같이 맞춰서 일관성을 유지한다.
+const RETRYABLE_API_ACTIONS = new Set([
+  'login', 'requestSignup', 'verifySignup', 'requestPasswordReset', 'confirmPasswordReset', 'getTeams'
+]);
+
 async function callApi(action, body) {
-  // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
-  // 요청을 중단시킨다. 이렇게 abort되면 fetch가 예외를 던지고, 그 예외는 각 호출부(doLogin 등)의
-  // catch(e)로 이어져 기존 재시도/에러 표시 로직이 정상적으로 작동한다.
-  const controller = new AbortController();
-  const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
-  try {
-    const res = await fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify(Object.assign({ action: action }, body)),
-      signal: controller.signal
-    });
-    return await res.json();
-  } finally {
-    clearTimeout(timeoutId);
+  const maxAttempts = RETRYABLE_API_ACTIONS.has(action) ? 3 : 1;
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
+    // 요청을 중단시킨다. abort되면 fetch가 예외를 던져 아래 catch(e)의 재시도 루프로 이어진다.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        // isRetry는 로그인진단로그 등 서버 쪽 진단 로그에서 "몇 번째 시도인지" 구분하는 용도로만
+        // 쓰인다(서버는 이 값으로 실패 카운트 처리를 다르게 하지 않음).
+        body: JSON.stringify(Object.assign({ action: action, isRetry: attempt > 0 }, body)),
+        signal: controller.signal
+      });
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      // 구글 앱스스크립트 응답이 간헐적으로 실패(HTML 오류 페이지, 콜드 스타트 타임아웃 등)하는
+      // 경우에 대비한 재시도. login처럼 서버에 부작용(로그인 실패 카운트 증가)이 있는 액션도
+      // 재시도 대상에 포함되는데, 아주 드물게 서버가 응답을 보내기 직전에 타임아웃/네트워크
+      // 문제가 나면 실패 카운트가 중복으로 올라갈 가능성이 이론상 있다. 다만 지금까지 계정
+      // 잠금 관련 민원이 없었고, 재시도 없이 방치되는 쪽의 피해(로그인 자체가 안 됨)가 훨씬
+      // 크다고 판단해 재시도를 켠다.
+      if (attempt < maxAttempts - 1) await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+  throw lastErr;
 }
 
 function showTab(name) {
@@ -397,33 +419,30 @@ function cancelLoadingFill(btnId) {
   fill.style.clipPath = 'inset(0 100% 0 0)';
 }
 
-async function doLogin(isRetry) {
-  if (!isRetry) hideError('login-error');
+async function doLogin() {
+  hideError('login-error');
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
-  if (!isRetry && (!email || !password)) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
+  if (!email || !password) { showError('login-error', ERROR_MESSAGES.MISSING_FIELDS); return; }
 
-  if (!isRetry) {
-    const rememberEmail = document.getElementById('remember-email');
-    if (rememberEmail && rememberEmail.checked) {
-      localStorage.setItem('mro_saved_email', email);
-    } else {
-      localStorage.removeItem('mro_saved_email');
-    }
+  const rememberEmail = document.getElementById('remember-email');
+  if (rememberEmail && rememberEmail.checked) {
+    localStorage.setItem('mro_saved_email', email);
+  } else {
+    localStorage.removeItem('mro_saved_email');
   }
-  if (!isRetry) startLoadingFill('btn-login');
+  startLoadingFill('btn-login');
   try {
-    const res = await callApi('login', { email, password, isRetry: !!isRetry, platform: detectPlatform() });
+    // [2026-08-06] callApi가 'login'을 RETRYABLE_API_ACTIONS로 취급해서 이미 내부적으로 최대
+    // 3회(회당 20초, 800ms/1600ms 간격) 재시도하므로 여기서 별도로 재시도하지 않는다. 예전에는
+    // doLogin이 직접 1.5초 뒤 1회만 재시도했는데, 재시도가 callApi 안에도 있었다면 두 겹으로
+    // 쌓였을 것이다(feed.html의 loadThreadSeenMap에서 겪었던 것과 같은 문제).
+    const res = await callApi('login', { email, password, platform: detectPlatform() });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-login');
     saveSession(res);
     showSuccess(res);
   } catch (e) {
-    // 앱스스크립트 웹앱이 간헐적으로 응답에 실패(콜드 스타트, 리다이렉트 중 POST->GET 전환 등)하는
-    // 경우에 대비해 한번만 자동 재시도한다. catch(e)로 온다는 건 서버의 login 로직 자체가 실행되지
-    // 않았다는 뜻이라(응답을 못 받았을 뿐 서버가 비밀번호를 검사하지도 않았음), 재시도해도 로그인
-    // 실패 횟수(계정 잠금 카운터)가 중복으로 올라갈 위험이 없다.
-    if (!isRetry) { setTimeout(function () { doLogin(true); }, 1500); return; }
     cancelLoadingFill('btn-login');
     showError('login-error', errMsg('SERVER_ERROR'));
   }
@@ -538,7 +557,14 @@ function saveSession(res) {
 async function showSuccess(res) {
   const optIn = document.getElementById('notif-optin');
   if (optIn && optIn.checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    try { await Notification.requestPermission(); } catch (e) {}
+    // 사용자가 알림 권한 팝업에 응답하기 전까지 feed.html 이동이 막혀서 "로그인이 느리다"는
+    // 인상을 줄 수 있었다. 3초 안에 응답이 없으면 그냥 진행한다(권한 팝업 자체는 계속 떠 있음).
+    try {
+      await Promise.race([
+        Notification.requestPermission(),
+        new Promise(function (resolve) { setTimeout(resolve, 3000); })
+      ]);
+    } catch (e) {}
   }
   window.location.href = 'feed.html';
 }
