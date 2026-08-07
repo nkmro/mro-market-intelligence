@@ -714,6 +714,13 @@ function clearIdleTracking() {
 localStorage.removeItem('mro_last_activity');
 }
 
+// notifFetchSeq는 원래 아래쪽 알림 관련 코드 블록에 있었는데, proceedAfterAuth()가 이제
+// loadNotifNewPosts()를 await 없이 즉시(동기적으로) 호출하기 시작하면서, 바로 아래 init()
+// IIFE가 실행되는 시점에 아직 초기화 전이라 "Cannot access 'notifFetchSeq' before
+// initialization" 오류로 무한로딩을 일으켰다(2026-08-07 발견). init() 실행 전에 선언되도록
+// 여기로 옮겼다.
+let notifFetchSeq = 0; // 알림 갱신 요청의 최신 순번 추적: 오래된 응답이 새 응답을 덮어써 배지/푸시가 잘못된 값으로 떴다가 몇 초 뒤 저절로 정정되는 레이스 방지
+
 (async function init() {
 session = getSession();
 if (!session || !session.sessionToken) {
@@ -1804,7 +1811,7 @@ let threadSeenMap = {};
 let threadSeenMapLoaded = false;
 let notifNewPostsCache = { loaded: false, items: [] };
 let lastNotifCount = null;
-let notifFetchSeq = 0; // 알림 갱신 요청의 최신 순번 추적: 오래된 응답이 새 응답을 덮어써 배지/푸시가 잘못된 값으로 떴다가 몇 초 뒤 저절로 정정되는 레이스 방지
+// notifFetchSeq 선언은 위쪽(init() 실행 전)으로 옮겼다 — 이유는 그쪽 주석 참고.
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(function () {});
