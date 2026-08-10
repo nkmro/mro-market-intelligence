@@ -1666,7 +1666,7 @@ async function submitComment(postId, itemId, parentCommentId) {
   };
   if (!postComments[postId]) postComments[postId] = { loaded: true, comments: [] };
   postComments[postId].comments = (postComments[postId].comments || []).concat([optimisticComment]);
-          /* v26: 여기서 markThreadSeenLocal을 호출하지 않는다 - 예전에는 댓글 등록 직후 무조건 호출해서, 팀장/임원이 남긴 답변이 만든 '답변 요청' 상태가 등록과 동시에 사라지는 문제가 있었다(hasAwaitingReply 참고). '댓글 필요'(hasUnreadReply)는 이 호출이 없어도 문제없다 - 방금 내가 마지막 댓글 작성자가 됐으므로 그 함수 안에서 이미 자동으로 꺼진다. 스레드 '확인' 처리는 실제로 스레드를 열어보는 시점(toggleThread, 알림 클릭 이동)에만 한다. */const st = threadState[key];
+  const st = threadState[key];
   st.replyOpenFor = null;
   renderThread(postId, itemId);
 
