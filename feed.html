@@ -1666,7 +1666,7 @@ async function submitComment(postId, itemId, parentCommentId) {
   };
   if (!postComments[postId]) postComments[postId] = { loaded: true, comments: [] };
   postComments[postId].comments = (postComments[postId].comments || []).concat([optimisticComment]);
-  const st = threadState[key];
+          /* v26: 여기서 markThreadSeenLocal을 호출하지 않는다 - 예전에는 댓글 등록 직후 무조건 호출해서, 팀장/임원이 남긴 답변이 만든 '답변 요청' 상태가 등록과 동시에 사라지는 문제가 있었다(hasAwaitingReply 참고). '댓글 필요'(hasUnreadReply)는 이 호출이 없어도 문제없다 - 방금 내가 마지막 댓글 작성자가 됐으므로 그 함수 안에서 이미 자동으로 꺼진다. 스레드 '확인' 처리는 실제로 스레드를 열어보는 시점(toggleThread, 알림 클릭 이동)에만 한다. */const st = threadState[key];
   st.replyOpenFor = null;
   renderThread(postId, itemId);
 
@@ -1687,7 +1687,7 @@ async function submitComment(postId, itemId, parentCommentId) {
       const idx = feedState.posts.findIndex(p => String(p.id) === String(postId));
       if (idx !== -1) feedState.posts[idx] = res.updatedPost;
     }
-        markThreadSeenLocal(postId, itemId);
+        /* v26: 여기서 markThreadSeenLocal을 호출하지 않는다 - 예전에는 댓글 등록 직후 무조건 호출해서, 팀장/임원이 남긴 답변이 만든 '답변 요청' 상태가 등록과 동시에 사라지는 문제가 있었다(hasAwaitingReply 참고). '댓글 필요'(hasUnreadReply)는 이 호출이 없어도 문제없다 - 방금 내가 마지막 댓글 작성자가 됐으므로 그 함수 안에서 이미 자동으로 꺼진다. 스레드 '확인' 처리는 실제로 스레드를 열어보는 시점(toggleThread, 알림 클릭 이동)에만 한다. */
         renderFeed();
     updateNotifBadge();
 
@@ -2010,7 +2010,7 @@ return new Date(last.createdAt) > new Date(seenAt);
 }
 
 function hasAwaitingReply(postId, item) {
-if (session.role !== '팀장' && session.role !== '임원') return false; const comments = item.comments || []; if (!comments.length) return false; const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); }); const last = sorted[sorted.length - 1]; /* v25: '답변 요청'은 댓글 등록 시 자동으로 찍히는 확인 처리(threadSeenMap)와 무관하게, 마지막 댓글 작성자가 본인(팀장/임원)인지만으로 판단한다. 예전에는 seenAt도 비교했는데, 댓글 등록 직후 markThreadSeenLocal이 호출되어 seenAt이 즉시 갱신되면서 방금 남긴 답변이 만든 답변요청 상태가 등록과 동시에 사라지는 문제가 있었다. */ return last.authorEmail === session.email;
+if (!threadSeenMapLoaded) return false; if (session.role !== '팀장' && session.role !== '임원') return false; const comments = item.comments || []; if (!comments.length) return false; const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); }); const last = sorted[sorted.length - 1]; if (last.authorEmail !== session.email) return false; /* v26: 댓글 등록 시 자동 확인 처리(postComment 성공 핸들러)는 더 이상 호출하지 않으므로, 여기서 seenAt과 비교해도 방금 남긴 답변이 등록과 동시에 사라지는 문제가 재발하지 않는다. 실제로 스레드를 열어봤을 때(toggleThread, 알림 클릭 이동)만 seenAt이 갱신되어 답변 요청이 사라진다. */ const key = postId + '-' + item.itemId; const seenAt = threadSeenMap[key]; if (!seenAt) return true; return new Date(last.createdAt) > new Date(seenAt); '답변 요청'은 댓글 등록 시 자동으로 찍히는 확인 처리(threadSeenMap)와 무관하게, 마지막 댓글 작성자가 본인(팀장/임원)인지만으로 판단한다. 예전에는 seenAt도 비교했는데, 댓글 등록 직후 markThreadSeenLocal이 호출되어 seenAt이 즉시 갱신되면서 방금 남긴 답변이 만든 답변요청 상태가 등록과 동시에 사라지는 문제가 있었다. */ return last.authorEmail === session.email;
 }
 
 function markThreadSeenLocal(postId, itemId) {
