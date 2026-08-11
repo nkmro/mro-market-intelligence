@@ -1276,6 +1276,22 @@ return;
 const hasMore = !query && feedState.nextCursor !== null && feedState.nextCursor !== undefined;
 root.innerHTML = list.map(renderPost).join('') +
 (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
+restoreOpenThreads();
+}
+
+function restoreOpenThreads() {
+// restore threads left open before rerender
+(feedState.posts || []).forEach(function (post) {
+(post.items || []).forEach(function (item) {
+const key = post.id + '-' + item.itemId;
+const st = threadState[key];
+if (!st || !st.open) return;
+const panel = document.getElementById('thread-' + key);
+if (!panel) return;
+panel.classList.add('open');
+renderThread(post.id, item.itemId);
+});
+});
 }
 
 let notifActiveTab = '새 게시물';
