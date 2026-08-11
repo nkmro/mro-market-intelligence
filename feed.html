@@ -171,6 +171,7 @@ font-size: 13px; padding: 2px 4px; display: none;
   .status-dot { font-size: 13px; }
   .status.checked .status-dot { color: var(--accent); }
   .status.unchecked .status-dot { color: #b8bcb8; }
+.item-row.checked { background: var(--accent-soft); }
 
   .comment-thread {
     display: none;
@@ -1500,7 +1501,7 @@ function renderItemRow(post, item) {
   const key = post.id + '-' + item.itemId;
   return `
     <div>
-      <div class="item-row" id="row-${key}" onclick="toggleThread('${post.id}', '${item.itemId}')">
+      <div class="item-row ${checked ? 'checked' : 'unchecked'}" id="row-${key}" onclick="toggleThread('${post.id}', '${item.itemId}')">
         <div class="customer">${escapeHtml(item.customer || '')}</div>
         <div>${escapeHtml(item.itemName || '')}</div>
         <div class="status ${checked ? 'checked' : 'unchecked'}">
