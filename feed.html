@@ -524,6 +524,9 @@ let feedState = { posts: [], nextCursor: 0, loadingMore: false };
 let currentView = 'feed'; // 현재 활성 화면 추적 (백그라운드 복귀 시 해당 화면만 다시 불러오기 위함)
 const threadState = {};
 const postComments = {};
+function hasOpenComposer() {
+return Object.keys(threadState).some(function (key) { return threadState[key] && threadState[key].replyOpenFor; });
+}
 
 function getSession() {
   const raw = localStorage.getItem('mro_session');
@@ -1081,13 +1084,13 @@ feedNeedsRerender = true;
 }
 }
 Object.keys(threadState).forEach(function (key) {
-if (key.indexOf(postId + '-') === 0 && threadState[key].open) {
+if (key.indexOf(postId + '-') === 0 && threadState[key].open && !threadState[key].replyOpenFor) {
 const itemId = key.slice((postId + '-').length);
 renderThread(postId, itemId);
 }
 });
 }
-if (feedNeedsRerender) renderFeed();
+if (feedNeedsRerender && !hasOpenComposer()) renderFeed();
 } catch (e) {
 // 조용히 실패, 다음 주기에 재시도
 }
@@ -1113,8 +1116,8 @@ async function loadFeed(isRetry) {
     feedState.posts = res.posts || [];
     primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
-    renderFeed();
-    if (notifNewPostsCache.loaded) updateNotifBadge();
+    if (!hasOpenComposer()) renderFeed();
+if (notifNewPostsCache.loaded) updateNotifBadge();
     return true;
   } catch (e) {
     // 백그라운드 복귀 직후엔 네트워크가 아직 안 붙어 실패할 수 있어 한번만 자동 재시도
