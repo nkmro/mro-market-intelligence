@@ -280,6 +280,12 @@ function isIdleTimedOut() {
     const sel = document.getElementById('signup-team');
     if (!sel) return;
     const fallback = ['동부', '서부', '중부', '영업지원', '소싱', '본사'];
+    function renderTeams(list) {
+      const prevValue = sel.value;
+      sel.innerHTML = list.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
+      if (prevValue && list.indexOf(prevValue) !== -1) sel.value = prevValue;
+    }
+    renderTeams(fallback);
     let teams = null;
     for (let attempt = 0; attempt < 3 && !teams; attempt++) {
       try {
@@ -288,8 +294,7 @@ function isIdleTimedOut() {
       } catch (e) {}
       if (!teams && attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 500 * (attempt + 1)); });
     }
-    if (!teams) teams = fallback;
-    sel.innerHTML = teams.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
+    if (teams) renderTeams(teams);
   }
   loadTeamOptions();
 
