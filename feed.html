@@ -632,33 +632,50 @@ function hideConnDelayNotice_() {
 }
 
 async function callApi(action, body) {
-  const isRetryableRead = RETRYABLE_API_ACTIONS.has(action);
-  const isIdempotentWrite = IDEMPOTENT_WRITE_ACTIONS.has(action);
-  // 쓰기 액션은 재시도 전체에서 같은 idempotencyKey를 재사용해야 서버가 중복을 걸러낼 수 있다.
-  const requestBody = isIdempotentWrite ? Object.assign({ idempotencyKey: generateIdempotencyKey_() }, body) : body;
-  // 읽기 전용 액션: hedge 요청으로 최대 3라운드까지 재시도. 쓰기 액션: idempotencyKey를 단 채로
-  // 실패 후 짧게 한 번만 더 재시도(서버가 중복 실행을 막아주므로 이제 안전하다). 그 외(로그인
-  // 등 인증 흐름)는 기존처럼 1회만 시도.
-  const maxRounds = isRetryableRead ? 3 : (isIdempotentWrite ? 2 : 1);
-  let lastErr;
-  for (let round = 0; round < maxRounds; round++) {
-    try {
-      const result = isRetryableRead
-        ? await hedgedFetch_(action, requestBody)
-        : await apiFetchOnce_(action, requestBody);
-      hideConnDelayNotice_();
-      return result;
-    } catch (e) {
-      lastErr = e;
-      if (round < maxRounds - 1) {
-        if (isRetryableRead && round === 0) showConnDelayNotice_();
-        await new Promise(function (resolve) { setTimeout(resolve, API_ROUND_BACKOFF_MS[round] || 6000); });
-      }
+    const isRetryableRead = RETRYABLE_API_ACTIONS.has(action);
+    const isIdempotentWrite = IDEMPOTENT_WRITE_ACTIONS.has(action);
+    // 쓰기 액션은 재시도 전체에서 같은 idempotencyKey를 재사용해야 서버가 중복을 걸러낼 수 있다.
+    const requestBody = isIdempotentWrite ? Object.assign({ idempotencyKey: generateIdempotencyKey_() }, body) : body;
+    // 읽기 전용 액션: hedge 요청으로 최대 3라운드까지 재시도. 쓰기 액션: idempotencyKey를 단 채로
+    // 실패 후 짧게 한 번만 더 재시도(서버가 중복 실행을 막아주므로 이제 안전하다). 그 외(로그인
+    // 등 인증 흐름)는 기존처럼 1회만 시도.
+    const maxRounds = isRetryableRead ? 3 : (isIdempotentWrite ? 2 : 1);
+    const __t0 = Date.now();
+    let lastErr;
+    for (let round = 0; round < maxRounds; round++) {
+          try {
+                  const result = isRetryableRead
+                    ? await hedgedFetch_(action, requestBody)
+                            : await apiFetchOnce_(action, requestBody);
+                  hideConnDelayNotice_();
+                  if (round > 0) logApiDelayEvent_(action, round, 'recovered', Date.now() - __t0);
+                  return result;
+          } catch (e) {
+                  lastErr = e;
+                  if (round < maxRounds - 1) {
+                            if (isRetryableRead && round === 0) {
+                                        showConnDelayNotice_();
+                                        logApiDelayEvent_(action, round, 'delayed', Date.now() - __t0);
+                            }
+                            await new Promise(function (resolve) { setTimeout(resolve, API_ROUND_BACKOFF_MS[round] || 6000); });
+                  }
+          }
     }
-  }
-  hideConnDelayNotice_();
-  throw lastErr;
+    hideConnDelayNotice_();
+    logApiDelayEvent_(action, maxRounds - 1, 'failed', Date.now() - __t0);
+    throw lastErr;
 }
+
+  // 지연/재시도 이벤트를 서버 디버그로그(clientDebugLog)에 남긴다. 결과를 기다리지 않는
+  // fire-and-forget이며 실패해도 무시한다. clientDebugLog 자기 자신의 재시도까지 로깅하면
+  // 무한 재귀가 될 수 있어 제외한다.
+  function logApiDelayEvent_(action, round, outcome, elapsedMs) {
+      if (action === 'clientDebugLog') return;
+      callApi('clientDebugLog', {
+            kind: 'apiDelay', action: action, round: round, outcome: outcome,
+            elapsedMs: elapsedMs, at: new Date().toISOString()
+      }).catch(function () {});
+  }
 
 function escapeHtml(str) {
   return String(str)
