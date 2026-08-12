@@ -279,14 +279,17 @@ function isIdleTimedOut() {
   async function loadTeamOptions() {
     const sel = document.getElementById('signup-team');
     if (!sel) return;
-    const fallback = ['동부', '서부', '중부', '영업지원'];
-    try {
-      const res = await callApi('getTeams', {});
-      const teams = (res.ok && res.teams && res.teams.length) ? res.teams : fallback;
-      sel.innerHTML = teams.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
-    } catch (e) {
-      sel.innerHTML = fallback.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
+    const fallback = ['동부', '서부', '중부', '영업지원', '소싱', '본사'];
+    let teams = null;
+    for (let attempt = 0; attempt < 3 && !teams; attempt++) {
+      try {
+        const res = await callApi('getTeams', {});
+        if (res.ok && res.teams && res.teams.length) teams = res.teams;
+      } catch (e) {}
+      if (!teams && attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 500 * (attempt + 1)); });
     }
+    if (!teams) teams = fallback;
+    sel.innerHTML = teams.map(t => '<option value="' + t + '">' + teamLabel(t) + '</option>').join('');
   }
   loadTeamOptions();
 
