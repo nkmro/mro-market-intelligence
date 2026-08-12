@@ -311,6 +311,7 @@ const ERROR_MESSAGES = {
   CODE_MISMATCH: '인증코드가 일치하지 않아요.',
   CODE_MISMATCH_OR_EXPIRED: '인증코드가 일치하지 않거나 만료됐어요.',
   SERVER_ERROR: '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.',
+  DUPLICATE_IN_PROGRESS_RETRY_LATER: '이전 로그인 요청을 아직 처리 중이에요. 잠시 후 다시 시도해주세요.',
     TOO_MANY_ATTEMPTS: '시도 횟수를 초과했어요. 인증코드를 다시 요청해주세요.',
     TOO_MANY_REQUESTS: '너무 많이 요청하셨어요. 1시간 후 다시 시도해주세요.'
 };
@@ -329,39 +330,59 @@ const RETRYABLE_API_ACTIONS = new Set([
   'login', 'requestSignup', 'verifySignup', 'requestPasswordReset', 'confirmPasswordReset', 'getTeams'
 ]);
 
-async function callApi(action, body) {
-  const maxAttempts = RETRYABLE_API_ACTIONS.has(action) ? 3 : 1;
-  let lastErr;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
-    // 요청을 중단시킨다. abort되면 fetch가 예외를 던져 아래 catch(e)의 재시도 루프로 이어진다.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
-    try {
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        // isRetry는 로그인진단로그 등 서버 쪽 진단 로그에서 "몇 번째 시도인지" 구분하는 용도로만
-        // 쓰인다(서버는 이 값으로 실패 카운트 처리를 다르게 하지 않음).
-        body: JSON.stringify(Object.assign({ action: action, isRetry: attempt > 0 }, body)),
-        signal: controller.signal
-      });
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      // 구글 앱스스크립트 응답이 간헐적으로 실패(HTML 오류 페이지, 콜드 스타트 타임아웃 등)하는
-      // 경우에 대비한 재시도. login처럼 서버에 부작용(로그인 실패 카운트 증가)이 있는 액션도
-      // 재시도 대상에 포함되는데, 아주 드물게 서버가 응답을 보내기 직전에 타임아웃/네트워크
-      // 문제가 나면 실패 카운트가 중복으로 올라갈 가능성이 이론상 있다. 다만 지금까지 계정
-      // 잠금 관련 민원이 없었고, 재시도 없이 방치되는 쪽의 피해(로그인 자체가 안 됨)가 훨씬
-      // 크다고 판단해 재시도를 켠다.
-      if (attempt < maxAttempts - 1) await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+  function generateIdempotencyKey_() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+      return 'idem-' + Date.now() + '-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   }
-  throw lastErr;
-}
+  // 재시도 전체에서 같은 idempotencyKey를 재사용해야 서버가 중복 실행을 걸러낼 수 있다.
+  // 우선 로그인만 대상으로 한다(다른 액션까지 넓히려면 서버 쪽도 같이 확장 필요).
+  const IDEMPOTENT_API_ACTIONS = new Set(['login']);
+  
 
+async function callApi(action, body) {
+    const maxAttempts = RETRYABLE_API_ACTIONS.has(action) ? 3 : 1;
+    const requestBody = IDEMPOTENT_API_ACTIONS.has(action)
+      ? Object.assign({ idempotencyKey: generateIdempotencyKey_() }, body) : body;
+    let lastErr;
+    let lastPendingResult;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연 등)를 대비해 일정 시간 후 강제로
+          // 요청을 중단시킨다. abort되면 fetch가 예외를 던져 아래 catch(e)의 재시도 루프로 이어진다.
+          const controller = new AbortController();
+          const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+          try {
+                  const res = await fetch(GAS_URL, {
+                            method: 'POST',
+                            // isRetry는 로그인진단로그 등 서버 쪽 진단 로그에서 "몇 번째 시도인지" 구분하는 용도로만
+                            // 쓰인다(서버는 이 값으로 실패 카운트 처리를 다르게 하지 않음).
+                            body: JSON.stringify(Object.assign({ action: action, isRetry: attempt > 0 }, requestBody)),
+                            signal: controller.signal
+                  });
+                  const json = await res.json();
+                  // 서버가 원본 요청(같은 idempotencyKey)을 아직 처리 중이라고 답한 경우, 네트워크 실패와
+                  // 동일하게 재시도 대상으로 취급한다. 원본 요청이 곧 끝나면 다음 시도에서 정상 결과를 받는다.
+                  if (json && json.ok === false && json.error === 'DUPLICATE_IN_PROGRESS_RETRY_LATER' && attempt < maxAttempts - 1) {
+                            lastPendingResult = json;
+                            await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
+                            continue;
+                  }
+                  return json;
+          } catch (e) {
+                  lastErr = e;
+                  // 구글 앱스스크립트 응답이 간헐적으로 실패(HTML 오류 페이지, 콜드 스타트 타임아웃 등)하는
+                  // 경우에 대비한 재시도. login처럼 서버에 부작용(로그인 실패 카운트 증가)이 있는 액션도
+                  // 재시도 대상에 포함되는데, 아주 드물게 서버가 응답을 보내기 직전에 타임아웃/네트워크
+                  // 문제가 나면 실패 카운트가 중복으로 올라갈 가능성이 이론상 있다. 다만 지금까지 계정
+                  // 잠금 관련 민원이 없었고, 재시도 없이 방치되는 쪽의 피해(로그인 자체가 안 됨)가 훨씬
+                  // 크다고 판단해 재시도를 켠다. (로그인은 이제 idempotencyKey로도 보호되어 더 안전하다.)
+                  if (attempt < maxAttempts - 1) await new Promise(function (resolve) { setTimeout(resolve, 800 * (attempt + 1)); });
+          } finally {
+                  clearTimeout(timeoutId);
+          }
+    }
+    if (lastPendingResult) return lastPendingResult;
+    throw lastErr;
+}
 function showTab(name) {
   document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
   document.getElementById('pane-' + name).classList.add('active');
