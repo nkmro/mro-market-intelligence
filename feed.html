@@ -540,7 +540,7 @@ function getSession() {
 const RETRYABLE_API_ACTIONS = new Set([
   'getFeed', 'getNotifications', 'getThreadSeen', 'getComments', 'getCustomers',
   'getItems', 'getPostById', 'getSettings', 'getUsers', 'suggestMaterials',
-  'pollSignal', 'clientDebugLog'
+  'pollSignal'
 ]);
 
 // Code.gs가 idempotencyKey로 중복 실행을 막아주는 쓰기 액션 목록(2026-08-07). 같은 키로
@@ -577,8 +577,7 @@ function apiFetchOnce_(action, body) {
     body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body)),
     signal: controller.signal
   }).then(function (res) { return res.json(); })
-    .finally(function () { clearTimeout(timeoutId); });
-}
+    .finally(function () { clearTimeout(timeoutId); }); } function sendDebugLogBeacon_(body) { const payload = JSON.stringify(Object.assign({}, body, { action: 'clientDebugLog', sessionToken: session ? session.sessionToken : null })); try { if (navigator.sendBeacon && navigator.sendBeacon(GAS_URL, payload)) return; } catch (e) {} try { fetch(GAS_URL, { method: 'POST', body: payload, keepalive: true }).catch(function () {}); } catch (e) {} }
 
 // 여러 요청 중 가장 먼저 "성공"하는 응답을 사용한다(Promise.race는 가장 먼저 실패하는 것도
 // 그대로 확정해버려서 이 용도에는 안 맞아 직접 구현). 전부 실패해야만 reject한다.
@@ -676,10 +675,7 @@ async function callApi(action, body) {
       // callApi()가 아니라 apiFetchOnce_()로 직접 보낸다. callApi를 쓰면 이 로깅 요청 자체도
         // hedge/재시도/지연 팝업 로직을 다시 타서, "지연을 기록하는 행위"가 지연 팝업을 한 번 더
         // 유발하는 자기증폭 문제가 생긴다(2026-08-12 발견). apiFetchOnce_는 단발성 요청이라 안전하다.
-        apiFetchOnce_('clientDebugLog', {
-                kind: 'apiDelay', action: action, round: round, outcome: outcome,
-                elapsedMs: elapsedMs, at: new Date().toISOString()
-        }).catch(function () {});
+        sendDebugLogBeacon_({ kind: 'apiDelay', action: action, round: round, outcome: outcome, elapsedMs: elapsedMs, at: new Date().toISOString() });
   }
 
 function escapeHtml(str) {
@@ -915,14 +911,7 @@ updateNotifBadge();
 // (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
 // 시작도 안 한 상태라 애니메이션이 끝나고 알림 탭에 들어가도 집계가 안 돼 있었음)
 // "MRO 뉴스 수집 중" 애니메이션이 실제로 어느 단계에서 오래 걸리는지 확인하기 위한 타이밍 기록(운영 확인용).
-callApi('clientDebugLog', { kind: 'authLoadTiming', at: new Date().toISOString(), ms: {
-feed: __authTFeed - __authT0,
-idle: __authTIdle - __authTGroupStart,
-seen: __authTSeen - __authTGroupStart,
-notif: __authTNotif - __authTGroupStart,
-group: Math.max(__authTIdle, __authTSeen, __authTNotif) - __authTGroupStart,
-total: Math.max(__authTFeed - __authT0, Math.max(__authTIdle, __authTSeen, __authTNotif) - __authT0)
-} }).catch(() => {});
+sendDebugLogBeacon_({ kind: 'authLoadTiming', at: new Date().toISOString(), ms: { feed: __authTFeed - __authT0, idle: __authTIdle - __authTGroupStart, seen: __authTSeen - __authTGroupStart, notif: __authTNotif - __authTGroupStart, group: Math.max(__authTIdle, __authTSeen, __authTNotif) - __authTGroupStart, total: Math.max(__authTFeed - __authT0, Math.max(__authTIdle, __authTSeen, __authTNotif) - __authT0) } });
 hideAuthLoadingOverlay();
 hideGenericLoading();
 updateNotifPermButton();
