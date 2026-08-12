@@ -616,7 +616,9 @@ function hedgedFetch_(action, body) {
 }
 
 let connDelayNoticeEl_ = null;
+  let suppressConnDelayNoticeUntil_ = 0;
 function showConnDelayNotice_() {
+  if (Date.now() < suppressConnDelayNoticeUntil_) return;
   if (!connDelayNoticeEl_) {
     connDelayNoticeEl_ = document.createElement('div');
     connDelayNoticeEl_.textContent = '서버 연결이 지연되고 있어요. 잠시 후 자동으로 다시 시도합니다.';
@@ -1037,6 +1039,7 @@ function startPolling() {
 // pageshow(bfcache 복귀)와 window focus도 같이 걸어 이중삼중으로 안전하게 잡는다.
 let lastResumeRefreshAt = 0;
 function refreshOnResume() {
+  suppressConnDelayNoticeUntil_ = Date.now() + 8000;
   const now = Date.now();
   if (now - lastResumeRefreshAt < 2000) return; // 여러 이벤트가 한번에 겹쳐 몰려도 중복 호출 방지
   lastResumeRefreshAt = now;
