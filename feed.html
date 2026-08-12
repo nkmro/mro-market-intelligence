@@ -2321,7 +2321,7 @@ ${canEdit ? '<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" on
 <label><input type="radio" name="item-status" value="비활성" ${item && item.status === '비활성' ? 'checked' : ''} ${dis}> 비활성</label>
 </div>
 <div class="item-form-actions">
-${canEdit ? '<button class="btn-secondary" onclick="closeItemForm()">취소</button><button class="btn-primary" onclick="saveItemForm()">저장</button>' : '<button class="btn-secondary" onclick="closeItemForm()">닫기</button>'}
+${canEdit ? '<button class="btn-secondary" onclick="closeItemForm()">취소</button><button class="btn-primary" id="item-save-btn" onclick="saveItemForm()">저장</button>' : '<button class="btn-secondary" onclick="closeItemForm()">닫기</button>'}
 </div>
 </div>
 `;
@@ -2431,17 +2431,21 @@ manager: manager,
 materials: itemsState.selectedMaterials.join(','),
 status: status
 };
-try {
+const btn = document.getElementById('item-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+  try {
 const res = await callApi('upsertItem', payload);
 if (!res.ok) {
 alert('저장 실패: ' + (res.error || 'SERVER_ERROR'));
-return;
+if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+  return;
 }
 closeItemForm();
 await loadItems();
 } catch (e) {
 alert('네트워크 오류가 발생했어요.');
-}
+if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+  }
 }
 
 function doLogout() {
