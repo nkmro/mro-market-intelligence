@@ -675,7 +675,7 @@ async function callApi(action, body) {
       // callApi()가 아니라 apiFetchOnce_()로 직접 보낸다. callApi를 쓰면 이 로깅 요청 자체도
         // hedge/재시도/지연 팝업 로직을 다시 타서, "지연을 기록하는 행위"가 지연 팝업을 한 번 더
         // 유발하는 자기증폭 문제가 생긴다(2026-08-12 발견). apiFetchOnce_는 단발성 요청이라 안전하다.
-        sendDebugLogBeacon_({ kind: 'apiDelay', action: action, round: round, outcome: outcome, elapsedMs: elapsedMs, at: new Date().toISOString() });
+        sendDebugLogBeacon_({ kind: 'apiDelay', targetAction: action, round: round, outcome: outcome, elapsedMs: elapsedMs, at: new Date().toISOString() });
   }
 
 function escapeHtml(str) {
