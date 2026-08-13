@@ -556,7 +556,7 @@ const IDEMPOTENT_WRITE_ACTIONS = new Set([
 ]);
 
 const API_REQUEST_TIMEOUT_MS = 20000;
-const API_HEDGE_DELAY_MS = 800;                  // 1차 요청이 이 시간 안에 안 끝나면 2차(중복) 요청을 추가로 보낸다.
+const API_HEDGE_DELAY_MS = 2500;                  // 1차 요청이 이 시간 안에 안 끝나면 2차(중복) 요청을 추가로 보낸다.
 const API_ROUND_BACKOFF_MS = [1500, 3000, 6000]; // 라운드(=hedge 세트 또는 단일 시도) 사이 대기. 기존 800/1600ms에서 상향.
 
 function generateIdempotencyKey_() {
@@ -645,7 +645,7 @@ async function callApi(action, body) {
     let lastErr;
     for (let round = 0; round < maxRounds; round++) {
           try {
-                  const result = isRetryableRead
+                  const useHedge = isRetryableRead && round === 0; const result = useHedge
                     ? await hedgedFetch_(action, requestBody)
                             : await apiFetchOnce_(action, requestBody);
                   hideConnDelayNotice_();
