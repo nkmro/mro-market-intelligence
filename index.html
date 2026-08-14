@@ -242,6 +242,7 @@
 
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
+const CLOUD_RUN_GET_TEAMS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getTeamsTest';
 
 // 로그인진단로그에 접속 기기 종류(iOS/Android/Windows/Mac 등)를 남기기 위한 판별 함수.
 // navigator.userAgentData(최신 표준)는 사파리/파이어폭스가 지원을 안 해서 iOS 전체가 빠지므로
@@ -289,7 +290,17 @@ function isIdleTimedOut() {
     let teams = null;
     for (let attempt = 0; attempt < 3 && !teams; attempt++) {
       try {
-        const res = await callApi('getTeams', {});
+        const __t0 = Date.now();
+        let res;
+        if (CLOUD_RUN_GET_TEAMS_URL) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+          res = await fetch(CLOUD_RUN_GET_TEAMS_URL, { method: 'GET', signal: controller.signal }).then(function (r) { return r.json(); });
+          clearTimeout(timeoutId);
+        } else {
+          res = await callApi('getTeams', {});
+        }
+        console.log('[getTeams] source=' + (CLOUD_RUN_GET_TEAMS_URL ? 'cloud-run' : 'apps-script') + ' clientMs=' + (Date.now() - __t0));
         if (res.ok && res.teams && res.teams.length) teams = res.teams;
       } catch (e) {}
       if (!teams && attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 500 * (attempt + 1)); });
