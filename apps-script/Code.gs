@@ -1078,8 +1078,9 @@ const postRetentionDays = Number(map['시황게시물보관기간']) || 60;
 const logRetentionDays = Number(map['수집로그보관기간']) || 30;
 const maxArticleAgeDays = Number(map['기사최대경과일']) || 7;
 // 2026-08-18: 같은 원자재에 대해 AI가 관련 있다고 판단한 뉴스가 하루에 여러 건이어도,
-// collectMarketNews() 1회 실행당 원자재(code)별로 최신순 상위 이 건수만 시황게시물로 게시한다.
-// 값이 없거나 0/음수/숫자가 아니면 기본값 1(원자재당 대표 1건)로 동작한다.
+// collectMarketNews() 1회 실행당 원자재(code)별로 "AI가 판단한 시황 중요도(relevanceScore)" 상위
+// 이 건수만 시황게시물로 게시한다(점수가 없으면 발행일 최신순으로 폴백). 값이 없거나 0/음수/숫자가
+// 아니면 기본값 1(원자재당 대표 1건)로 동작한다.
 const maxPostsPerMaterial = Math.max(1, Number(map['원자재별시황게시물출력건수']) || 1);
 return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial };
 }
@@ -1338,11 +1339,27 @@ postedSummariesThisRun_.push({ code: c.code, summary: result.summary });
 logSheet.appendRow([c.code, c.link, new Date()]);
 });
 
-// 원자재(code)별로 발행일(pubDate) 최신순 정렬 후, 설정 시트의 '원자재별시황게시물출력건수'(기본 1)만큼만 게시.
+// 원자재(code)별로 "AI가 판단한 시황 중요도(relevanceScore)" 높은 순으로 정렬 후, 설정 시트의
+// '원자재별시황게시물출력건수'(기본 1)만큼만 게시. relevanceScore가 없는 경우(AI가 점수를 주지
+// 않았거나 파싱 실패)에만 발행일(pubDate) 최신순으로 폴백한다.
+// - 둘 다 점수 있음: 점수 높은 순, 동점이면 pubDate 최신순
+// - 한쪽만 점수 있음: 점수 있는 쪽 우선 (pubDate와 무관)
+// - 둘 다 점수 없음: pubDate 최신순 (기존 로직과 동일)
 const maxPostsPerMaterial = settings.maxPostsPerMaterial;
+function compareByRelevanceThenDate_(a, b) {
+const aScore = a.result.relevanceScore;
+const bScore = b.result.relevanceScore;
+if (aScore !== null && bScore !== null) {
+if (aScore !== bScore) return bScore - aScore;
+return new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime();
+}
+if (aScore !== null) return -1;
+if (bScore !== null) return 1;
+return new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime();
+}
 Object.keys(relevantByCode).forEach(code => {
 const group = relevantByCode[code];
-group.sort((a, b) => new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime());
+group.sort(compareByRelevanceThenDate_);
 group.slice(0, maxPostsPerMaterial).forEach(({ c, result }) => {
 postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
 posted++;
@@ -1670,7 +1687,8 @@ let prompt = "너는 MRO(산업 소모성 자재) 원자재 시황 뉴스 분석
 "기사가 특정 기업의 주가·증시·주식시장 동향(상한가, 급등락, 시가총액, 투자의견 등)을 다루는 내용이면, [" + materialName + "] 언급 여부와 무관하게 관련 없음으로 판단해.\n" +
 "기사 안에 [" + materialName + "]의 가격, 수급, 물량, 생산량, 수출입 등 시황과 관련된 구체적인 숫자나 퍼센트(%)가 없으면 관련 없음으로 판단해.\n" +
 "기사 제목이나 전체 논조가 특정 방향(상승/하락)을 암시하더라도, 개별 원자재의 수치는 정반대 방향일 수 있어. 예를 들어 \"수입물가 전체 하락\" 기사 안에서도 특정 품목만 상승했다고 나올 수 있으니, 반드시 [" + materialName + "] 바로 옆에 명시된 숫자와 방향(상승/하락/%)만 근거로 판단하고, 기사 제목이나 전체 톤에 맞춰 방향을 추측하지 마.\n" +
-"관련 있으면 반드시 [" + materialName + "]의 가격/수급/물량/생산량 등 시황 동향을 나타내는 구체적인 숫자나 퍼센트(%)를 포함해 2문장 이내 한국어로 중심 요약하고(주가·기업 실적 등 원자재와 무관한 내용은 요약에서 제외), 관련 없으면 요약은 빈 문자열로 둬.\n";
+"관련 있으면 반드시 [" + materialName + "]의 가격/수급/물량/생산량 등 시황 동향을 나타내는 구체적인 숫자나 퍼센트(%)를 포함해 2문장 이내 한국어로 중심 요약하고(주가·기업 실적 등 원자재와 무관한 내용은 요약에서 제외), 관련 없으면 요약은 빈 문자열로 둬.\n" +
+"관련 있으면 이 기사가 [" + materialName + "]의 시황(가격/수급) 변화를 얼마나 구체적이고 직접적으로 반영하는지 1(약함)~5(매우 강함) 정수로 평가해 relevanceScore에 담고, 관련 없으면 relevanceScore는 0으로 둬.\n";
 if (possibleDuplicateOf) {
 // v24: 사전 필터(titleOverlap_)에서 애매하게 겹친 기존 게시물 참고 정보. 핵심 사실관계가
 // 같으면 문구가 달라도 중복으로 판단하도록 AI에게 명시적으로 안내한다.
@@ -1679,7 +1697,7 @@ prompt += "\n[참고] 아래와 사실상 같은 사건(같은 발표/같은 통
 "[이미 게시된 유사 기사 요약] " + possibleDuplicateOf.summary + "\n";
 }
 prompt += "\n반드시 아래 JSON 형식으로만 응답해. 다른 텍스트나 코드블록 표시는 붙이지 마.\n" +
-'{"relevant": true 또는 false, "summary": "요약 또는 빈 문자열"}\n\n' +
+'{"relevant": true 또는 false, "summary": "요약 또는 빈 문자열", "relevanceScore": 관련 있으면 1~5 정수, 관련 없으면 0}\n\n' +
 "[제목]\n" + title + "\n\n" +
 "[본문 일부]\n" + description;
 return prompt;
@@ -1691,19 +1709,25 @@ return prompt;
 function parseSummarizeResult_(text, title) {
 if (!text) {
 console.error('parseSummarizeResult_: AI 응답 없음 - relevant:false 처리(재시도 대상). title=' + title);
-return { relevant: false, summary: '', aiFailed: true };
+return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
 }
 try {
 const cleaned = text.replace(/```json|```/g, '').trim();
 const parsed = JSON.parse(cleaned);
+// 2026-08-18: relevanceScore는 원자재별 시황게시물 N건 출력 시 "AI가 판단한 시황 중요도" 기준으로
+// 정렬하기 위한 값. 1~5 정수가 아니면(누락/범위 밖/파싱 이상) null로 처리해, collectMarketNews()의
+// 정렬 비교 로직에서 발행일(pubDate) 최신순 폴백이 적용되도록 한다.
+const rawScore = Number(parsed.relevanceScore);
+const relevanceScore = (Number.isInteger(rawScore) && rawScore >= 1 && rawScore <= 5) ? rawScore : null;
 return {
 relevant: parsed.relevant === true,
 summary: parsed.summary ? parsed.summary.trim() : '',
+relevanceScore: relevanceScore,
 aiFailed: false
 };
 } catch (err) {
 console.error('parseSummarizeResult_: 파싱 실패 - relevant:false 처리(재시도 대상). title=' + title);
-return { relevant: false, summary: '', aiFailed: true };
+return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
 }
 }
 
