@@ -336,10 +336,19 @@ res.status(500).json({ ok: false, serverMs, error: String((err && err.message) |
 // Sheets API 기본 옵션(FORMATTED_VALUE)으로 읽으면 스프레드시트 표시 형식에 따라 사람이 보는
 // 문자열(예: "2026. 8. 15 오전 10:30:00")로 돌아와 파싱이 불안정해질 수 있어(테스트 계획 문서에서
 // 이미 지적한 위험), 이 함수만 valueRenderOption=UNFORMATTED_VALUE를 명시해서 날짜 셀을
-// "1899-12-30 기준 일수(serial number)"로 받는다. sheetSerialToMs_가 이 값을 항상 동일한 방식으로
-// 밀리초로 환산하므로(스프레드시트 시간대 오프셋이 있어도 모든 값에 똑같이 적용되어 서로 비교할 때는
-// 상쇄된다), 텍스트로 쓰인 화면 표시 형식을 추측해서 파싱할 필요가 없다. 다른 기존 함수
-// (whoamiTest/getSettingsTest 등)는 그대로 FORMATTED_VALUE를 쓰므로 이 변경은 이 함수에만 적용된다.
+// "1899-12-30 기준 일수(serial number)"로 받는다. 다른 기존 함수(whoamiTest/getSettingsTest 등)는
+// 그대로 FORMATTED_VALUE를 쓰므로 이 변경은 이 함수에만 적용된다.
+//
+// [2026-08-18 날짜/시간대 버그 수정] 이 serial number는 UTC가 아니라 "스프레드시트에 설정된
+// 시간대 기준 벽시계 값"이다(2026-08-18 스프레드시트 파일>설정>시간대에서 "(GMT+09:00) 서울"로
+// 직접 확인). 예전 sheetSerialToMs_는 이 값을 그대로 UTC로 취급해서, totalNeedsAttention처럼
+// "sheetSerialToMs_로 변환된 두 값끼리"만 비교하는 상대비교 결과는 문제없었지만(서울 오프셋이
+// 양쪽에 똑같이 실려서 상쇄됨 — 이미 실사용자 데이터로 검증됨), signatures[].lastCommentAt로
+// 그대로 노출되는 절대 시각 자체는 실제(Apps Script 기준)보다 9시간 앞서 있었다(예:
+// 2026-07-28T10:52:00.109Z로 노출됐지만 실제는 2026-07-28T01:52:00.109Z). 한국은 DST가 없어
+// 이 오프셋은 연중 고정이므로, 스프레드시트 시간대 설정이 서울로 유지되는 한 아래처럼 고정
+// 오프셋을 빼주면 된다. 이 시간대가 바뀌면 이 상수도 같이 바꿔야 한다.
+const SPREADSHEET_UTC_OFFSET_MS = 9 * 60 * 60 * 1000; // Asia/Seoul = UTC+9, DST 없음
 const SHEET_POST_NAME = '시황게시물';
 const SHEET_ITEM_NAME = '품목마스터';
 const SHEET_COMMENT_NAME = '댓글';
@@ -349,11 +358,11 @@ const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:H');
 const POLL_COMMENT_RANGE = encodeURIComponent(SHEET_COMMENT_NAME + '!A2:I');
 const POLL_SETTINGS_RANGE = encodeURIComponent(SHEET_SETTING_NAME + '!A2:C');
 
-// Google Sheets serial date(1899-12-30 기준 일수) -> Unix ms. 값이 없으면 null.
-// 문자열이 들어오는 예외 상황(혹시 셀이 텍스트로 바뀐 경우)도 방어적으로 처리한다.
+// Google Sheets serial date(1899-12-30 기준, 스프레드시트 시간대(서울) 벽시계 값) -> 실제 UTC Unix ms.
+// 값이 없으면 null. 문자열이 들어오는 예외 상황(혹시 셀이 텍스트로 바뀐 경우)도 방어적으로 처리한다.
 function sheetSerialToMs_(v) {
   if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number') return Math.round((v - 25569) * 86400000);
+  if (typeof v === 'number') return Math.round((v - 25569) * 86400000) - SPREADSHEET_UTC_OFFSET_MS;
   const t = new Date(v).getTime();
   return isNaN(t) ? null : t;
 }
