@@ -2991,6 +2991,45 @@ items: entries.map(toNotification)
 });
 }
 
+/**
+* [테스트] getPostById 응답에 materialCode/link/pubDate/confirmedCount/totalCount가
+* 정상적으로 포함되는지 실제 데이터로 확인 (알림함 -> 새 게시글 클릭 시 "기사 원문 보기"가
+* 사라지던 버그의 수정 검증용). Apps Script 편집기에서 직접 실행.
+*/
+function testGetPostByIdFields() {
+const allPosts = getAllPosts_();
+if (!allPosts.length) { Logger.log('테스트 불가: 시황게시물이 비어 있습니다.'); return; }
+const target = allPosts.find(function (p) { return p.link; }) || allPosts[0];
+
+const userData = getSheetValues_(SHEET_USER);
+let execUser = null;
+for (let i = 1; i < userData.length; i++) {
+if (userData[i][2] === '임원' && userData[i][4] === '활성') {
+execUser = { email: userData[i][0], name: userData[i][1], role: userData[i][2], team: userData[i][3], status: userData[i][4] };
+break;
+}
+}
+if (!execUser) { Logger.log('테스트 불가: 활성 임원 사용자를 찾지 못했습니다.'); return; }
+
+const res = handleGetPostById_(execUser, { postId: target.id });
+const json = JSON.parse(res.getContent());
+if (!json.ok || !json.post) {
+Logger.log('결과: 실패!! getPostById 응답 자체가 ok:false 입니다. (' + JSON.stringify(json) + ')');
+return;
+}
+const p = json.post;
+Logger.log('[테스트 대상] postId=' + target.id + ', materialName=' + p.materialName);
+Logger.log('materialCode=' + p.materialCode + ', link="' + p.link + '", pubDate=' + p.pubDate + ', confirmedCount=' + p.confirmedCount + ', totalCount=' + p.totalCount);
+
+const hasAllFields = ('materialCode' in p) && ('link' in p) && ('pubDate' in p) && ('confirmedCount' in p) && ('totalCount' in p);
+const linkNonEmptyIfSourcePostHasLink = !target.link || (p.link === target.link);
+if (hasAllFields && linkNonEmptyIfSourcePostHasLink) {
+Logger.log('결과: 통과 - materialCode/link/pubDate/confirmedCount/totalCount가 모두 정상 포함됨 (기사 원문 보기·확인건수 버그 수정 확인).');
+} else {
+Logger.log('결과: 실패!! 여전히 일부 항목이 빠져 있거나 값이 원본과 다릅니다.');
+}
+}
+
 function handleGetPostById_(user, body) {
 const postId = body.postId;
 if (!postId) return jsonResponse_({ ok: false, error: 'MISSING_POST_ID' });
@@ -3012,16 +3051,25 @@ if (email && !(email in teamByEmail)) teamByEmail[email] = getUserTeam_(email);
 });
 const entry = buildFeedEntry_(user, post, allItems, commentsByPost, teamByEmail);
 if (!entry) return jsonResponse_({ ok: false, error: 'FORBIDDEN' });
+// 2026-08-19: getFeed/buildCommentUpdateResponse_와 동일한 게시물 응답 형태로 맞춤.
+// 이전에는 materialCode/link/pubDate/confirmedCount/totalCount가 빠져 있어,
+// 알림함 등에서 아직 로드되지 않은 게시물을 getPostById로 불러올 때
+// "기사 원문 보기" 버튼과 확인 건수(확인 0/N)가 잘못 표시되는 문제가 있었음.
 return jsonResponse_({
 ok: true,
 post: {
 id: entry.post.id,
+materialCode: entry.post.materialCode,
 materialName: entry.post.materialName,
 title: entry.post.title,
 summary: entry.post.summary,
+link: entry.post.link,
+pubDate: entry.post.pubDate,
 createdAt: entry.post.createdAt,
-items: entry.items,
-needsAttention: entry.needsAttention
+confirmedCount: entry.confirmedCount,
+totalCount: entry.totalCount,
+needsAttention: entry.needsAttention,
+items: entry.items
 }
 });
 }
