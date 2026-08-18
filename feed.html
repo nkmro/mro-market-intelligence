@@ -514,6 +514,10 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 const CLOUD_RUN_GET_SETTINGS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getSettingsTest';
+// login/whoami 전환 계획 2단계(2026-08-18): 새로고침/재실행 시 localStorage에 캐시된 이름/역할/팀을
+// 서버 최신값으로 가볍게 갱신하기 위한 호출. 실패/타임아웃 시에도 기존 getFeed 기반
+// UNAUTHORIZED 처리(doLogout)로 그대로 폴백하며, 이 호출 자체가 로그인 판정에 관여하지 않는다.
+const CLOUD_RUN_WHOAMI_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/whoamiTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -835,6 +839,35 @@ localStorage.removeItem('mro_last_activity');
 // 여기로 옮겼다.
 let notifFetchSeq = 0; // 알림 갱신 요청의 최신 순번 추적: 오래된 응답이 새 응답을 덮어써 배지/푸시가 잘못된 값으로 떴다가 몇 초 뒤 저절로 정정되는 레이스 방지
 
+// login/whoami 전환 계획 2단계(2026-08-18): Cloud Run whoami로 서버 최신 name/role/team을
+// best-effort로 가져와 localStorage를 갱신한다. 절대로 이 호출의 실패/타임아웃을 이유로
+// 로그아웃시키지 않는다 — 세션 만료/미인증 판정은 기존처럼 getFeed의 UNAUTHORIZED 처리에게만
+// 맡긴다 (fire-and-forget이며 화면 흐름을 막지 않음).
+async function refreshSessionViaWhoami_() {
+  if (!session || !session.sessionToken) return;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 3000);
+    const res = await fetch(CLOUD_RUN_WHOAMI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session.sessionToken }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); }).finally(function () { clearTimeout(timeoutId); });
+    if (res && res.ok) {
+      session.name = res.name || session.name;
+      session.role = res.role || session.role;
+      session.team = res.team || session.team;
+      session.email = res.email || session.email;
+      localStorage.setItem('mro_session', JSON.stringify(session));
+      const sidebarMe = document.getElementById('sidebar-me');
+      if (sidebarMe) sidebarMe.textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+    }
+  } catch (e) {
+    // 네트워크 오류/타임아웃 등 — 조용히 무시. 실패해도 기존 Apps Script 기반 인증 흐름은 그대로 유지된다.
+  }
+}
+
 (async function init() {
 session = getSession();
 if (!session || !session.sessionToken) {
@@ -862,6 +895,8 @@ startAuthLoadingAnim();
 // 동안 화면이 완전히 빈 채로 있으면 멈춘 것처럼 보이니 심플한 로딩 표시는 띄워둔다.
 showGenericLoading('불러오는 중이에요...');
 }
+
+refreshSessionViaWhoami_(); // fire-and-forget, 아래 흐름을 기다리지 않음 (2단계)
 
 if (session.passwordExpired) {
 showForcedPasswordChangeOverlay();

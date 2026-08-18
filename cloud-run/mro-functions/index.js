@@ -68,6 +68,20 @@ exports.getTeamsTest = async (req, res) => {
 const { Firestore } = require('@google-cloud/firestore');
 const firestore = new Firestore();
 
+const SESSION_TTL_MS = 21600 * 1000; // 6시간 — Apps Script CacheService의 세션 TTL과 동일
+
+// 세션 인증을 통과한 요청마다 Firestore 세션의 expiresAt을 지금 시각 + 6시간으로 밀어서,
+// Apps Script authenticateRequest_의 슬라이딩 세션 연장과 동일하게 동작하도록 한다
+// (2026-08-18, login/whoami 전환 계획 1단계). best-effort: 이 갱신이 실패해도 원래
+// 요청의 응답에는 영향을 주지 않는다 — sessionSyncTest(로그인 최초 1회 기록)는 그대로 둔다.
+async function touchSession_(ref) {
+  try {
+    await ref.update({ expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
+  } catch (e) {
+    console.error('touchSession_ 실패(무시): ' + e);
+  }
+}
+
 // GET /firestoreTest : write one small doc, read it back, delete it. Measures Firestore round-trip only.
 exports.firestoreTest = async (req, res) => {
   setCors(res);
@@ -159,6 +173,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
+await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
 const email = session.email;
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
@@ -212,6 +227,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
+await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
 const client = await auth.getClient();
@@ -264,6 +280,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
+await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
 const email = session.email;
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
