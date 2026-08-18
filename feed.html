@@ -518,6 +518,10 @@ const CLOUD_RUN_GET_SETTINGS_URL = 'https://asia-northeast3-mro-market-intellige
 // 서버 최신값으로 가볍게 갱신하기 위한 호출. 실패/타임아웃 시에도 기존 getFeed 기반
 // UNAUTHORIZED 처리(doLogout)로 그대로 폴백하며, 이 호출 자체가 로그인 판정에 관여하지 않는다.
 const CLOUD_RUN_WHOAMI_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/whoamiTest';
+// pollSignal 실제 이전(2026-08-18): 30초마다 도는 실시간 배지 폴링을 Cloud Run으로 먼저 시도하고,
+// 실패/타임아웃/예외 시 기존 Apps Script pollSignal로 자동 폴백한다(CLOUD_RUN_GET_SETTINGS_URL과
+// 동일한 패턴). 기존 pollSignal 호출 경로(callApi('pollSignal', {}))는 폴백용으로 그대로 남겨둔다.
+const CLOUD_RUN_POLLSIGNAL_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/pollSignalTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -1089,7 +1093,26 @@ window.addEventListener('focus', refreshOnResume);
 
 async function pollForUpdates() {
 try {
-const res = await callApi('pollSignal', {});
+let res;
+const __psT0 = Date.now();
+let __psCloudOk = false;
+// pollSignal 실제 이전(2026-08-18): Cloud Run 먼저 시도 -> 실패/타임아웃/예외면 기존
+// Apps Script pollSignal로 자동 폴백. CLOUD_RUN_GET_SETTINGS_URL 폴백 패턴과 동일.
+if (CLOUD_RUN_POLLSIGNAL_URL) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const cloudRes = await fetch(CLOUD_RUN_POLLSIGNAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }), signal: controller.signal }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    if (cloudRes && cloudRes.ok) { res = cloudRes; __psCloudOk = true; }
+  } catch (e) {}
+}
+if (__psCloudOk) {
+  console.log('[pollSignal] source=cloud-run clientMs=' + (Date.now() - __psT0));
+} else {
+  res = await callApi('pollSignal', {});
+  console.log('[pollSignal] source=apps-script clientMs=' + (Date.now() - __psT0));
+}
 if (!res.ok) {
 if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
 doLogout();
