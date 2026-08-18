@@ -48,7 +48,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | `loadTeamOptions()` (index.html, 회원가입 팀 선택) | `getTeams` | ✅ 전환됨 (`CLOUD_RUN_GET_TEAMS_URL`) | `handleGetTeams_` (또는 동일 로직) | 인증 불필요, 실서비스 검증 완료 (결과 100% 동일, clientMs 개선 확인) |
 | `loadIdleTimeoutSetting()`, `loadSettingsPage()` (feed.html) | `getSettings` | ✅ 전환됨 (`CLOUD_RUN_GET_SETTINGS_URL`), 실패 시 자동 Apps Script 폴백 | `handleGetSettings_` | 세션 인증 필요 (Firestore 세션 조회 → Sheets 읽기). ok:false·오류·타임아웃 등 모든 실패 시 자동 폴백 |
 | (프론트 호출 지점 없음) | `getTeamManagers` | ⏸ 보류 (Cloud Run에 `getTeamManagersTest`는 배포·검증되어 있으나 프론트에서 부르는 곳이 없음) | `handleGetTeamManagers_` | 아래 "getTeamManagers 분석" 참고 — 사실상 미사용/대체된 기능으로 판단됨 |
-| `handleLogin_()` / 로그인 폼 | `login` | ⏳ 미착수 (다음 후보, 별도 계획 예정) | `handleLogin_` | 가장 민감한 기능 — 세션 발급 자체를 옮기는 작업이라 신중히 계획 필요 |
+| `handleLogin_()` / 로그인 폼 | `login` | 📋 계획 수립 완료, 승인 대기 (`LOGIN_WHOAMI_MIGRATION_PLAN.md` 참고) | `handleLogin_` | 가장 민감한 기능 — 세션 발급 자체를 통째로 옮기면 다른 대부분 기능(CacheService 인증)이 깨짐. 1단계(Firestore 세션 슬라이딩)·2단계(whoami 신설)만 우선 승인 요청, 3단계(login 자체 이전)는 보류 |
 | 피드 로딩 전체 | `getPostById`, `getAttentionPosts` 등 다수 | ⏳ 미착수 | 다수의 `handle*_` 함수 | 가장 무겁고 복잡한 영역, 가장 마지막에 이전 예정 |
 | 그 외 모든 action (`getUsers`, `updateUser`, `getItems`, `getCustomers`, `upsertCustomer`, `changePassword`, `getThreadSeen`, `markThreadSeen`, `updateSettings` 등) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용 |
 
@@ -71,3 +71,5 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 - [`frontend/README.md`](./frontend/README.md) — 프론트엔드 파일 목록과 역할, 실제 위치에 대한 설명
 - [`apps-script/README.md`](./apps-script/README.md) — Apps Script 백엔드: 배포 방법, Script Properties 목록(이름만), 롤백 방법
 - [`cloud-run/README.md`](./cloud-run/README.md) — Cloud Run 함수별 URL, 프로젝트/리전, 상태, 배포/롤백 방법
+- [`NODE22_UPGRADE_REPORT.md`](./NODE22_UPGRADE_REPORT.md) — Node.js 20→22 업그레이드 함수별 결과 보고 (2026-08-18)
+- [`LOGIN_WHOAMI_MIGRATION_PLAN.md`](./LOGIN_WHOAMI_MIGRATION_PLAN.md) — login/whoami Cloud Run 전환 상세 계획 (분석·계획 단계, 승인 대기)
