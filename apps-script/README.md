@@ -6,6 +6,8 @@
 
 이 폴더의 `Code.gs`는 **Google Apps Script 편집기에 있는 실제 코드의 미러(사본)입니다.** 즉, 실제로 코드를 수정하고 배포하는 곳은 여전히 Apps Script 편집기이며, 이 GitHub 파일은 "지금 운영 중인 코드가 무엇인지 기록/추적"하기 위한 것입니다. **Code.gs를 수정했다면, 이 파일도 최신 상태로 다시 동기화해 주세요** (그렇지 않으면 이 문서를 보는 사람/AI가 실제와 다른 코드를 보게 됩니다).
 
+> **2026-08-18 최초 동기화 안내**: 이 저장소의 `Code.gs`는 브라우저 자동화로 편집기 내용을 복사해서 만들었습니다. 코드 내용과 줄바꿈은 원본과 100% 동일하고 문법적으로도 유효하지만(`node --check` 통과), 복사 과정에서 원본의 들여쓰기(공백)가 모두 사라졌습니다 — 로직/동작에는 영향이 없는 순수 포맷 차이입니다. 다음에 이 파일을 갱신할 기회가 있다면, 가능하면 Apps Script 편집기에서 직접 내려받은 원본 형태로 교체해 들여쓰기를 복원해 주세요.
+
 - **Apps Script 프로젝트**: "MRO 자재 시황 관리 시스템"
 - **프로젝트 ID**: `1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe`
 - **편집기 URL**: https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit

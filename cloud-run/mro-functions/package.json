@@ -1,0 +1,9 @@
+{
+  "name": "mro-test-endpoints",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/firestore": "^9.0.0",
+    "google-auth-library": "^9.14.1"
+  }
+}

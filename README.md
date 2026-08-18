@@ -12,6 +12,8 @@ mro-market-intelligence/
 └── README.md           ← 이 문서
 ```
 
+> **2026-08-18 업데이트**: `apps-script/Code.gs`, `apps-script/appsscript.json`, `cloud-run/mro-functions/*`(index.js·package.json·package-lock.json·fix.py·fix2.py) 실제 소스 파일을 이 저장소에 처음으로 커밋했습니다. 지금까지는 README만 있고 실제 코드는 Apps Script 편집기/GCP 콘솔에만 있었는데, 이제 GitHub에서도 실제 코드를 볼 수 있습니다. (세부 사항은 각 하위 README 참고.)
+
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
 

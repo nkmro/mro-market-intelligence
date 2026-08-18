@@ -6,14 +6,16 @@
 
 - **GCP 프로젝트**: `mro-market-intelligence`
 - **리전**: `asia-northeast3` (서울)
-- **런타임**: Node.js 20, Cloud Functions (2nd gen), HTTP 트리거, 인증 없이 호출 가능(`--allow-unauthenticated`) — 대신 각 함수 내부에서 `sessionToken`으로 자체 인증
-- ⚠️ **Node.js 20은 2026-10-30에 지원 종료(decommission) 예정입니다.** 다음 배포부터는 `--runtime=nodejs22`로 올리는 것을 권장합니다 (아직 실행 안 함 — 별도 작업으로 진행 필요).
+- **런타임**: Node.js 22 (2026-08-18 8개 함수 전체 업그레이드 완료), Cloud Functions (2nd gen), HTTP 트리거, 인증 없이 호출 가능(`--allow-unauthenticated`) — 대신 각 함수 내부에서 `sessionToken`으로 자체 인증
+- ✅ **2026-08-18: Node.js 20 → Node.js 22 업그레이드 완료.** 기존 Node.js 20은 2026-04-30부터 지원 중단(deprecated) 상태였고 2026-10-30에 완전히 사용 중단(decommission)될 예정이었습니다. `@google-cloud/firestore@9.0.0`의 `package.json` engines 조건(`node >= 22`)과 맞춰 Node.js 22로 업그레이드했습니다 (근거는 이전 분석 그대로). 8개 함수 모두 pingTest 등 단순/진단용 함수부터 먼저 배포·검증한 뒤, 실제 트래픽이 있는 getTeamsTest·getSettingsTest까지 순차적으로 진행했으며, 전 함수 테스트 결과가 업그레이드 전(Node.js 20) 베이스라인과 기능적으로 동일함을 확인했습니다. **각 함수의 기존 Node.js 20 리비전은 삭제하지 않고 트래픽 0%로 보존**되어 있어 즉시 롤백 가능합니다 (`pingtest-00001-sax`, `getsettingstest-00001-zah` 등 — 콘솔의 "버전" 탭에서 직접 재확인함). 상세 내용은 저장소 루트의 `NODE22_UPGRADE_REPORT.md` 참고.
 
 ## 소스 구조
 
-`cloud-run/mro-functions/`에 있는 **하나의 소스 디렉터리**에서 8개 함수가 모두 배포됩니다 (`index.js` 하나에 여러 개의 `exports.함수이름`이 있고, 배포 시 `--entry-point`로 어느 함수를 쓸지 지정하는 방식). 즉 폴더가 함수마다 나뉘어 있는 게 아니라, **소스 하나 + 진입점(entry point) 8개** 구조입니다.
+`cloud-run/mro-functions/`에 있는 **하나의 소스 디렉터리**에서 8개 함수가 모두 배포됩니다 (`index.js` 하나에 여러 개의 `exports.함수이름`이 있고, 배포 시 `--entry-point`로 어느 함수를 쓸지 지정하는 방식). 즉 폴더가 함수마다 나뉘어 있는 게 아니라, **소스 하나 + 진입점(entry point) 8개** 구조입니다. **2026-08-18, 실제 GCP 콘솔의 `getSettingsTest` 함수 소스 보관 파일을 직접 내려받아 확인** — `index.js`에 8개 `exports.*` 핸들러가 모두 들어있어 위 설명과 정확히 일치함을 확인했습니다. 이 저장소의 `cloud-run/mro-functions/index.js`도 그 파일 그대로입니다(포맷팅 손실 없이 원본 그대로).
 
-의존 패키지(`package.json`): `@google-cloud/firestore`, `google-auth-library`. **환경변수나 Secret이 전혀 필요 없습니다** — Google Sheets 접근은 `google-auth-library`의 `GoogleAuth`가 Cloud Functions 실행 서비스 계정의 권한을 그대로 사용하고, Firestore도 마찬가지로 서비스 계정 IAM 권한만으로 동작합니다 (코드에 `process.env` 참조가 전혀 없음 — 직접 확인함).
+의존 패키지(`package.json`): `@google-cloud/firestore@9.0.0`, `google-auth-library`(`package-lock.json` 기준 실제 설치 버전 `9.15.1`). Google Sheets 접근은 `google-auth-library`의 `GoogleAuth`가 Cloud Functions 실행 서비스 계정의 권한을 그대로 사용하고, Firestore도 마찬가지로 서비스 계정 IAM 권한만으로 동작합니다 (코드에 `process.env` 참조가 전혀 없음 — 직접 확인함). **다만 앱 코드가 직접 쓰는 환경변수/Secret은 없지만, Cloud Run/Functions 배포판이 자동으로 붙이는 `LOG_EXECUTION_ID=true` 라는 플랫폼 관리 환경변수 1개는 존재합니다** (2026-08-18 콘솔의 "변수 및 보안 비밀" 탭에서 직접 확인 — 이건 로그에 실행 ID를 남기는 GCF 표준 옵션이고, 개발자가 넣은 값이 아니며 Secret도 아닙니다).
+
+`fix.py`, `fix2.py`는 실행 시 호출되는 코드가 아니라, **배포 전 로컬에서 한 번 돌리는 보조 스크립트**입니다. 한글 시트 탭 이름을 `index.js` 안에 유니코드 이스케이프(`\uXXXX`)로 안전하게 박아 넣기 위한 것으로 보입니다(추정: `gcloud functions deploy` 업로드 과정에서 한글이 깨지는 문제를 피하려는 용도). 배포 파이프라인의 일부이므로 참고용으로 이 저장소에도 그대로 보관합니다.
 
 ## 함수별 목록
 
@@ -41,7 +43,7 @@
 ```bash
 cd cloud-run/mro-functions
 gcloud functions deploy <함수이름> \
-  --gen2 --runtime=nodejs20 --region=asia-northeast3 \
+  --gen2 --runtime=nodejs22 --region=asia-northeast3 \
   --source=. --entry-point=<함수이름> \
   --trigger-http --allow-unauthenticated \
   --project=mro-market-intelligence --quiet
