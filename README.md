@@ -76,3 +76,5 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 - [`LOGIN_WHOAMI_MIGRATION_PLAN.md`](./LOGIN_WHOAMI_MIGRATION_PLAN.md) — login/whoami Cloud Run 전환 상세 계획 (1·2단계 실행·검증·반영 완료, 3단계는 보류)
 - [`POSTCOMMENT_CLOUDRUN_ANALYSIS.md`](./POSTCOMMENT_CLOUDRUN_ANALYSIS.md) — 댓글(postComment 등) 기능 Cloud Run 이전 가능성 분석 (작성·수정·삭제는 보류, 조회만 후순위 후보)
 - [`FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md`](./FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md) — 피드·알림·실시간 배지(getFeed/getNotifications/getPostById/pollSignal) Cloud Run 이전 가능성 분석 (이전 후보로 확정, 실제 이전은 승인 대기)
+- [`POLLSIGNAL_CLOUDRUN_TEST_PLAN.md`](./POLLSIGNAL_CLOUDRUN_TEST_PLAN.md) — pollSignal Cloud Run 이전 검증 테스트 계획 (계획 단계, 실제 이전·배포는 아직 진행 안 함)
+- [`POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md`](./POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md) — 위 계획의 1단계(로직 비교 테스트) 결과 — 12개 시나리오 전부 일치 확인, 실제 이전·배포는 아직 진행 안 함
