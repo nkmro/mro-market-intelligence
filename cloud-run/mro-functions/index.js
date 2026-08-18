@@ -318,3 +318,219 @@ const serverMs = Date.now() - t0;
 res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
 }
 };
+
+// ---------------------------------------------------------------------------
+// POST /pollSignalTest (2026-08-18, pollSignal 실제 이전 승인 단계)
+//
+// Code.gs의 handlePollSignal_/buildFeedEntry_/getRelatedItems_/canViewComment_를 그대로 옮긴
+// 것으로, 계산 로직은 cloud-run/mro-functions/tests/pollsignal-parity/에서 12개 시나리오로
+// 기존 Apps Script pollSignal과 결과가 100% 동일함을 이미 검증했다
+// (POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md 참고).
+//
+// 기존 Apps Script의 pollSignal(handlePollSignal_)은 이 함수와 완전히 분리되어 있고
+// 전혀 수정하지 않았다 — 이 함수는 시황게시물/품목마스터/댓글/설정/사용자팀마스터 5개 시트를
+// 전부 읽기 전용(spreadsheets.readonly)으로만 읽고, 쓰기는 어디에서도 하지 않는다.
+//
+// [날짜값 처리 주의] 시황게시물.createdAt(H열)/품목마스터.registeredAt(H열)/댓글.createdAt(I열)/
+// 사용자팀마스터.lastCheckedAt(F열)은 Apps Script에서 실제 Date 객체로 기록된 진짜 날짜 셀이다.
+// Sheets API 기본 옵션(FORMATTED_VALUE)으로 읽으면 스프레드시트 표시 형식에 따라 사람이 보는
+// 문자열(예: "2026. 8. 15 오전 10:30:00")로 돌아와 파싱이 불안정해질 수 있어(테스트 계획 문서에서
+// 이미 지적한 위험), 이 함수만 valueRenderOption=UNFORMATTED_VALUE를 명시해서 날짜 셀을
+// "1899-12-30 기준 일수(serial number)"로 받는다. sheetSerialToMs_가 이 값을 항상 동일한 방식으로
+// 밀리초로 환산하므로(스프레드시트 시간대 오프셋이 있어도 모든 값에 똑같이 적용되어 서로 비교할 때는
+// 상쇄된다), 텍스트로 쓰인 화면 표시 형식을 추측해서 파싱할 필요가 없다. 다른 기존 함수
+// (whoamiTest/getSettingsTest 등)는 그대로 FORMATTED_VALUE를 쓰므로 이 변경은 이 함수에만 적용된다.
+const SHEET_POST_NAME = '시황게시물';
+const SHEET_ITEM_NAME = '품목마스터';
+const SHEET_COMMENT_NAME = '댓글';
+const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:I');
+const POLL_POST_RANGE = encodeURIComponent(SHEET_POST_NAME + '!A2:H');
+const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:H');
+const POLL_COMMENT_RANGE = encodeURIComponent(SHEET_COMMENT_NAME + '!A2:I');
+const POLL_SETTINGS_RANGE = encodeURIComponent(SHEET_SETTING_NAME + '!A2:C');
+
+// Google Sheets serial date(1899-12-30 기준 일수) -> Unix ms. 값이 없으면 null.
+// 문자열이 들어오는 예외 상황(혹시 셀이 텍스트로 바뀐 경우)도 방어적으로 처리한다.
+function sheetSerialToMs_(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return Math.round((v - 25569) * 86400000);
+  const t = new Date(v).getTime();
+  return isNaN(t) ? null : t;
+}
+
+// Code.gs canViewComment_와 동일한 판단(팀장_열람범위 반영).
+function teamScopeAllows_(role, viewerTeam, targetTeam, leadScope) {
+  if (role === '임원') return true;
+  if (role === '팀장') return leadScope === '전체' ? true : viewerTeam === targetTeam;
+  if (role === '담당' || role === '일반') return viewerTeam === targetTeam;
+  return false;
+}
+
+// Code.gs getRelatedItems_와 동일한 판단(원자재명 매칭 + 활성 + 등록일 이전 게시물 제외).
+function relatedActiveItems_(post, allItems) {
+  return allItems.filter(function (it) {
+    const materialMatch = String(it.materials || '').indexOf(post.materialName) !== -1;
+    const statusActive = it.status === '활성';
+    if (!(materialMatch && statusActive)) return false;
+    const registeredMs = sheetSerialToMs_(it.registeredAt);
+    if (registeredMs === null) return true;
+    return sheetSerialToMs_(post.createdAt) >= registeredMs;
+  });
+}
+
+// Code.gs buildFeedEntry_의 품목별 요약(confirmed/commentCount/lastComment) 부분과 동일.
+function summarizeItemForPost_(item, itemComments) {
+  let lastComment = null;
+  itemComments.forEach(function (c) {
+    const cMs = sheetSerialToMs_(c.createdAt);
+    const lastMs = lastComment ? sheetSerialToMs_(lastComment.createdAt) : null;
+    if (!lastComment || (cMs !== null && lastMs !== null && cMs > lastMs)) lastComment = c;
+  });
+  return {
+    itemId: item.itemId,
+    manager: item.manager,
+    confirmed: itemComments.length > 0,
+    commentCount: itemComments.length,
+    lastCommentAuthorEmail: lastComment ? lastComment.authorEmail : null,
+    lastCommentAtMs: lastComment ? sheetSerialToMs_(lastComment.createdAt) : null
+  };
+}
+
+// Code.gs buildFeedEntry_의 needsAttention 판단(역할별 분기)과 동일.
+function needsAttentionFor_(viewer, itemSummaries, lastCheckedMs) {
+  if (viewer.role === '담당') {
+    return itemSummaries.some(function (s) {
+      if (String(s.manager || '').trim() !== String(viewer.name || '').trim()) return false;
+      if (!s.confirmed) return true;
+      if (!s.lastCommentAuthorEmail) return false;
+      return s.lastCommentAuthorEmail !== viewer.email && s.lastCommentAtMs !== null && s.lastCommentAtMs > lastCheckedMs;
+    });
+  }
+  if (viewer.role === '팀장' || viewer.role === '임원') {
+    return itemSummaries.some(function (s) {
+      if (!s.confirmed) return true;
+      if (!s.lastCommentAuthorEmail) return false;
+      return s.lastCommentAuthorEmail !== viewer.email && s.lastCommentAtMs !== null && s.lastCommentAtMs > lastCheckedMs;
+    });
+  }
+  return false;
+}
+
+exports.pollSignalTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  const timings = {};
+  try {
+    const { sessionToken } = req.body || {};
+    if (!sessionToken) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, error: 'MISSING_SESSION_TOKEN' });
+      return;
+    }
+    const s0 = Date.now();
+    const sessionSnap = await firestore.collection('sessions').doc(sessionToken).get();
+    timings.sessionMs = Date.now() - s0;
+    if (!sessionSnap.exists) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_NOT_FOUND' });
+      return;
+    }
+    const session = sessionSnap.data();
+    const expiresAtRaw = session.expiresAt;
+    const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate() : new Date(expiresAtRaw);
+    if (!(expiresAt.getTime() > Date.now())) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
+      return;
+    }
+    await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (기존 Phase 1과 동일)
+
+    const email = session.email;
+    const u0 = Date.now();
+    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
+    const client = await auth.getClient();
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet` +
+      `?ranges=${POLL_USER_RANGE}&ranges=${POLL_POST_RANGE}&ranges=${POLL_ITEM_RANGE}` +
+      `&ranges=${POLL_COMMENT_RANGE}&ranges=${POLL_SETTINGS_RANGE}&valueRenderOption=UNFORMATTED_VALUE`;
+    const resp = await client.request({ url });
+    timings.sheetMs = Date.now() - u0;
+
+    const valueRanges = (resp.data && resp.data.valueRanges) || [];
+    const userRows = (valueRanges[0] && valueRanges[0].values) || [];
+    const postRows = (valueRanges[1] && valueRanges[1].values) || [];
+    const itemRows = (valueRanges[2] && valueRanges[2].values) || [];
+    const commentRows = (valueRanges[3] && valueRanges[3].values) || [];
+    const settingRows = (valueRanges[4] && valueRanges[4].values) || [];
+
+    const meRow = userRows.find(function (r) {
+      return String(r[0] || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!meRow) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+    const viewer = { email: meRow[0], name: meRow[1], role: meRow[2], team: meRow[3] };
+    const lastCheckedMs = sheetSerialToMs_(meRow[5]) || 0;
+
+    let leadScope = null;
+    settingRows.forEach(function (row) {
+      if (row[0] === '팀장_열람범위') leadScope = row[1];
+    });
+
+    const allPosts = postRows.map(function (row) {
+      return { id: row[0], materialName: row[2], createdAt: row[7] };
+    });
+    const allItems = itemRows.map(function (row) {
+      return { itemId: String(row[0]), manager: row[3], team: row[4], materials: row[5], status: row[6], registeredAt: row[7] };
+    });
+    const allComments = commentRows.map(function (row) {
+      return { postId: row[1], itemId: row[2], authorEmail: row[3], createdAt: row[8] };
+    });
+
+    const commentsByPost = {};
+    allComments.forEach(function (c) {
+      const key = String(c.postId);
+      (commentsByPost[key] = commentsByPost[key] || []).push(c);
+    });
+
+    let totalNeedsAttention = 0;
+    const signatures = [];
+    allPosts.forEach(function (post) {
+      const candidateItems = relatedActiveItems_(post, allItems);
+      const viewableItems = candidateItems.filter(function (it) {
+        return teamScopeAllows_(viewer.role, viewer.team, it.team, leadScope);
+      });
+      if (viewableItems.length === 0) return;
+
+      const postComments = commentsByPost[String(post.id)] || [];
+      const byItemId = {};
+      postComments.forEach(function (c) {
+        const k = String(c.itemId);
+        (byItemId[k] = byItemId[k] || []).push(c);
+      });
+
+      const itemSummaries = viewableItems.map(function (it) {
+        return summarizeItemForPost_(it, byItemId[String(it.itemId)] || []);
+      });
+
+      if (needsAttentionFor_(viewer, itemSummaries, lastCheckedMs)) totalNeedsAttention += 1;
+
+      itemSummaries.forEach(function (s) {
+        signatures.push({
+          postId: post.id,
+          itemId: s.itemId,
+          commentCount: s.commentCount,
+          lastCommentAt: s.lastCommentAtMs !== null ? new Date(s.lastCommentAtMs).toISOString() : null
+        });
+      });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, totalNeedsAttention, signatures });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
