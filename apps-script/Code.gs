@@ -1688,7 +1688,11 @@ let prompt = "너는 MRO(산업 소모성 자재) 원자재 시황 뉴스 분석
 "기사 안에 [" + materialName + "]의 가격, 수급, 물량, 생산량, 수출입 등 시황과 관련된 구체적인 숫자나 퍼센트(%)가 없으면 관련 없음으로 판단해.\n" +
 "기사 제목이나 전체 논조가 특정 방향(상승/하락)을 암시하더라도, 개별 원자재의 수치는 정반대 방향일 수 있어. 예를 들어 \"수입물가 전체 하락\" 기사 안에서도 특정 품목만 상승했다고 나올 수 있으니, 반드시 [" + materialName + "] 바로 옆에 명시된 숫자와 방향(상승/하락/%)만 근거로 판단하고, 기사 제목이나 전체 톤에 맞춰 방향을 추측하지 마.\n" +
 "관련 있으면 반드시 [" + materialName + "]의 가격/수급/물량/생산량 등 시황 동향을 나타내는 구체적인 숫자나 퍼센트(%)를 포함해 2문장 이내 한국어로 중심 요약하고(주가·기업 실적 등 원자재와 무관한 내용은 요약에서 제외), 관련 없으면 요약은 빈 문자열로 둬.\n" +
-"관련 있으면 이 기사가 [" + materialName + "]의 시황(가격/수급) 변화를 얼마나 구체적이고 직접적으로 반영하는지 1(약함)~5(매우 강함) 정수로 평가해 relevanceScore에 담고, 관련 없으면 relevanceScore는 0으로 둬.\n";
+"관련 있으면 이 기사가 [" + materialName + "]의 시황(가격/수급) 변화를 얼마나 구체적이고 직접적으로 반영하는지 1(약함)~5(매우 강함) 정수로 평가해 relevanceScore에 담고, 관련 없으면 relevanceScore는 0으로 둬.\n" +
+// 2026-08-18: 원문 기사(특히 중국發 시황을 다루는 기사)에 중국어 인용구/통계가 섞여 있으면 AI가
+// 요약을 중국어로 답하는 사고가 실제로 발생했다. summary는 반드시 한국어로만 작성하도록 별도
+// 문장으로 강하게 명시해, 다른 판단 규칙들 사이에 묻혀 지시 강도가 약해지지 않게 한다.
+"summary는 반드시 한국어(한글)로만 작성해. 기사 원문에 중국어/한자/일본어 등 외국어 인용구나 통계가 있어도 summary에는 그 외국어를 그대로 옮기지 말고 한국어로 바꿔서 써. summary에 한자, 중국어, 일본어, 그 밖의 외국어 문자를 절대 섞지 마.\n";
 if (possibleDuplicateOf) {
 // v24: 사전 필터(titleOverlap_)에서 애매하게 겹친 기존 게시물 참고 정보. 핵심 사실관계가
 // 같으면 문구가 달라도 중복으로 판단하도록 AI에게 명시적으로 안내한다.
@@ -1701,6 +1705,20 @@ prompt += "\n반드시 아래 JSON 형식으로만 응답해. 다른 텍스트�
 "[제목]\n" + title + "\n\n" +
 "[본문 일부]\n" + description;
 return prompt;
+}
+
+/**
+* summary에 한국어(한글)/숫자/영문/공백/시황 요약에 흔히 쓰이는 기호 외의 문자(한자·중국어·
+* 일본어 등 비허용 언어)가 섞여 있는지 검사. 빈 문자열(관련 없음)은 항상 통과시킨다.
+* 2026-08-18: '중국어 AI 요약' 버그(원문에 중국어 인용구가 있으면 AI가 요약 전체를 중국어로
+* 답한 사고) 재발 방지용. 한자(중국어 간체/번체와 동일한 CJK 유니코드 영역)는 이 시스템의
+* 정상적인 한국어 시황 요약에는 쓰이지 않으므로, 화이트리스트에 없는 문자가 하나라도 있으면
+* 실패로 처리한다(= 사실상 한자/외국어 비율 0% 기준).
+*/
+function isSummaryLanguageSafe_(summary) {
+if (!summary) return true; // 관련 없음(빈 문자열)은 항상 통과
+const allowedPattern = /^[가-힣ㄱ-ㅎㅏ-ㅣ0-9a-zA-Z\s.,%()\-\/~!?:'"·+&℃°㈜]+$/;
+return allowedPattern.test(summary);
 }
 
 /**
@@ -1719,9 +1737,18 @@ const parsed = JSON.parse(cleaned);
 // 정렬 비교 로직에서 발행일(pubDate) 최신순 폴백이 적용되도록 한다.
 const rawScore = Number(parsed.relevanceScore);
 const relevanceScore = (Number.isInteger(rawScore) && rawScore >= 1 && rawScore <= 5) ? rawScore : null;
+const summary = parsed.summary ? parsed.summary.trim() : '';
+// 2026-08-18: '중국어 AI 요약' 버그 방지 - summary에 한자/중국어/일본어 등 비허용 문자가
+// 섞여 있으면 aiFailed:true로 처리해, 기존 AI 실패 재시도 큐(3시간 후 1회 재시도 -> 그래도
+// 실패하면 포기하고 수집로그에만 기록) 흐름을 그대로 재사용한다. 뉴스 수집/게시/중복방지
+// 로직은 건드리지 않는다.
+if (parsed.relevant === true && !isSummaryLanguageSafe_(summary)) {
+console.error('parseSummarizeResult_: summary에 비허용 언어(한자/외국어) 감지 - relevant:false 처리(재시도 대상). title=' + title + ', summary=' + summary);
+return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
+}
 return {
 relevant: parsed.relevant === true,
-summary: parsed.summary ? parsed.summary.trim() : '',
+summary: summary,
 relevanceScore: relevanceScore,
 aiFailed: false
 };
