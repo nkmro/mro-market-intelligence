@@ -1077,7 +1077,11 @@ const triggerHour = Number(map['트리거시각']) || 1;
 const postRetentionDays = Number(map['시황게시물보관기간']) || 60;
 const logRetentionDays = Number(map['수집로그보관기간']) || 30;
 const maxArticleAgeDays = Number(map['기사최대경과일']) || 7;
-return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays };
+// 2026-08-18: 같은 원자재에 대해 AI가 관련 있다고 판단한 뉴스가 하루에 여러 건이어도,
+// collectMarketNews() 1회 실행당 원자재(code)별로 최신순 상위 이 건수만 시황게시물로 게시한다.
+// 값이 없거나 0/음수/숫자가 아니면 기본값 1(원자재당 대표 1건)로 동작한다.
+const maxPostsPerMaterial = Math.max(1, Number(map['원자재별시황게시물출력건수']) || 1);
+return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial };
 }
 // 네이버 뉴스검색 API가 &quot; 등 HTML 엔티티로 이스케이프한 title/description을 원래 문자로 되돌리는 유틸
 function decodeHtmlEntities_(str) { return String(str).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
@@ -1298,6 +1302,10 @@ const processedCount = aiResult.processedCount;
 
 let posted = 0;
 const postedSummariesThisRun_ = []; // {code, summary} - AI 요약본 중복 체크용 (같은 배치 내)
+// 2026-08-18: 같은 원자재(code)에 관련 뉴스가 여러 건이어도 대표 N건만 게시하기 위해,
+// AI가 relevant:true로 판단한 후보를 여기서는 즉시 게시하지 않고 원자재코드별로 모아둔다.
+// relevantByCode[code] = [{c, result}, ...] (이 실행에서 candidates 처리 순서대로 쌓임)
+const relevantByCode = {};
 candidates.slice(0, processedCount).forEach((c, idx) => {
 const result = parseSummarizeResult_(aiTexts[idx], c.title);
 
@@ -1322,12 +1330,23 @@ removeFromAIRetryQueue_(retryQueueSheet, c.link); // 재시도가 성공적으�
 if (result.relevant) {
 const isDupSummary = postedSummariesThisRun_.some(p => p.code === c.code && titleOverlap_(p.summary, result.summary) >= 0.6);
 if (!isDupSummary) {
-postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
 postedSummariesThisRun_.push({ code: c.code, summary: result.summary });
-posted++;
+(relevantByCode[c.code] = relevantByCode[c.code] || []).push({ c: c, result: result });
 }
 }
+// 수집로그는 게시 여부(N건 제한 통과 여부)와 무관하게 항상 기록한다 - 기존 중복 방지 로직 그대로 유지.
 logSheet.appendRow([c.code, c.link, new Date()]);
+});
+
+// 원자재(code)별로 발행일(pubDate) 최신순 정렬 후, 설정 시트의 '원자재별시황게시물출력건수'(기본 1)만큼만 게시.
+const maxPostsPerMaterial = settings.maxPostsPerMaterial;
+Object.keys(relevantByCode).forEach(code => {
+const group = relevantByCode[code];
+group.sort((a, b) => new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime());
+group.slice(0, maxPostsPerMaterial).forEach(({ c, result }) => {
+postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
+posted++;
+});
 });
 
 const skipped = candidates.length - processedCount;
