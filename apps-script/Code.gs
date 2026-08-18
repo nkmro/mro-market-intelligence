@@ -1758,6 +1758,29 @@ return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
 }
 }
 
+/**
+* 2026-08-18: '중국어 AI 요약' 버그 수정 확인용 수동 테스트. 실제 API를 호출하지 않고, AI가 중국어로
+* 답했다고 가정한 가짜 응답과 정상 한국어 응답을 실제 배포된 parseSummarizeResult_()에 그대로 넣어
+* 결과를 로그로 확인한다. 실행 후 "실행 로그"에서 두 결과가 기대한 대로 나오는지 확인하면 됨.
+* (기존 testSuggestDebug2()와 같은 목적의 수동 디버그 함수 - 트리거/자동실행에는 사용되지 않음)
+*/
+function testSummaryLanguageFilter_() {
+const chineseCase = JSON.stringify({ relevant: true, summary: '国际铜价创历史新高，市场需求持续增长。', relevanceScore: 5 });
+const koreanCase = JSON.stringify({ relevant: true, summary: '국제 구리 가격이 사상 최고치를 기록하며 전월 대비 3.2% 상승했다.', relevanceScore: 5 });
+
+const r1 = parseSummarizeResult_(chineseCase, '[테스트] 중국어로 답한 경우');
+Logger.log('[테스트1: 중국어 요약] aiFailed=' + r1.aiFailed + ', relevant=' + r1.relevant + ', summary="' + r1.summary + '" (기대값: aiFailed=true, summary="" → 게시되지 않고 재시도 대상으로 걸러져야 함)');
+
+const r2 = parseSummarizeResult_(koreanCase, '[테스트] 정상 한국어로 답한 경우');
+Logger.log('[테스트2: 정상 한국어 요약] aiFailed=' + r2.aiFailed + ', relevant=' + r2.relevant + ', summary="' + r2.summary + '" (기대값: aiFailed=false, summary가 그대로 채워져야 함 → 정상 게시)');
+
+if (r1.aiFailed === true && r1.summary === '' && r2.aiFailed === false && r2.summary.length > 0) {
+Logger.log('결과: 통과 - 중국어 요약은 걸러지고, 정상 한국어 요약은 그대로 통과함.');
+} else {
+Logger.log('결과: 실패!! 기대값과 다름 - 코드를 다시 확인해야 함.');
+}
+}
+
 function summarizeNews_(materialName, title, description) {
 const prompt = buildSummarizePrompt_(materialName, title, description);
 const text = callAI_(prompt);
