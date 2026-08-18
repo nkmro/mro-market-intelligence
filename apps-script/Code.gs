@@ -1764,7 +1764,7 @@ return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
 * 결과를 로그로 확인한다. 실행 후 "실행 로그"에서 두 결과가 기대한 대로 나오는지 확인하면 됨.
 * (기존 testSuggestDebug2()와 같은 목적의 수동 디버그 함수 - 트리거/자동실행에는 사용되지 않음)
 */
-function testSummaryLanguageFilter_() {
+function testSummaryLanguageFilter() {
 const chineseCase = JSON.stringify({ relevant: true, summary: '国际铜价创历史新高，市场需求持续增长。', relevanceScore: 5 });
 const koreanCase = JSON.stringify({ relevant: true, summary: '국제 구리 가격이 사상 최고치를 기록하며 전월 대비 3.2% 상승했다.', relevanceScore: 5 });
 
