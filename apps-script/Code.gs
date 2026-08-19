@@ -3090,27 +3090,8 @@ return null;
 }
 
 /**
-* 품목마스터 A열(자재코드)의 다음 채번값을 계산.
-* 'IT-' 접두어 뒤 숫자 중 최댓값 + 1 (LockService로 동시성 보호).
-*/
-function getNextItemCode_() {
-const data = getSheetValues_(SHEET_ITEM);
-let maxNum = 1000;
-
-for (let i = 1; i < data.length; i++) {
-const code = String(data[i][0] || '');
-const m = code.match(/IT-(\d+)/);
-if (m) {
-const n = parseInt(m[1], 10);
-if (n > maxNum) maxNum = n;
-}
-}
-return 'IT-' + (maxNum + 1);
-}
-
-/**
 * action: 'upsertItem' — 품목 등록/수정. 팀장만 가능.
-* itemId가 있으면 수정, 없으면 신규 등록(자재코드 자동 채번).
+* itemId가 있으면 수정, 없으면 신규 등록(사용자가 입력한 MP자재코드를 그대로 A열에 저장).
 * 담당소장은 요청한 팀장과 같은 팀 소속이어야 하며, 팀/지역은 그 담당소장의
 * 소속팀으로 자동 입력한다(사람이 직접 입력하지 않음 — 스크립트 전용 컬럼).
 */
@@ -3125,6 +3106,7 @@ const itemName = body.itemName;
 const manager = body.manager;
 const materials = Array.isArray(body.materials) ? body.materials.join(', ') : (body.materials || '');
 const status = body.status || '활성';
+const materialCode = String(body.materialCode || '').trim();
 
 if (!customer || !itemName || !manager) {
 return jsonResponse_({ ok: false, error: 'MISSING_FIELDS' });
@@ -3158,18 +3140,29 @@ return jsonResponse_({ ok: true, itemId: itemId, mode: 'updated' });
 return jsonResponse_({ ok: false, error: 'ITEM_NOT_FOUND' });
 }
 
+if (!materialCode) {
+return jsonResponse_({ ok: false, error: 'MISSING_MATERIAL_CODE' });
+}
+
 const lock = LockService.getScriptLock();
 const gotLock = lock.tryLock(10000);
 if (!gotLock) {
 return jsonResponse_({ ok: false, error: 'LOCK_TIMEOUT' });
 }
 try {
-const newCode = getNextItemCode_();
+// 2026-08-19: MP자재코드 중복확인 + appendRow + 등록일 서식 지정을 하나의 Lock 구간에서
+// 원자적으로 처리(동시 등록 시 같은 코드가 두 번 등록되는 race condition 방지).
+// 필수값(빈 값) 검증은 Lock 밖에서 먼저 처리 — 고객사코드 등록 로직과 동일한 패턴.
+if (getItemById_(materialCode)) {
+return jsonResponse_({ ok: false, error: 'MATERIAL_CODE_ALREADY_EXISTS' });
+}
 const now = new Date();
-sheet.appendRow([newCode, customer, itemName, manager, team, materials, status, now]);
+sheet.appendRow([materialCode, customer, itemName, manager, team, materials, status, now]);
 SpreadsheetApp.flush();
+const newRow = sheet.getLastRow();
+sheet.getRange(newRow, 8).setNumberFormat('yyyy-mm-dd');
 invalidateSheetCache_(SHEET_ITEM);
-return jsonResponse_({ ok: true, itemId: newCode, mode: 'created' });
+return jsonResponse_({ ok: true, itemId: materialCode, mode: 'created' });
 } finally {
 lock.releaseLock();
 }
