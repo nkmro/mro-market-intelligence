@@ -2596,20 +2596,12 @@ return;
 const btn = document.getElementById('item-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
   try {
-if (isNewCustomer) {
-const customerRes = await callApi('upsertCustomer', { name: customer, code: customerCode, manager: manager });
-if (!customerRes.ok) {
-const msg = customerRes.error === 'CUSTOMER_CODE_ALREADY_EXISTS' ? '이미 사용 중인 고객사코드예요.'
-  : customerRes.error === 'CUSTOMER_ALREADY_EXISTS' ? '이미 존재하는 고객사명이에요.'
-  : ('고객사 등록 실패: ' + (customerRes.error || 'SERVER_ERROR'));
-alert(msg);
-if (btn) { btn.disabled = false; btn.textContent = '저장'; }
-  return;
-}
-itemsState.customers.push({ code: customerRes.code, name: customerRes.name, manager: manager });
-itemsState.pendingNewCustomerName = null;
-showCustomerCodeField(false);
-}
+// 2026-08-19: 신규 고객사 등록과 품목 등록/수정을 별도의 두 요청(upsertCustomer →
+// upsertItem)으로 나눠 보내던 것을 하나의 upsertItem 요청으로 합쳤다. 예전에는 첫 번째
+// 요청(고객사 등록)이 성공한 뒤 두 번째 요청(품목 등록/수정)이 네트워크 오류 등으로
+// 실패하면 고객사만 영구히 남는 불일치가 생겼다(실사용 중 발견). 이제는 서버가 하나의
+// Lock 구간에서 원자적으로 처리해서, 이번 요청으로 새로 만든 고객사는 품목 등록/수정이
+// 어떤 이유로든 실패하면 서버 쪽에서 자동으로 삭제(보정)된다.
 const payload = {
 itemId: itemsState.editingItemId || '',
 customer: customer,
@@ -2619,14 +2611,22 @@ materials: itemsState.selectedMaterials.join(','),
 status: status
 };
 if (isNewItem) payload.materialCode = materialCode;
+if (isNewCustomer) payload.newCustomerCode = customerCode;
 const res = await callApi('upsertItem', payload);
 if (!res.ok) {
 const msg = res.error === 'MATERIAL_CODE_ALREADY_EXISTS' ? '이미 사용 중인 MP자재코드예요.'
   : res.error === 'MISSING_MATERIAL_CODE' ? 'MP자재코드를 입력해주세요.'
+  : res.error === 'CUSTOMER_CODE_ALREADY_EXISTS' ? '이미 사용 중인 고객사코드예요.'
+  : res.error === 'CUSTOMER_ALREADY_EXISTS' ? '이미 존재하는 고객사명이에요.'
   : ('저장 실패: ' + (res.error || 'SERVER_ERROR'));
 alert(msg);
 if (btn) { btn.disabled = false; btn.textContent = '저장'; }
   return;
+}
+if (isNewCustomer) {
+itemsState.customers.push({ code: customerCode, name: customer, manager: manager });
+itemsState.pendingNewCustomerName = null;
+showCustomerCodeField(false);
 }
 closeItemForm();
 await loadItems();
