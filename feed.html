@@ -522,6 +522,10 @@ const CLOUD_RUN_WHOAMI_URL = 'https://asia-northeast3-mro-market-intelligence.cl
 // 실패/타임아웃/예외 시 기존 Apps Script pollSignal로 자동 폴백한다(CLOUD_RUN_GET_SETTINGS_URL과
 // 동일한 패턴). 기존 pollSignal 호출 경로(callApi('pollSignal', {}))는 폴백용으로 그대로 남겨둔다.
 const CLOUD_RUN_POLLSIGNAL_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/pollSignalTest';
+// getThreadSeen 단독 이전 1단계(2026-08-19): 로그인/세션 복원 시 1회만 불리는 '댓글확인이력' 조회를
+// Cloud Run으로 먼저 시도하고, 실패/타임아웃/예외 시 기존 Apps Script getThreadSeen으로 자동
+// 폴백한다(CLOUD_RUN_GET_SETTINGS_URL과 동일한 패턴). 쓰기(markThreadSeen)는 그대로 Apps Script.
+const CLOUD_RUN_GET_THREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getThreadSeenTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -2077,6 +2081,33 @@ notifNewPostsCache.loaded = true;
 }
 
 async function loadThreadSeenMap() {
+// 2026-08-19: getThreadSeen 단독 Cloud Run 이전 1단계. CLOUD_RUN_GET_THREADSEEN_URL이 채워져
+// 있으면 먼저 시도한다(세션 인증 포함, 20초 타임아웃). 실패/타임아웃/예외 시 바로 아래의 기존
+// Apps Script 경로(재시도 로직 포함)로 그대로 흘러간다 — getSettings/pollSignal과 동일한
+// "실패하면 조용히 폴백" 패턴이며, 이 부분이 실패해도 기존 동작은 전혀 달라지지 않는다.
+if (CLOUD_RUN_GET_THREADSEEN_URL) {
+const __tsT0 = Date.now();
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+const cloudRes = await fetch(CLOUD_RUN_GET_THREADSEEN_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+signal: controller.signal
+}).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+if (cloudRes && cloudRes.ok && cloudRes.seenMap) {
+threadSeenMap = cloudRes.seenMap;
+threadSeenMapLoaded = true;
+console.log('[getThreadSeen] source=cloud-run clientMs=' + (Date.now() - __tsT0));
+return;
+}
+console.log('[getThreadSeen] source=cloud-run(실패, apps-script로 폴백) clientMs=' + (Date.now() - __tsT0));
+} catch (e) {
+console.log('[getThreadSeen] source=cloud-run(예외, apps-script로 폴백) clientMs=' + (Date.now() - __tsT0));
+}
+}
 // getThreadSeen은 RETRYABLE_API_ACTIONS에 있어서 callApi()가 네트워크 예외(타임아웃 등)에 대해
 // 이미 내부적으로 최대 3회(회당 20초)까지 재시도한다. 여기서 그 위에 또 3회를 겹쳐 재시도하면
 // 최악의 경우 3x3=9번, 최대 3분 가까이 걸릴 수 있어서(실제로 로그에서 확인됨) 네트워크 예외는
