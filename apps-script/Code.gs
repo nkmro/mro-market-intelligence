@@ -3107,13 +3107,12 @@ const manager = body.manager;
 const materials = Array.isArray(body.materials) ? body.materials.join(', ') : (body.materials || '');
 const status = body.status || '활성';
 const materialCode = String(body.materialCode || '').trim();
+// 신규 고객사코드. 고객사가 아직 고객사마스터에 없을 때만 값이 들어온다 - 신규 고객사 등록을
+// 이 함수 안에서 품목 등록/수정과 함께 원자적으로 처리하기 위함(2026-08-19, 아래 참고).
+const newCustomerCode = String(body.newCustomerCode || '').trim();
 
 if (!customer || !itemName || !manager) {
 return jsonResponse_({ ok: false, error: 'MISSING_FIELDS' });
-}
-
-if (!findCustomerByName_(customer)) {
-return jsonResponse_({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
 }
 
 const managerUser = findUserByName_(manager);
@@ -3126,21 +3125,13 @@ return jsonResponse_({ ok: false, error: 'MANAGER_NOT_IN_YOUR_TEAM' });
 
 const team = managerUser.team;
 const sheet = getSheetObj_(SHEET_ITEM);
+const customerExists = !!findCustomerByName_(customer);
 
-if (itemId) {
-const data = getSheetValues_(SHEET_ITEM);
-for (let i = 1; i < data.length; i++) {
-if (String(data[i][0]).trim() === String(itemId).trim()) {
-sheet.getRange(i + 1, 2, 1, 6).setValues([[customer, itemName, manager, team, materials, status]]);
-SpreadsheetApp.flush();
-invalidateSheetCache_(SHEET_ITEM);
-return jsonResponse_({ ok: true, itemId: itemId, mode: 'updated' });
-}
-}
-return jsonResponse_({ ok: false, error: 'ITEM_NOT_FOUND' });
+if (!customerExists && !newCustomerCode) {
+return jsonResponse_({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
 }
 
-if (!materialCode) {
+if (!itemId && !materialCode) {
 return jsonResponse_({ ok: false, error: 'MISSING_MATERIAL_CODE' });
 }
 
@@ -3149,20 +3140,82 @@ const gotLock = lock.tryLock(10000);
 if (!gotLock) {
 return jsonResponse_({ ok: false, error: 'LOCK_TIMEOUT' });
 }
+
+// 2026-08-19: 신규 고객사 등록 + 품목 등록/수정을 하나의 Lock 구간에서 원자적으로 처리.
+// 예전에는 프론트엔드가 upsertCustomer → upsertItem을 별도의 두 요청으로 순차 호출했는데,
+// 첫 번째 요청(고객사 등록)이 성공한 뒤 두 번째 요청(품목 등록/수정)이 네트워크 오류 등으로
+// 실패하면 고객사만 영구히 남고 품목은 등록되지 않는 불일치가 생겼다(실사용 중 발견: 신규
+// 고객사 "동양산업(주)" 등록 후 품목 등록이 네트워크 오류로 실패했으나 고객사는 그대로 남음).
+// 이제는 "이번 호출로 새로 만든 고객사"를 createdCustomerCode에 추적해서, 그 이후 어떤
+// 이유로든(검증 실패든 예기치 못한 예외든) 최종 result가 실패이면 방금 만든 고객사 행을
+// 삭제해 되돌린다. 원래부터 있던 고객사는 이 되돌리기 대상이 절대 아니다.
+let createdCustomerCode = null;
+let result;
 try {
-// 2026-08-19: MP자재코드 중복확인 + appendRow + 등록일 서식 지정을 하나의 Lock 구간에서
-// 원자적으로 처리(동시 등록 시 같은 코드가 두 번 등록되는 race condition 방지).
-// 필수값(빈 값) 검증은 Lock 밖에서 먼저 처리 — 고객사코드 등록 로직과 동일한 패턴.
-if (getItemById_(materialCode)) {
-return jsonResponse_({ ok: false, error: 'MATERIAL_CODE_ALREADY_EXISTS' });
+try {
+if (!customerExists) {
+if (findCustomerByName_(customer)) {
+result = { ok: false, error: 'CUSTOMER_ALREADY_EXISTS' };
+} else if (findCustomerByCode_(newCustomerCode)) {
+result = { ok: false, error: 'CUSTOMER_CODE_ALREADY_EXISTS' };
+} else {
+const customerSheet = getSheetObj_('고객사마스터');
+customerSheet.appendRow([newCustomerCode, customer, manager]);
+invalidateSheetCache_('고객사마스터');
+createdCustomerCode = newCustomerCode;
 }
+}
+
+if (!result) {
+if (itemId) {
+const data = getSheetValues_(SHEET_ITEM);
+let found = false;
+for (let i = 1; i < data.length; i++) {
+if (String(data[i][0]).trim() === String(itemId).trim()) {
+sheet.getRange(i + 1, 2, 1, 6).setValues([[customer, itemName, manager, team, materials, status]]);
+SpreadsheetApp.flush();
+invalidateSheetCache_(SHEET_ITEM);
+found = true;
+break;
+}
+}
+result = found
+? { ok: true, itemId: itemId, mode: 'updated' }
+: { ok: false, error: 'ITEM_NOT_FOUND' };
+} else if (getItemById_(materialCode)) {
+result = { ok: false, error: 'MATERIAL_CODE_ALREADY_EXISTS' };
+} else {
 const now = new Date();
 sheet.appendRow([materialCode, customer, itemName, manager, team, materials, status, now]);
 SpreadsheetApp.flush();
 const newRow = sheet.getLastRow();
 sheet.getRange(newRow, 8).setNumberFormat('yyyy-mm-dd');
 invalidateSheetCache_(SHEET_ITEM);
-return jsonResponse_({ ok: true, itemId: materialCode, mode: 'created' });
+result = { ok: true, itemId: materialCode, mode: 'created' };
+}
+}
+} catch (err) {
+// 등록/수정 로직 중 예기치 못한 예외가 나도 아래 보정 로직으로 흘러가도록 여기서 삼킨다.
+result = { ok: false, error: 'SERVER_ERROR', detail: String(err) };
+}
+
+if (result && !result.ok && createdCustomerCode) {
+try {
+const customerSheet = getSheetObj_('고객사마스터');
+const customerData = getSheetValues_('고객사마스터');
+for (let i = 1; i < customerData.length; i++) {
+if (String(customerData[i][0]).trim() === createdCustomerCode) {
+customerSheet.deleteRow(i + 1);
+invalidateSheetCache_('고객사마스터');
+break;
+}
+}
+} catch (rollbackErr) {
+// 보정(롤백) 자체가 실패해도 원래 오류(result)는 그대로 반환한다.
+}
+}
+
+return jsonResponse_(result);
 } finally {
 lock.releaseLock();
 }
