@@ -2408,8 +2408,12 @@ overlay.innerHTML = `
 <input type="text" id="item-customer-code-input" class="form-input" placeholder="예: CO00009X" autocomplete="off">
 </div>
 <div class="form-group">
-<label class="form-label">품목명${item ? ` <span class="item-code-hint">(${escapeHtml(item.itemId)})</span>` : ''}</label>
+<label class="form-label">품목명</label>
 <input type="text" id="item-name-input" class="form-input" placeholder="예: 산업용 고무장갑" value="${item ? escapeHtml(item.itemName) : ''}" ${canEdit ? 'oninput="onItemNameChange()"' : dis}>
+</div>
+<div class="form-group" id="item-code-group" style="display:${item ? '' : 'none'};">
+<label class="form-label">MP자재코드${item ? ' <span class="item-code-hint">(등록 후 수정 불가)</span>' : ''}</label>
+<input type="text" id="item-material-code-input" class="form-input" placeholder="예: A1000123456" value="${item ? escapeHtml(item.itemId) : ''}" autocomplete="off" ${item ? 'readonly' : ''}>
 </div>
 <div class="form-row">
 <div class="form-group">
@@ -2470,8 +2474,22 @@ itemsState.selectedMaterials.splice(i, 1);
 renderMaterialTags();
 }
 
+function showItemCodeField(show) {
+const group = document.getElementById('item-code-group');
+if (!group) return;
+group.style.display = show ? '' : 'none';
+if (!show) {
+const codeInput = document.getElementById('item-material-code-input');
+if (codeInput) codeInput.value = '';
+}
+}
+
 let itemNameDebounceTimer = null;
 function onItemNameChange() {
+if (!itemsState.editingItemId) {
+const nameInput = document.getElementById('item-name-input');
+showItemCodeField(!!(nameInput && nameInput.value.trim()));
+}
 clearTimeout(itemNameDebounceTimer);
 itemNameDebounceTimer = setTimeout(function () { suggestMaterialsForForm(); }, 800);
 }
@@ -2557,6 +2575,15 @@ if (!customer || !itemName || !manager) {
 alert('고객사, 품목명, 담당을 모두 입력해주세요.');
 return;
 }
+const isNewItem = !itemsState.editingItemId;
+let materialCode = '';
+if (isNewItem) {
+materialCode = document.getElementById('item-material-code-input').value.trim();
+if (!materialCode) {
+alert('MP자재코드를 입력해주세요.');
+return;
+}
+}
 const isNewCustomer = itemsState.pendingNewCustomerName !== null && itemsState.pendingNewCustomerName === customer;
 let customerCode = '';
 if (isNewCustomer) {
@@ -2591,9 +2618,13 @@ manager: manager,
 materials: itemsState.selectedMaterials.join(','),
 status: status
 };
+if (isNewItem) payload.materialCode = materialCode;
 const res = await callApi('upsertItem', payload);
 if (!res.ok) {
-alert('저장 실패: ' + (res.error || 'SERVER_ERROR'));
+const msg = res.error === 'MATERIAL_CODE_ALREADY_EXISTS' ? '이미 사용 중인 MP자재코드예요.'
+  : res.error === 'MISSING_MATERIAL_CODE' ? 'MP자재코드를 입력해주세요.'
+  : ('저장 실패: ' + (res.error || 'SERVER_ERROR'));
+alert(msg);
 if (btn) { btn.disabled = false; btn.textContent = '저장'; }
   return;
 }
