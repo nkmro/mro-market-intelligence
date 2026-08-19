@@ -3204,6 +3204,16 @@ return { code: data[i][0], name: data[i][1], manager: data[i][2] };
 return null;
 }
 
+function findCustomerByCode_(code) {
+const data = getSheetValues_('고객사마스터');
+for (let i = 1; i < data.length; i++) {
+if (String(data[i][0]).trim() === String(code).trim()) {
+return { code: data[i][0], name: data[i][1], manager: data[i][2] };
+}
+}
+return null;
+}
+
 function testIssueToken_() {
 resetRequestCache_();
 const user = findUser_('typark@nkmro.com');
@@ -3423,11 +3433,10 @@ if (user.role !== '팀장') {
 return jsonResponse_({ ok: false, error: 'FORBIDDEN' });
 }
 const name = String(body.name || '').trim();
-if (!name) {
+const code = String(body.code || '').trim();
+const manager = String(body.manager || '').trim();
+if (!name || !code) {
 return jsonResponse_({ ok: false, error: 'MISSING_FIELDS' });
-}
-if (findCustomerByName_(name)) {
-return jsonResponse_({ ok: false, error: 'CUSTOMER_ALREADY_EXISTS' });
 }
 const lock = LockService.getScriptLock();
 const gotLock = lock.tryLock(10000);
@@ -3435,11 +3444,22 @@ if (!gotLock) {
 return jsonResponse_({ ok: false, error: 'LOCK_TIMEOUT' });
 }
 try {
+// 2026-08-19: 이름/코드 중복 확인을 Lock 획득 이후로 이동.
+// 기존에는 '중복확인 → Lock 획득 → appendRow' 순서라 동시 요청 두 개가
+// 모두 중복확인을 통과한 뒤 같은 이름/코드로 두 번 등록될 수 있는 race condition이 있었음.
+// 이제는 중복확인 + 등록 전체가 하나의 Lock 구간에서 원자적으로 처리됨.
+// 또한 A열 코드는 임의 생성('WEB'+timestamp) 대신 사용자가 입력한 사내 시스템 코드를 그대로 쓰고,
+// C열 담당자도 함께 저장해 신규 고객사 등록 시 담당자가 비어있던 문제를 해결함.
+if (findCustomerByName_(name)) {
+return jsonResponse_({ ok: false, error: 'CUSTOMER_ALREADY_EXISTS' });
+}
+if (findCustomerByCode_(code)) {
+return jsonResponse_({ ok: false, error: 'CUSTOMER_CODE_ALREADY_EXISTS' });
+}
 const sheet = getSheetObj_('고객사마스터');
-const code = 'WEB' + new Date().getTime();
-sheet.appendRow([code, name, '']);
+sheet.appendRow([code, name, manager]);
 invalidateSheetCache_('고객사마스터');
-return jsonResponse_({ ok: true, code: code, name: name });
+return jsonResponse_({ ok: true, code: code, name: name, manager: manager });
 } finally {
 lock.releaseLock();
 }
