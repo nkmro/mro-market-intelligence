@@ -2240,7 +2240,7 @@ msg.textContent = '네트워크 오류가 발생했어요.';
 }
 
 // ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
-let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filterTeam: '', searchQuery: '', editingItemId: null, selectedMaterials: [] };
+let itemsState = { items: [], customers: [], teamUsers: [], loaded: false, filterTeam: '', searchQuery: '', editingItemId: null, selectedMaterials: [], pendingNewCustomerName: null };
 
 // 담당은 품목 목록을 볼 수는 있지만(백엔드 getItems도 팀장/담당 모두 허용하며, 담당인 경우 자기 팀 항목만 반환하도록 서버측에서 필터링됨),
 // 등록/수정/저장(upsertItem)은 백엔드에서 팀장만 허용하므로 프론트에서도 버튼/입력을 미리 막아
@@ -2381,6 +2381,7 @@ const canEdit = canEditItems();
 if (!itemId && !canEdit) return; // 방어: 뷰어 권한(담당)으로는 신규 등록 진입 불가 (버튼 자체가 없지만 이중 방어)
 const item = itemId ? itemsState.items.find(function (it) { return it.itemId === itemId; }) : null;
 itemsState.editingItemId = itemId;
+itemsState.pendingNewCustomerName = null;
 itemsState.selectedMaterials = item && item.materials ? item.materials.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
 const managerOptions = itemsState.teamUsers.map(function (u) {
 return `<option value="${escapeHtml(u.name)}" ${item && item.manager === u.name ? 'selected' : ''}>${escapeHtml(u.name)}</option>`;
@@ -2401,6 +2402,10 @@ overlay.innerHTML = `
 <input type="text" id="item-customer-input" class="form-input" placeholder="고객사명 검색 또는 입력" value="${item ? escapeHtml(item.customer) : ''}" ${canEdit ? `oninput="onCustomerInput()" onblur="setTimeout(function(){ var b=document.getElementById('customer-suggestions'); if(b) b.style.display='none'; }, 200)"` : dis} autocomplete="off">
 <div id="customer-suggestions" class="customer-suggestions" style="display:none;"></div>
 </div>
+</div>
+<div class="form-group" id="customer-code-group" style="display:none;">
+<label class="form-label">고객사코드 <span class="item-code-hint">(신규 고객사 - 사내 시스템 코드)</span></label>
+<input type="text" id="item-customer-code-input" class="form-input" placeholder="예: CUST00123" autocomplete="off">
 </div>
 <div class="form-group">
 <label class="form-label">품목명${item ? ` <span class="item-code-hint">(${escapeHtml(item.itemId)})</span>` : ''}</label>
@@ -2436,8 +2441,19 @@ renderMaterialTags();
 }
 
 function closeItemForm() {
+itemsState.pendingNewCustomerName = null;
 const overlay = document.getElementById('item-form-overlay');
 if (overlay) overlay.remove();
+}
+
+function showCustomerCodeField(show) {
+const group = document.getElementById('customer-code-group');
+if (!group) return;
+group.style.display = show ? '' : 'none';
+if (!show) {
+const codeInput = document.getElementById('item-customer-code-input');
+if (codeInput) codeInput.value = '';
+}
 }
 
 function renderMaterialTags() {
@@ -2484,6 +2500,24 @@ function onCustomerInput() {
 const input = document.getElementById('item-customer-input');
 const q = input.value.trim();
 const box = document.getElementById('customer-suggestions');
+
+if (itemsState.pendingNewCustomerName !== null) {
+// 신규 고객사 모드 중 텍스트가 바뀐 경우: 타이핑했다는 사실만으로 무조건 해제하지 않고,
+// 현재 텍스트가 '기존 고객사명과 정확히 일치'하는지로만 판단한다.
+if (!q) {
+itemsState.pendingNewCustomerName = null;
+showCustomerCodeField(false);
+} else {
+const matchesExisting = itemsState.customers.some(function (c) { return c.name === q; });
+if (matchesExisting) {
+itemsState.pendingNewCustomerName = null;
+showCustomerCodeField(false);
+} else {
+itemsState.pendingNewCustomerName = q; // 신규 모드 유지, 후보 이름만 최신화
+}
+}
+}
+
 if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
 const matches = itemsState.customers.filter(function (c) { return c.name.toLowerCase().includes(q.toLowerCase()); }).slice(0, 8);
 const exact = itemsState.customers.some(function (c) { return c.name === q; });
@@ -2491,32 +2525,26 @@ let html = matches.map(function (c) {
 return `<div class="customer-suggestion-item" onmousedown="selectCustomer('${escapeHtml(c.name).replace(/'/g, "\\'")}')">${escapeHtml(c.name)}</div>`;
 }).join('');
 if (!exact) {
-html += `<div class="customer-suggestion-item add-new" onmousedown="addNewCustomer()">+ "${escapeHtml(q)}" 새 고객사로 추가</div>`;
+html += `<div class="customer-suggestion-item add-new" onmousedown="selectNewCustomer('${escapeHtml(q).replace(/'/g, "\\'")}')">+ "${escapeHtml(q)}" 새 고객사로 추가</div>`;
 }
 box.innerHTML = html;
 box.style.display = 'block';
 }
 
 function selectCustomer(name) {
+itemsState.pendingNewCustomerName = null;
 document.getElementById('item-customer-input').value = name;
 document.getElementById('customer-suggestions').style.display = 'none';
+showCustomerCodeField(false);
 }
 
-async function addNewCustomer() {
-const input = document.getElementById('item-customer-input');
-const q = input.value.trim();
-if (!q) return;
-try {
-const res = await callApi('upsertCustomer', { name: q });
-if (res.ok) {
-itemsState.customers.push({ code: res.code, name: res.name, manager: '' });
-selectCustomer(res.name);
-} else {
-alert('고객사 추가 실패: ' + (res.error || 'SERVER_ERROR'));
-}
-} catch (e) {
-alert('네트워크 오류가 발생했어요.');
-}
+function selectNewCustomer(name) {
+itemsState.pendingNewCustomerName = name;
+document.getElementById('item-customer-input').value = name;
+document.getElementById('customer-suggestions').style.display = 'none';
+showCustomerCodeField(true);
+const codeInput = document.getElementById('item-customer-code-input');
+if (codeInput) codeInput.focus();
 }
 
 async function saveItemForm() {
@@ -2529,6 +2557,32 @@ if (!customer || !itemName || !manager) {
 alert('고객사, 품목명, 담당을 모두 입력해주세요.');
 return;
 }
+const isNewCustomer = itemsState.pendingNewCustomerName !== null && itemsState.pendingNewCustomerName === customer;
+let customerCode = '';
+if (isNewCustomer) {
+customerCode = document.getElementById('item-customer-code-input').value.trim();
+if (!customerCode) {
+alert('신규 고객사는 고객사코드를 입력해주세요.');
+return;
+}
+}
+const btn = document.getElementById('item-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+  try {
+if (isNewCustomer) {
+const customerRes = await callApi('upsertCustomer', { name: customer, code: customerCode, manager: manager });
+if (!customerRes.ok) {
+const msg = customerRes.error === 'CUSTOMER_CODE_ALREADY_EXISTS' ? '이미 사용 중인 고객사코드예요.'
+  : customerRes.error === 'CUSTOMER_ALREADY_EXISTS' ? '이미 존재하는 고객사명이에요.'
+  : ('고객사 등록 실패: ' + (customerRes.error || 'SERVER_ERROR'));
+alert(msg);
+if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+  return;
+}
+itemsState.customers.push({ code: customerRes.code, name: customerRes.name, manager: manager });
+itemsState.pendingNewCustomerName = null;
+showCustomerCodeField(false);
+}
 const payload = {
 itemId: itemsState.editingItemId || '',
 customer: customer,
@@ -2537,9 +2591,6 @@ manager: manager,
 materials: itemsState.selectedMaterials.join(','),
 status: status
 };
-const btn = document.getElementById('item-save-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
-  try {
 const res = await callApi('upsertItem', payload);
 if (!res.ok) {
 alert('저장 실패: ' + (res.error || 'SERVER_ERROR'));
