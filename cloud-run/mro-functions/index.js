@@ -543,3 +543,69 @@ exports.pollSignalTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// POST /getThreadSeenTest (2026-08-19, getThreadSeen 단독 이전 1단계 — 분석/설계 승인 완료)
+//
+// Code.gs의 handleGetThreadSeen_/getThreadSeenMap_을 그대로 옮긴 것. buildFeedEntry_ 등 피드/알림
+// 쪽 공용 판정 로직과는 전혀 무관한, 완전히 독립적인 단순 조회다 — '댓글확인이력' 시트(이메일/
+// postId/itemId/확인시각)에서 요청자 본인 이메일에 해당하는 행만 걸러 {postId-itemId: 확인시각}
+// 맵으로 돌려준다. 쓰기 쪽(markThreadSeen)은 이번 이전 범위가 아니라 계속 Apps Script에 남는다
+// (markChecked/updateSettings와 동일한 "읽기만 이전" 패턴).
+//
+// [parity 주의] 이메일 비교는 Code.gs의 getThreadSeenMap_과 완전히 동일하게 trim() 없이
+// toLowerCase()만 적용한다 — 다른 *Test 함수들(whoamiTest 등)은 안전을 위해 trim()을 추가로
+// 쓰지만, 여기서는 기존 로직과 "한 글자도 다르지 않게" 맞추는 것을 우선했다
+// (cloud-run/mro-functions/tests/threadseen-parity/에서 검증).
+const SHEET_THREAD_SEEN_NAME = '댓글확인이력';
+const THREAD_SEEN_RANGE = encodeURIComponent(SHEET_THREAD_SEEN_NAME + '!A2:D');
+exports.getThreadSeenTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  const timings = {};
+  try {
+    const { sessionToken } = req.body || {};
+    if (!sessionToken) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, error: 'MISSING_SESSION_TOKEN' });
+      return;
+    }
+    const s0 = Date.now();
+    const sessionSnap = await firestore.collection('sessions').doc(sessionToken).get();
+    timings.sessionMs = Date.now() - s0;
+    if (!sessionSnap.exists) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_NOT_FOUND' });
+      return;
+    }
+    const session = sessionSnap.data();
+    const expiresAtRaw = session.expiresAt;
+    const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate() : new Date(expiresAtRaw);
+    if (!(expiresAt.getTime() > Date.now())) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
+      return;
+    }
+    await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (기존 Phase 1과 동일)
+    const email = session.email;
+    const u0 = Date.now();
+    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
+    const client = await auth.getClient();
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${THREAD_SEEN_RANGE}`;
+    const resp = await client.request({ url });
+    timings.sheetMs = Date.now() - u0;
+    const rows = (resp.data && resp.data.values) || [];
+    const seenMap = {};
+    rows.forEach(function (row) {
+      if (String(row[0]).toLowerCase() === String(email).toLowerCase()) {
+        seenMap[row[1] + '-' + row[2]] = row[3];
+      }
+    });
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, seenMap });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
