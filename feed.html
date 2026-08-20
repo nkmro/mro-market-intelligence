@@ -548,6 +548,12 @@ const CLOUD_RUN_GET_FEED_URL = 'https://asia-northeast3-mro-market-intelligence.
 // Apps Script callApi('getNotifications', {})로 폴백한다. mySeq/notifFetchSeq out-of-order 가드는
 // 두 경로를 감싸는 블록이 끝난 뒤 한 곳에서만 체크해 그대로 유지한다.
 const CLOUD_RUN_GET_NOTIFICATIONS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getNotificationsTest';
+// getComments 단독 이전(2026-08-20): loadComments(postId)의 게시물별 댓글 스레드 조회를
+// Cloud Run으로 먼저 시도한다. getFeed/getNotifications와 동일하게 "게시물 자체에 대한 정상
+// 실패 코드"가 없으므로(postId는 항상 호출부가 이미 갖고 있는 값 — MISSING_POST_ID는 정상
+// 상황에서 나올 일이 없음) ok:true만 성공으로 인정하고, 그 외는 조용히 기존 Apps Script
+// callApi('getComments', {postId})로 폴백한다.
+const CLOUD_RUN_GET_COMMENTS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCommentsTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -1728,7 +1734,32 @@ function findPost(postId) {
 
 async function loadComments(postId) {
   try {
-    const res = await callApi('getComments', { postId });
+    let res = null;
+    let __gcCloudOk = false;
+    const __gcT0 = Date.now();
+    if (CLOUD_RUN_GET_COMMENTS_URL) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+        const cloudRes = await fetch(CLOUD_RUN_GET_COMMENTS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, postId: postId }),
+          signal: controller.signal
+        }).then(function (r) { return r.json(); });
+        clearTimeout(timeoutId);
+        if (cloudRes && cloudRes.ok === true) {
+          res = cloudRes;
+          __gcCloudOk = true;
+        }
+      } catch (e) {}
+    }
+    if (__gcCloudOk) {
+      console.log('[getComments] source=cloud-run clientMs=' + (Date.now() - __gcT0));
+    } else {
+      res = await callApi('getComments', { postId });
+      console.log('[getComments] source=apps-script clientMs=' + (Date.now() - __gcT0));
+    }
     if (!res.ok) {
       postComments[postId] = { loaded: true, comments: [], error: res.error };
       return;
