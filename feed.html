@@ -535,6 +535,13 @@ const CLOUD_RUN_GET_THREADSEEN_URL = 'https://asia-northeast3-mro-market-intelli
 // 네트워크/타임아웃/JSON 파싱 예외일 때만 기존 Apps Script callApi('getPostById', ...)로
 // 폴백한다(그 경로는 삭제하지 않고 그대로 둔다).
 const CLOUD_RUN_GET_POST_BY_ID_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getPostByIdTest';
+// getFeed 단독 이전(승인 B, 2026-08-20): loadFeed()/loadMoreFeed() 최초 로딩·더보기 조회를
+// Cloud Run으로 먼저 시도한다. getFeed는 getPostById처럼 "게시물 자체에 대한 정상 실패 코드"가
+// 없으므로, getSettings/pollSignal/getThreadSeen과 동일하게 ok:true만 성공으로 인정하고 그 외
+// (ok:false, 네트워크/타임아웃/JSON 파싱 실패)는 전부 조용히 기존 Apps Script
+// callApi('getFeed', ...)로 폴백한다. loadFeed()의 기존 isRetry 1.8초 재시도 로직(백그라운드
+// 복귀 시 POST가 GET으로 바뀌는 문제 대응)은 이 폴백 경로 안에서 그대로 유지된다.
+const CLOUD_RUN_GET_FEED_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getFeedTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -1184,7 +1191,32 @@ if (feedNeedsRerender && !hasOpenComposer()) renderFeed();
 async function loadFeed(isRetry) {
   const root = document.getElementById('feed-root');
   try {
-    const res = await callApi('getFeed', { cursor: 0 });
+    let res = null;
+    let __gfCloudOk = false;
+    const __gfT0 = Date.now();
+    if (CLOUD_RUN_GET_FEED_URL) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+        const cloudRes = await fetch(CLOUD_RUN_GET_FEED_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, cursor: 0 }),
+          signal: controller.signal
+        }).then(function (r) { return r.json(); });
+        clearTimeout(timeoutId);
+        if (cloudRes && cloudRes.ok === true) {
+          res = cloudRes;
+          __gfCloudOk = true;
+        }
+      } catch (e) {}
+    }
+    if (__gfCloudOk) {
+      console.log('[getFeed] source=cloud-run clientMs=' + (Date.now() - __gfT0));
+    } else {
+      res = await callApi('getFeed', { cursor: 0 });
+      console.log('[getFeed] source=apps-script clientMs=' + (Date.now() - __gfT0));
+    }
     if (!res.ok) {
       if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
         doLogout();
@@ -1217,7 +1249,33 @@ async function loadMoreFeed() {
   feedState.loadingMore = true;
   renderLoadMoreButton();
   try {
-    const res = await callApi('getFeed', { cursor: feedState.nextCursor });
+    let res = null;
+    let __gfCloudOk = false;
+    const __gfT0 = Date.now();
+    const __gfCursor = feedState.nextCursor;
+    if (CLOUD_RUN_GET_FEED_URL) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+        const cloudRes = await fetch(CLOUD_RUN_GET_FEED_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, cursor: __gfCursor }),
+          signal: controller.signal
+        }).then(function (r) { return r.json(); });
+        clearTimeout(timeoutId);
+        if (cloudRes && cloudRes.ok === true) {
+          res = cloudRes;
+          __gfCloudOk = true;
+        }
+      } catch (e) {}
+    }
+    if (__gfCloudOk) {
+      console.log('[getFeed] source=cloud-run clientMs=' + (Date.now() - __gfT0));
+    } else {
+      res = await callApi('getFeed', { cursor: __gfCursor });
+      console.log('[getFeed] source=apps-script clientMs=' + (Date.now() - __gfT0));
+    }
     if (!res.ok) {
       if (res.error === 'SESSION_EXPIRED' || res.error === 'UNAUTHORIZED') {
         doLogout();
