@@ -18,6 +18,9 @@ const {
 } = require('./lib/sheetsClient');
 const feedEngine = require('./lib/feedEngine');
 const feedResponses = require('./lib/feedResponses');
+// 2026-08-20 (markThreadSeen 1단계, 설계 승인 완료 — MARKTHREADSEEN_CLOUDRUN_DESIGN.md):
+// Firestore 트랜잭션 기반 쓰기 idempotency 처리 공통화. markThreadSeenTest만 이번에 사용한다.
+const { withIdempotency } = require('./lib/writeIdempotency');
 
 const SPREADSHEET_ID = '1_pvEWU3PRoLM4ZO8aY2v0kEYz--tFNRy2g_fE6MMubU';
 // Sheet tab name is written as a JS unicode escape (Korean debug-log tab name).
@@ -750,3 +753,94 @@ exports.getThreadSeenTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// POST /markThreadSeenTest (markThreadSeen 1단계 — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: WRITE_API_MIGRATION_PREP_REVIEW.md(분석) -> MARKTHREADSEEN_CLOUDRUN_DESIGN.md
+// (0단계+1단계 설계 확정 승인) -> 이번 코드 구현 승인. 다음 단계(별도 승인 필요):
+// GitHub 커밋 -> Firestore TTL 설정 -> parity 테스트 -> Cloud Run 배포 -> feed.html 연결.
+//
+// Code.gs의 handleMarkThreadSeen_(3399~3427행)을 그대로 옮긴 것. LockService(스크립트
+// 전체 단일 락) 대신 lib/writeIdempotency.js의 Firestore 트랜잭션 기반 idempotencyKey
+// dedup을 쓴다 — 설계 문서 2-3의 결론(markThreadSeen은 upsert라 완벽한 분산 락 없이도
+// 안전하다)에 따라, "같은 논리적 요청의 재실행 방지"만 Firestore로 재현하고 진짜 동시
+// 레이스는 upsert 특성(같은 email+postId+itemId 행을 찾아 갱신/추가)에 맡긴다.
+//
+// [권한] 이 함수만 쓰기 스코프(spreadsheets, 읽기+쓰기)를 쓴다. 다른 모든 기존 함수는
+// 여전히 spreadsheets.readonly만 쓰고, lib/sheetsClient.js(공유 읽기 전용 클라이언트)도
+// 이 함수 때문에 건드리지 않았다 — 최소 권한 원칙(설계 문서 1-6/3-3).
+//
+// [선행 조건, 2026-08-20 확인 완료] Cloud Run 실행 서비스 계정
+// (771006650918-compute@developer.gserviceaccount.com)을 대상 스프레드시트에 편집자로
+// 공유 완료(재홍님 직접 확인).
+exports.markThreadSeenTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, postId, itemId, idempotencyKey } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'markThreadSeen', async function () {
+      return markThreadSeenAction_(email, postId, itemId);
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// Code.gs handleMarkThreadSeen_의 upsert 로직(3399~3427행)과 동일한 판단(이메일은
+// toLowerCase()만 비교, postId/itemId는 String() 비교) + 동일한 컬럼 배치(A=이메일,
+// B=postId, C=itemId, D=확인시각 ISO 문자열). 반환값은 Code.gs와 정확히 같은 모양
+// ({ok:true} 또는 {ok:false, error:'MISSING_FIELDS'}) — withIdempotency()가 이 반환값을
+// 그대로 Firestore에 캐시하고 재반환하므로, 여기서 serverMs/timings 같은 요청별 필드를
+// 넣지 않는다(그건 바깥 exports.markThreadSeenTest가 매 요청마다 새로 붙인다).
+async function markThreadSeenAction_(email, postId, itemId) {
+  const postIdStr = String(postId || '');
+  const itemIdStr = String(itemId || '');
+  if (!postIdStr || !itemIdStr) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  const client = await auth.getClient();
+
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${THREAD_SEEN_RANGE}`;
+  const getResp = await client.request({ url: getUrl });
+  const rows = (getResp.data && getResp.data.values) || [];
+
+  const nowIso = new Date().toISOString();
+  let matchedRowIndex = -1; // rows는 A2:D부터 시작하는 배열 — 인덱스 0 == 시트의 2행
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (String(row[0]).toLowerCase() === String(email).toLowerCase() &&
+        String(row[1]) === postIdStr && String(row[2]) === itemIdStr) {
+      matchedRowIndex = i;
+      break;
+    }
+  }
+
+  if (matchedRowIndex !== -1) {
+    const sheetRow = matchedRowIndex + 2;
+    const updateRange = encodeURIComponent(SHEET_THREAD_SEEN_NAME + '!D' + sheetRow);
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=RAW`;
+    await client.request({ url: updateUrl, method: 'PUT', data: { values: [[nowIso]] } });
+  } else {
+    const appendRange = encodeURIComponent(SHEET_THREAD_SEEN_NAME + '!A:D');
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    await client.request({ url: appendUrl, method: 'POST', data: { values: [[email, postIdStr, itemIdStr, nowIso]] } });
+  }
+
+  return { ok: true };
+}
