@@ -1,5 +1,24 @@
 const {GoogleAuth} = require('google-auth-library');
 
+// 2026-08-20 (2단계, getFeed/getNotifications/getPostById 공동 이전 준비): 공통 판정/
+// 변환 로직(lib/feedEngine.js), Sheets 읽기 공통화(lib/sheetsClient.js), Firestore 세션
+// 인증 공통화(lib/auth.js), 응답 생성(lib/feedResponses.js). FEED_NOTIFICATIONS_POSTBYID_LIB_SPEC.md
+// (승인됨)에서 설계한 그대로이며, pollSignalTest 리팩터링과 getFeedTest/getNotificationsTest/
+// getPostByIdTest(신규, 아직 Cloud Run에는 미배포) 4개만 이 모듈들을 쓴다. whoamiTest/
+// getSettingsTest/getTeamManagersTest/getThreadSeenTest는 이번 범위가 아니라 그대로 두었다.
+const { authenticateSession } = require('./lib/auth');
+const {
+  getSheetsClient,
+  batchGetValues,
+  rowsToUsers,
+  rowsToPosts,
+  rowsToItems,
+  rowsToComments,
+  parseSettings
+} = require('./lib/sheetsClient');
+const feedEngine = require('./lib/feedEngine');
+const feedResponses = require('./lib/feedResponses');
+
 const SPREADSHEET_ID = '1_pvEWU3PRoLM4ZO8aY2v0kEYz--tFNRy2g_fE6MMubU';
 // Sheet tab name is written as a JS unicode escape (Korean debug-log tab name).
 const SHEET_NAME = '\uB514\uBC84\uADF8\uB85C\uADF8';
@@ -348,7 +367,6 @@ res.status(500).json({ ok: false, serverMs, error: String((err && err.message) |
 // 2026-07-28T10:52:00.109Z로 노출됐지만 실제는 2026-07-28T01:52:00.109Z). 한국은 DST가 없어
 // 이 오프셋은 연중 고정이므로, 스프레드시트 시간대 설정이 서울로 유지되는 한 아래처럼 고정
 // 오프셋을 빼주면 된다. 이 시간대가 바뀌면 이 상수도 같이 바꿔야 한다.
-const SPREADSHEET_UTC_OFFSET_MS = 9 * 60 * 60 * 1000; // Asia/Seoul = UTC+9, DST 없음
 const SHEET_POST_NAME = '시황게시물';
 const SHEET_ITEM_NAME = '품목마스터';
 const SHEET_COMMENT_NAME = '댓글';
@@ -358,177 +376,73 @@ const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:H');
 const POLL_COMMENT_RANGE = encodeURIComponent(SHEET_COMMENT_NAME + '!A2:I');
 const POLL_SETTINGS_RANGE = encodeURIComponent(SHEET_SETTING_NAME + '!A2:C');
 
-// Google Sheets serial date(1899-12-30 기준, 스프레드시트 시간대(서울) 벽시계 값) -> 실제 UTC Unix ms.
-// 값이 없으면 null. 문자열이 들어오는 예외 상황(혹시 셀이 텍스트로 바뀐 경우)도 방어적으로 처리한다.
-function sheetSerialToMs_(v) {
-  if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number') return Math.round((v - 25569) * 86400000) - SPREADSHEET_UTC_OFFSET_MS;
-  const t = new Date(v).getTime();
-  return isNaN(t) ? null : t;
+// 5개 시트를 한 번에 읽는 batchGet 범위 배열 + UNFORMATTED_VALUE 옵션.
+// getFeedTest/getNotificationsTest/getPostByIdTest(신규)와 pollSignalTest(리팩터링)가
+// 전부 이 동일한 5개 범위를 그대로 재사용한다(기존 pollSignalTest가 이미 쓰던 것과 동일,
+// 추가 Sheets API 호출 없음).
+const FEED_BATCH_RANGES = [POLL_USER_RANGE, POLL_POST_RANGE, POLL_ITEM_RANGE, POLL_COMMENT_RANGE, POLL_SETTINGS_RANGE];
+
+// 세션 인증 실패 시 기존 각 함수의 인라인 분기와 정확히 같은 응답 모양을 만든다.
+// (MISSING_SESSION_TOKEN은 원래도 timings 키가 없었으므로, auth.timings가 undefined일 때는
+//  timings 키를 넣지 않는다 — lib/auth.js의 authenticateSession 주석 참고.)
+function authFailureResponseBody_(serverMs, auth) {
+  return auth.timings
+    ? { ok: false, serverMs, timings: auth.timings, error: auth.error }
+    : { ok: false, serverMs, error: auth.error };
 }
 
-// Code.gs canViewComment_와 동일한 판단(팀장_열람범위 반영).
-function teamScopeAllows_(role, viewerTeam, targetTeam, leadScope) {
-  if (role === '임원') return true;
-  if (role === '팀장') return leadScope === '전체' ? true : viewerTeam === targetTeam;
-  if (role === '담당' || role === '일반') return viewerTeam === targetTeam;
-  return false;
-}
-
-// Code.gs getRelatedItems_와 동일한 판단(원자재명 매칭 + 활성 + 등록일 이전 게시물 제외).
-function relatedActiveItems_(post, allItems) {
-  return allItems.filter(function (it) {
-    const materialMatch = String(it.materials || '').indexOf(post.materialName) !== -1;
-    const statusActive = it.status === '활성';
-    if (!(materialMatch && statusActive)) return false;
-    const registeredMs = sheetSerialToMs_(it.registeredAt);
-    if (registeredMs === null) return true;
-    return sheetSerialToMs_(post.createdAt) >= registeredMs;
-  });
-}
-
-// Code.gs buildFeedEntry_의 품목별 요약(confirmed/commentCount/lastComment) 부분과 동일.
-function summarizeItemForPost_(item, itemComments) {
-  let lastComment = null;
-  itemComments.forEach(function (c) {
-    const cMs = sheetSerialToMs_(c.createdAt);
-    const lastMs = lastComment ? sheetSerialToMs_(lastComment.createdAt) : null;
-    if (!lastComment || (cMs !== null && lastMs !== null && cMs > lastMs)) lastComment = c;
-  });
-  return {
-    itemId: item.itemId,
-    manager: item.manager,
-    confirmed: itemComments.length > 0,
-    commentCount: itemComments.length,
-    lastCommentAuthorEmail: lastComment ? lastComment.authorEmail : null,
-    lastCommentAtMs: lastComment ? sheetSerialToMs_(lastComment.createdAt) : null
-  };
-}
-
-// Code.gs buildFeedEntry_의 needsAttention 판단(역할별 분기)과 동일.
-function needsAttentionFor_(viewer, itemSummaries, lastCheckedMs) {
-  if (viewer.role === '담당') {
-    return itemSummaries.some(function (s) {
-      if (String(s.manager || '').trim() !== String(viewer.name || '').trim()) return false;
-      if (!s.confirmed) return true;
-      if (!s.lastCommentAuthorEmail) return false;
-      return s.lastCommentAuthorEmail !== viewer.email && s.lastCommentAtMs !== null && s.lastCommentAtMs > lastCheckedMs;
-    });
-  }
-  if (viewer.role === '팀장' || viewer.role === '임원') {
-    return itemSummaries.some(function (s) {
-      if (!s.confirmed) return true;
-      if (!s.lastCommentAuthorEmail) return false;
-      return s.lastCommentAuthorEmail !== viewer.email && s.lastCommentAtMs !== null && s.lastCommentAtMs > lastCheckedMs;
-    });
-  }
-  return false;
-}
-
+// 2026-08-20 (2단계) 리팩터링: 기존 teamScopeAllows_/relatedActiveItems_/
+// summarizeItemForPost_/needsAttentionFor_/sheetSerialToMs_ 5개 최상위 함수는
+// lib/feedEngine.js로 이동했다(index.js 전체에서 pollSignalTest 밖에는 이 5개를 쓰는
+// 곳이 없음을 grep으로 재확인 완료 — 실제 구현 보고서 참고). 인증/시트읽기 블록도
+// lib/auth.js·lib/sheetsClient.js로 옮겼다. 아래는 그 공통 모듈을 호출하도록 다시 쓴
+// pollSignalTest이며, 응답 모양(ok/serverMs/timings/totalNeedsAttention/signatures)과
+// signatures 각 원소의 필드·값 계산 방식은 리팩터링 전과 동일하다(customer/itemName/
+// comments 등 lib/feedEngine.js가 추가로 계산하는 필드는 여기서 그냥 버리고 응답에 안 넣음).
 exports.pollSignalTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
-  const timings = {};
   try {
     const { sessionToken } = req.body || {};
-    if (!sessionToken) {
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
       const serverMs = Date.now() - t0;
-      res.status(400).json({ ok: false, serverMs, error: 'MISSING_SESSION_TOKEN' });
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
       return;
     }
-    const s0 = Date.now();
-    const sessionSnap = await firestore.collection('sessions').doc(sessionToken).get();
-    timings.sessionMs = Date.now() - s0;
-    if (!sessionSnap.exists) {
-      const serverMs = Date.now() - t0;
-      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_NOT_FOUND' });
-      return;
-    }
-    const session = sessionSnap.data();
-    const expiresAtRaw = session.expiresAt;
-    const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate() : new Date(expiresAtRaw);
-    if (!(expiresAt.getTime() > Date.now())) {
-      const serverMs = Date.now() - t0;
-      res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
-      return;
-    }
-    await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (기존 Phase 1과 동일)
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
 
-    const email = session.email;
     const u0 = Date.now();
-    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
-    const client = await auth.getClient();
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet` +
-      `?ranges=${POLL_USER_RANGE}&ranges=${POLL_POST_RANGE}&ranges=${POLL_ITEM_RANGE}` +
-      `&ranges=${POLL_COMMENT_RANGE}&ranges=${POLL_SETTINGS_RANGE}&valueRenderOption=UNFORMATTED_VALUE`;
-    const resp = await client.request({ url });
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
     timings.sheetMs = Date.now() - u0;
 
-    const valueRanges = (resp.data && resp.data.valueRanges) || [];
-    const userRows = (valueRanges[0] && valueRanges[0].values) || [];
-    const postRows = (valueRanges[1] && valueRanges[1].values) || [];
-    const itemRows = (valueRanges[2] && valueRanges[2].values) || [];
-    const commentRows = (valueRanges[3] && valueRanges[3].values) || [];
-    const settingRows = (valueRanges[4] && valueRanges[4].values) || [];
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
 
-    const meRow = userRows.find(function (r) {
-      return String(r[0] || '').trim().toLowerCase() === String(email).trim().toLowerCase();
-    });
-    if (!meRow) {
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
       const serverMs = Date.now() - t0;
       res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
       return;
     }
-    const viewer = { email: meRow[0], name: meRow[1], role: meRow[2], team: meRow[3] };
-    const lastCheckedMs = sheetSerialToMs_(meRow[5]) || 0;
 
-    let leadScope = null;
-    settingRows.forEach(function (row) {
-      if (row[0] === '팀장_열람범위') leadScope = row[1];
-    });
-
-    const allPosts = postRows.map(function (row) {
-      return { id: row[0], materialName: row[2], createdAt: row[7] };
-    });
-    const allItems = itemRows.map(function (row) {
-      return { itemId: String(row[0]), manager: row[3], team: row[4], materials: row[5], status: row[6], registeredAt: row[7] };
-    });
-    const allComments = commentRows.map(function (row) {
-      return { postId: row[1], itemId: row[2], authorEmail: row[3], createdAt: row[8] };
-    });
-
-    const commentsByPost = {};
-    allComments.forEach(function (c) {
-      const key = String(c.postId);
-      (commentsByPost[key] = commentsByPost[key] || []).push(c);
-    });
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const entries = feedEngine.buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
 
     let totalNeedsAttention = 0;
     const signatures = [];
-    allPosts.forEach(function (post) {
-      const candidateItems = relatedActiveItems_(post, allItems);
-      const viewableItems = candidateItems.filter(function (it) {
-        return teamScopeAllows_(viewer.role, viewer.team, it.team, leadScope);
-      });
-      if (viewableItems.length === 0) return;
-
-      const postComments = commentsByPost[String(post.id)] || [];
-      const byItemId = {};
-      postComments.forEach(function (c) {
-        const k = String(c.itemId);
-        (byItemId[k] = byItemId[k] || []).push(c);
-      });
-
-      const itemSummaries = viewableItems.map(function (it) {
-        return summarizeItemForPost_(it, byItemId[String(it.itemId)] || []);
-      });
-
-      if (needsAttentionFor_(viewer, itemSummaries, lastCheckedMs)) totalNeedsAttention += 1;
-
-      itemSummaries.forEach(function (s) {
+    entries.forEach(function (entry) {
+      if (entry.needsAttention) totalNeedsAttention += 1;
+      entry.items.forEach(function (s) {
         signatures.push({
-          postId: post.id,
+          postId: entry.post.id,
           itemId: s.itemId,
           commentCount: s.commentCount,
           lastCommentAt: s.lastCommentAtMs !== null ? new Date(s.lastCommentAtMs).toISOString() : null
@@ -538,6 +452,177 @@ exports.pollSignalTest = async (req, res) => {
 
     const serverMs = Date.now() - t0;
     res.status(200).json({ ok: true, serverMs, timings, totalNeedsAttention, signatures });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /getFeedTest, /getNotificationsTest, /getPostByIdTest (2026-08-20, 2단계 — 실제 구현
+// 완료, 로컬 parity 검증 대상. 아직 Cloud Run에 배포하지 않았고 프론트엔드도 연결하지 않았다.)
+//
+// 3개 함수 모두 공통 1~3단계(세션 인증 -> 5개 시트 batchGet -> 뷰어/leadScope/teamByEmail
+// 조립 -> feedEngine.buildFeedEntries 또는 buildFeedEntry 호출) 후, 함수별로 다른 4단계
+// (feedResponses의 응답 생성 함수)만 다르다. Code.gs의 handleGetFeed_/handleGetNotifications_/
+// handleGetPostById_와 같은 값을 내는 것을 목표로 한다(FEED_NOTIFICATIONS_POSTBYID_LIB_SPEC.md
+// 5번 섹션 참고. getPostByIdTest는 설계 문서와 달리 buildFeedEntries(전체) 대신
+// buildFeedEntry(단일 게시물)를 직접 쓰도록 조정했다 — NOT_FOUND/FORBIDDEN을 구분하려면
+// "게시물 자체가 없음"과 "있지만 안 보임"을 나눠야 하는데, buildFeedEntries가 이미 필터링한
+// entries만 보면 이 둘을 구분할 수 없기 때문이다).
+
+exports.getFeedTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, cursor, limit } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const entries = feedEngine.buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
+
+    const feedDisplayDays = Number(settings['뉴스피드출력기간']) || 14;
+    const result = feedResponses.buildGetFeedResponse(entries, { cursor: cursor, limit: limit, feedDisplayDays: feedDisplayDays });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+exports.getNotificationsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const entries = feedEngine.buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
+    const result = feedResponses.buildGetNotificationsResponse(entries, viewer, allUsers);
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+exports.getPostByIdTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, postId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!postId) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'MISSING_POST_ID' });
+      return;
+    }
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const post = allPosts.find(function (p) { return p.id === postId; });
+    if (!post) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'NOT_FOUND' });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const commentsByPost = feedEngine.groupCommentsByPost(allComments);
+    const entry = feedEngine.buildFeedEntry(viewer, post, allItems, commentsByPost, leadScope, teamByEmail);
+    if (!entry) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN' });
+      return;
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, feedResponses.buildPostDetailResponse(entry)));
   } catch (err) {
     const serverMs = Date.now() - t0;
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
