@@ -1,0 +1,225 @@
+[
+  {
+    "group": "A",
+    "name": "1",
+    "desc": "신규 행 생성 — 기존 행 없음 -> 두 구현 모두 새 행 append",
+    "appsScript": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "2",
+    "desc": "기존 행 갱신 — 일치 행의 확인시각만 갱신, 다른 행 영향 없음",
+    "appsScript": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ],
+        [
+          "b@nkmro.com",
+          "P2",
+          "IT-2",
+          "2026-08-19T02:00:00.000Z"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ],
+        [
+          "b@nkmro.com",
+          "P2",
+          "IT-2",
+          "2026-08-19T02:00:00.000Z"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "3",
+    "desc": "이메일 대소문자 다름 -> 대소문자 무시 매칭 -> 갱신(신규 append 아님)",
+    "appsScript": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "A@NKMRO.COM",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true
+      },
+      "rows": [
+        [
+          "A@NKMRO.COM",
+          "P1",
+          "IT-1",
+          "2026-08-20T00:00:00.000Z"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "6",
+    "desc": "필수값 누락(itemId 없음) -> 두 구현 모두 MISSING_FIELDS, rows 변경 없음",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P9",
+          "IT-9",
+          "2026-08-19T01:00:00.000Z"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "P9",
+          "IT-9",
+          "2026-08-19T01:00:00.000Z"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "4",
+    "desc": "idempotencyKey 중복 -> actionFn은 1회만 실행, 두 응답 동일",
+    "detail": {
+      "callCount": 1,
+      "r1": {
+        "ok": true,
+        "calledWith": 1
+      },
+      "r2": {
+        "ok": true,
+        "calledWith": 1
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "5-a",
+    "desc": "IN_PROGRESS -> 폴링 중 DONE으로 전환 -> 그 응답을 그대로 받음",
+    "detail": {
+      "r": {
+        "ok": true,
+        "from": "other-process"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "5-b",
+    "desc": "IN_PROGRESS가 끝까지 안 풀림 -> DUPLICATE_IN_PROGRESS_RETRY_LATER",
+    "detail": {
+      "r": {
+        "ok": false,
+        "error": "DUPLICATE_IN_PROGRESS_RETRY_LATER"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "7",
+    "desc": "세션 오류 4종(토큰없음/세션없음/만료/정상) -> 에러 코드 표와 일치",
+    "detail": {
+      "noToken": {
+        "ok": false,
+        "status": 400,
+        "error": "MISSING_SESSION_TOKEN"
+      },
+      "notFound": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_NOT_FOUND",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "expired": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_EXPIRED",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "valid": {
+        "ok": true,
+        "email": "a@nkmro.com",
+        "ref": {
+          "store": {},
+          "id": "valid-token"
+        },
+        "timings": {
+          "sessionMs": 0
+        }
+      }
+    },
+    "same": true
+  }
+]
