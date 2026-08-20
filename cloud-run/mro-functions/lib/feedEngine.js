@@ -93,6 +93,25 @@ function visibleComments(itemComments, viewerRole, viewerTeam, leadScope, teamBy
     });
 }
 
+// [신규, getComments 이전 1단계] Code.gs handleGetComments_/getCommentsForPost_와 동일.
+// visibleComments()는 이미 "특정 품목(item)에 그룹핑된" 댓글 목록을 입력으로 받는데,
+// getComments는 품목 구분 없이 "게시물(postId) 전체"의 평면 댓글 목록이 필요해서 별도로
+// 둔다(입력 형태가 다를 뿐, 팀 열람권한 판정 자체는 teamScopeAllows를 그대로 재사용).
+// Code.gs와 동일하게 postId가 존재하지 않는 게시물이어도 에러 없이 빈 배열을 반환한다
+// (NOT_FOUND 같은 개념이 없음 — getPostById와 다른 점).
+function visibleCommentsForPost(allComments, postId, viewerRole, viewerTeam, leadScope, teamByEmail) {
+  return allComments
+    .filter(function (c) { return String(c.postId) === String(postId); })
+    .filter(function (c) {
+      const authorTeam = teamByEmail[String(c.authorEmail || '').trim().toLowerCase()];
+      return teamScopeAllows(viewerRole, viewerTeam, authorTeam, leadScope);
+    })
+    .slice()
+    .sort(function (a, b) {
+      return sheetSerialToMs(a.createdAtRaw) - sheetSerialToMs(b.createdAtRaw);
+    });
+}
+
 // Code.gs buildFeedEntry_의 품목별 요약(confirmed/commentCount/lastComment) 부분과 동일한
 // 계산 + customer/itemName/team/comments[]를 추가한 상위집합.
 // (confirmed/commentCount/lastComment는 itemComments 원본 전체 기준 — 팀 필터링 없음.
@@ -186,6 +205,7 @@ module.exports = {
   findViewer,
   groupCommentsByPost,
   visibleComments,
+  visibleCommentsForPost,
   summarizeItemFull,
   needsAttentionFor,
   buildFeedEntry,

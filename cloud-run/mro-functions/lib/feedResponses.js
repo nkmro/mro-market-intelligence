@@ -155,11 +155,21 @@ function buildPostDetailResponse(entry) {
   return { ok: true, post: shapeEntryAsPost(entry) };
 }
 
+// getCommentsTest 성공 응답 모양. Code.gs handleGetComments_와 동일하게 postId 자체가
+// 없는 게시물이어도(댓글이 하나도 안 걸러져 빈 배열이어도) ok:true, comments:[] — 에러가
+// 아니다. comments는 lib/feedEngine.js의 visibleCommentsForPost가 이미 필터+정렬해서
+// 넘겨준 것을 그대로 shapeComment로 모양만 바꾼다.
+function buildGetCommentsResponse(comments) {
+  return { ok: true, comments: comments.map(shapeComment) };
+}
+
 module.exports = {
   toIso,
+  shapeComment,
   shapeItem,
   shapeEntryAsPost,
   buildGetFeedResponse,
   buildGetNotificationsResponse,
-  buildPostDetailResponse
+  buildPostDetailResponse,
+  buildGetCommentsResponse
 };
