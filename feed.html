@@ -542,6 +542,12 @@ const CLOUD_RUN_GET_POST_BY_ID_URL = 'https://asia-northeast3-mro-market-intelli
 // callApi('getFeed', ...)로 폴백한다. loadFeed()의 기존 isRetry 1.8초 재시도 로직(백그라운드
 // 복귀 시 POST가 GET으로 바뀌는 문제 대응)은 이 폴백 경로 안에서 그대로 유지된다.
 const CLOUD_RUN_GET_FEED_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getFeedTest';
+// getNotifications 단독 이전(승인 C, 2026-08-20): loadNotifNewPosts()의 알림 배지/알림 탭 조회를
+// Cloud Run으로 먼저 시도한다. getFeed와 동일하게 "게시물 자체에 대한 정상 실패 코드"가 없으므로
+// ok:true만 성공으로 인정하고, 그 외(ok:false, 네트워크/타임아웃/JSON 파싱 실패)는 조용히 기존
+// Apps Script callApi('getNotifications', {})로 폴백한다. mySeq/notifFetchSeq out-of-order 가드는
+// 두 경로를 감싸는 블록이 끝난 뒤 한 곳에서만 체크해 그대로 유지한다.
+const CLOUD_RUN_GET_NOTIFICATIONS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getNotificationsTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -2160,7 +2166,32 @@ function updateNotifPermButton() {
 async function loadNotifNewPosts() {
 const mySeq = ++notifFetchSeq;
 try {
-const res = await callApi('getNotifications', {});
+let res = null;
+let __gnCloudOk = false;
+const __gnT0 = Date.now();
+if (CLOUD_RUN_GET_NOTIFICATIONS_URL) {
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+const cloudRes = await fetch(CLOUD_RUN_GET_NOTIFICATIONS_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+signal: controller.signal
+}).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+if (cloudRes && cloudRes.ok === true) {
+res = cloudRes;
+__gnCloudOk = true;
+}
+} catch (e) {}
+}
+if (__gnCloudOk) {
+console.log('[getNotifications] source=cloud-run clientMs=' + (Date.now() - __gnT0));
+} else {
+res = await callApi('getNotifications', {});
+console.log('[getNotifications] source=apps-script clientMs=' + (Date.now() - __gnT0));
+}
 if (mySeq !== notifFetchSeq) return; // 이미 더 최신 요청이 시작됐으면 이 오래된 응답은 폐기 (out-of-order 응답이 최신 데이터를 덮어쓰는 레이스 방지)
 if (res.ok) {
 notifNewPostsCache.items = (res.items || []).map(function (it) {
