@@ -630,6 +630,62 @@ exports.getPostByIdTest = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /getCommentsTest (getComments 이전 1단계 — 백엔드 구현/parity만, feed.html 연결은 별도 승인)
+//
+// Code.gs의 handleGetComments_/getCommentsForPost_를 그대로 옮긴 것. getPostByIdTest와
+// 달리 게시물 자체가 존재하는지는 확인하지 않는다 — postId가 있으면(그 값이 실제 존재하는
+// 게시물이 아니어도) 그냥 해당 postId로 걸린 댓글이 없다는 뜻이라 ok:true, comments:[]를
+// 그대로 반환한다(NOT_FOUND 같은 별도 에러가 없음 — Code.gs와 동일).
+exports.getCommentsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, postId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!postId) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'MISSING_POST_ID' });
+      return;
+    }
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const comments = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, feedResponses.buildGetCommentsResponse(comments)));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /getThreadSeenTest (2026-08-19, getThreadSeen 단독 이전 1단계 — 분석/설계 승인 완료)
 //
 // Code.gs의 handleGetThreadSeen_/getThreadSeenMap_을 그대로 옮긴 것. buildFeedEntry_ 등 피드/알림
