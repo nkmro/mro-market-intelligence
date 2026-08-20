@@ -554,6 +554,17 @@ const CLOUD_RUN_GET_NOTIFICATIONS_URL = 'https://asia-northeast3-mro-market-inte
 // 상황에서 나올 일이 없음) ok:true만 성공으로 인정하고, 그 외는 조용히 기존 Apps Script
 // callApi('getComments', {postId})로 폴백한다.
 const CLOUD_RUN_GET_COMMENTS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCommentsTest';
+// markThreadSeen 1단계(2026-08-20, 설계 승인 완료 — MARKTHREADSEEN_CLOUDRUN_DESIGN.md): 지금까지의
+// 읽기 전용 이전(getSettings/pollSignal/getThreadSeen/getPostById/getFeed/getNotifications/
+// getComments)과 달리 이건 쓰기 액션이다. markThreadSeenTest는 Firestore 트랜잭션 기반
+// idempotencyKey dedup(lib/writeIdempotency.js)을 갖고 있어서, 같은 idempotencyKey로 Cloud Run과
+// Apps Script 양쪽에 중복 요청이 가더라도(예: Cloud Run이 타임아웃났지만 실제로는 처리된 경우)
+// markThreadSeen 자체가 upsert라 최종 결과는 안전하게 수렴한다(WRITE_API_MIGRATION_PREP_REVIEW.md
+// 2-3 참고 — postComment처럼 append만 되는 쓰기와 다른 점). ok:true만 성공으로 인정하고, 그 외는
+// 조용히 기존 callApi('markThreadSeen', {postId, itemId})로 폴백한다. 이때도 같은 idempotencyKey를
+// 그대로 실어 보낸다(callApi의 IDEMPOTENT_WRITE_ACTIONS 처리 로직상, body에 이미 idempotencyKey가
+// 있으면 그 값을 그대로 쓰고 새로 만들지 않는다).
+const CLOUD_RUN_MARKTHREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/markThreadSeenTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -2310,8 +2321,41 @@ if (!threadSeenMapLoaded) return false; if (session.role !== '팀장' && session
 function markThreadSeenLocal(postId, itemId) {
 const key = postId + '-' + itemId;
 threadSeenMap[key] = new Date().toISOString();
-callApi('markThreadSeen', { postId: postId, itemId: itemId }).catch(function () {});
+markThreadSeenRemote_(postId, itemId).catch(function () {});
 updateNotifBadge();
+}
+
+// markThreadSeen 1단계(2026-08-20): Cloud Run(markThreadSeenTest) 우선 시도 -> ok:true만 성공으로
+// 인정 -> 실패/타임아웃/예외 시 기존 Apps Script callApi('markThreadSeen', ...)로 폴백. 같은
+// idempotencyKey를 양쪽에 그대로 실어 보낸다. markThreadSeenLocal()은 이 함수를 fire-and-forget으로
+// 호출하므로(호출부에서 이미 낙관적으로 threadSeenMap을 갱신함), 여기서 던지는 예외는 호출부의
+// .catch(function(){})로만 흡수되고 화면에는 영향을 주지 않는다(기존 동작과 동일).
+async function markThreadSeenRemote_(postId, itemId) {
+const idempotencyKey = generateIdempotencyKey_();
+const __mtsT0 = Date.now();
+let cloudOk = false;
+if (CLOUD_RUN_MARKTHREADSEEN_URL) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const cloudRes = await fetch(CLOUD_RUN_MARKTHREADSEEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, postId: postId, itemId: itemId, idempotencyKey: idempotencyKey }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    if (cloudRes && cloudRes.ok === true) {
+      cloudOk = true;
+    }
+  } catch (e) {}
+}
+if (cloudOk) {
+  console.log('[markThreadSeen] source=cloud-run clientMs=' + (Date.now() - __mtsT0));
+} else {
+  await callApi('markThreadSeen', { postId: postId, itemId: itemId, idempotencyKey: idempotencyKey });
+  console.log('[markThreadSeen] source=apps-script clientMs=' + (Date.now() - __mtsT0));
+}
 }
 
 
