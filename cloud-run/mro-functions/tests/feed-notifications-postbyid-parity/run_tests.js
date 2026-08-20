@@ -278,12 +278,98 @@ function runGetPostByIdViaRealPort(c) {
 }
 
 // ===========================================================================
+// 4. getCommentsTest: postId 없음(MISSING_POST_ID) / 존재하지 않는 postId(에러 아님,
+//    빈 배열) / 역할별 팀 필터(담당·팀장) / 팀장_열람범위 전체·자기팀 분기 / 시간 오름차순 정렬.
+//    getPostById와 달리 "게시물 자체가 있는지"는 아예 확인하지 않는다.
+// ===========================================================================
+
+const commentsCases = [];
+function addCommentsCase(name, desc, { user, comments, teamByEmail, leadScope, postId }) {
+  commentsCases.push({ name, desc, user, comments, teamByEmail: teamByEmail || {}, leadScope: leadScope || null, postId });
+}
+
+addCommentsCase('CM1', 'MISSING_POST_ID: postId가 없음', {
+  user: { email: 'v@t', role: '담당', team: 'A', name: '뷰어', lastCheckedAt: null },
+  comments: [],
+  teamByEmail: {},
+  postId: undefined
+});
+
+addCommentsCase('CM2', '존재하지 않는 postId: 에러가 아니라 ok:true, comments:[]', {
+  user: { email: 'v@t', role: '담당', team: 'A', name: '뷰어', lastCheckedAt: null },
+  comments: [
+    { commentId: 'c1', postId: 'OTHER', itemId: 'IT-1', authorEmail: 'v@t', authorRole: '담당', parentCommentId: '', content: 'x', createdAt: '2026-08-15T00:00:00.000Z' }
+  ],
+  teamByEmail: { 'v@t': 'A' },
+  postId: 'P-DOES-NOT-EXIST'
+});
+
+addCommentsCase('CM3', '역할별 필터(담당): 자기 팀(A) 작성 댓글만 보이고 다른 팀(B) 작성 댓글은 제외', {
+  user: { email: 'kim@t', role: '담당', team: 'A', name: '김담당', lastCheckedAt: null },
+  comments: [
+    { commentId: 'c1', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: 'A팀', createdAt: '2026-08-15T01:00:00.000Z' },
+    { commentId: 'c2', postId: 'P1', itemId: 'IT-2', authorEmail: 'park@b', authorRole: '담당', parentCommentId: '', content: 'B팀', createdAt: '2026-08-15T02:00:00.000Z' }
+  ],
+  teamByEmail: { 'kim@t': 'A', 'park@b': 'B' },
+  postId: 'P1'
+});
+
+addCommentsCase('CM4', "팀장_열람범위='전체': 팀장이 다른 팀(B) 작성 댓글도 봄", {
+  user: { email: 'lead@t', role: '팀장', team: 'A', name: '이팀장', lastCheckedAt: null },
+  comments: [
+    { commentId: 'c1', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: 'A팀', createdAt: '2026-08-15T01:00:00.000Z' },
+    { commentId: 'c2', postId: 'P1', itemId: 'IT-2', authorEmail: 'park@b', authorRole: '담당', parentCommentId: '', content: 'B팀', createdAt: '2026-08-15T02:00:00.000Z' }
+  ],
+  teamByEmail: { 'kim@t': 'A', 'park@b': 'B' },
+  leadScope: '전체',
+  postId: 'P1'
+});
+
+addCommentsCase('CM5', "팀장_열람범위≠'전체'(자기팀만): 같은 입력이어도 팀장이 자기 팀(A) 댓글만 봄", {
+  user: { email: 'lead@t', role: '팀장', team: 'A', name: '이팀장', lastCheckedAt: null },
+  comments: [
+    { commentId: 'c1', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: 'A팀', createdAt: '2026-08-15T01:00:00.000Z' },
+    { commentId: 'c2', postId: 'P1', itemId: 'IT-2', authorEmail: 'park@b', authorRole: '담당', parentCommentId: '', content: 'B팀', createdAt: '2026-08-15T02:00:00.000Z' }
+  ],
+  teamByEmail: { 'kim@t': 'A', 'park@b': 'B' },
+  leadScope: null,
+  postId: 'P1'
+});
+
+addCommentsCase('CM6', '정렬: 입력 순서가 뒤섞여도 결과는 시간 오름차순(임원 역할 — 팀 필터 없이 전부 봄)', {
+  user: { email: 'exec@t', role: '임원', team: 'A', name: '박임원', lastCheckedAt: null },
+  comments: [
+    { commentId: 'c3', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: '세번째', createdAt: '2026-08-15T03:00:00.000Z' },
+    { commentId: 'c1', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: '첫번째', createdAt: '2026-08-15T01:00:00.000Z' },
+    { commentId: 'c2', postId: 'P1', itemId: 'IT-1', authorEmail: 'kim@t', authorRole: '담당', parentCommentId: '', content: '두번째', createdAt: '2026-08-15T02:00:00.000Z' }
+  ],
+  teamByEmail: { 'kim@t': 'A' },
+  postId: 'P1'
+});
+
+function runGetCommentsViaAppsScriptRef(c) {
+  const ref = makeAppsScriptRef(c.leadScope);
+  return ref.handleGetComments_(c.user, c.comments, c.teamByEmail, c.postId);
+}
+
+// index.js의 getCommentsTest와 정확히 같은 순서: postId 없으면 MISSING_POST_ID ->
+// visibleCommentsForPost로 필터+정렬 -> buildGetCommentsResponse로 모양 변환.
+function runGetCommentsViaRealPort(c) {
+  if (!c.postId) return { ok: false, error: 'MISSING_POST_ID' };
+  const viewer = toEngineViewer(c.user);
+  const allComments = c.comments.map(toEngineComment);
+  const comments = feedEngine.visibleCommentsForPost(allComments, c.postId, viewer.role, viewer.team, c.leadScope, c.teamByEmail);
+  return feedResponses.buildGetCommentsResponse(comments);
+}
+
+// ===========================================================================
 // 실행 + 비교
 // ===========================================================================
 
 assert.strictEqual(feedCases.length, 4, 'getFeed 시나리오는 4개여야 함');
 assert.strictEqual(notifCases.length, 2, 'getNotifications 시나리오는 2개여야 함');
 assert.strictEqual(postByIdCases.length, 3, 'getPostById 시나리오는 3개여야 함');
+assert.strictEqual(commentsCases.length, 6, 'getComments 시나리오는 6개여야 함');
 
 const allResults = [];
 
@@ -305,10 +391,16 @@ for (const c of postByIdCases) {
   allResults.push({ group: 'getPostById', name: c.name, desc: c.desc, appsScriptResult, realPortResult, same: deepEqual(appsScriptResult, realPortResult) });
 }
 
+for (const c of commentsCases) {
+  const appsScriptResult = runGetCommentsViaAppsScriptRef(c);
+  const realPortResult = runGetCommentsViaRealPort(c);
+  allResults.push({ group: 'getComments', name: c.name, desc: c.desc, appsScriptResult, realPortResult, same: deepEqual(appsScriptResult, realPortResult) });
+}
+
 console.log(JSON.stringify(allResults, null, 2));
 
 const allSame = allResults.every(function (r) { return r.same; });
-console.error('\n=== SUMMARY (getFeedTest/getNotificationsTest/getPostByIdTest vs Apps Script 기준) ===');
+console.error('\n=== SUMMARY (getFeedTest/getNotificationsTest/getPostByIdTest/getCommentsTest vs Apps Script 기준) ===');
 for (const r of allResults) {
   console.error('[' + r.group + '] case ' + r.name + ': ' + (r.same ? 'MATCH' : 'MISMATCH'));
 }

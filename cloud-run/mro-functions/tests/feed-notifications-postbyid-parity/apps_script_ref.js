@@ -224,7 +224,22 @@ function makeAppsScriptRef(settingScope) {
     return { ok: true, post: shapePost_(entry) };
   }
 
-  return { handleGetFeed_, handleGetNotifications_, handleGetPostById_, buildFeedEntry_, getRelatedItems_, canViewComment_ };
+  // handleGetComments_(2240행)/getCommentsForPost_(2157행). getPostById_와 달리 게시물
+  // 자체가 존재하는지는 확인하지 않는다 — postId로 걸린 댓글이 하나도 없어도(존재하지 않는
+  // postId라도) 그냥 빈 배열을 ok:true로 반환한다. allComments는 이미 주입받은 상태라
+  // getCommentsForPost_의 시트 읽기 부분은 없고 필터링부터 시작한다.
+  function handleGetComments_(user, allComments, teamByEmail, postId) {
+    if (!postId) return { ok: false, error: 'MISSING_POST_ID' };
+    const all = allComments.filter(function (c) { return String(c.postId) === String(postId); });
+    const visible = all.filter(function (c) {
+      const authorTeam = teamByEmail[String(c.authorEmail || '')];
+      return canViewComment_(user, authorTeam);
+    });
+    visible.sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+    return { ok: true, comments: visible };
+  }
+
+  return { handleGetFeed_, handleGetNotifications_, handleGetPostById_, handleGetComments_, buildFeedEntry_, getRelatedItems_, canViewComment_ };
 }
 
 module.exports = { makeAppsScriptRef };
