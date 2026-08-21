@@ -11,7 +11,9 @@
 
 ## 소스 구조
 
-`cloud-run/mro-functions/`에 있는 **하나의 소스 디렉터리**에서 9개 함수가 모두 배포됩니다 (`index.js` 하나에 여러 개의 `exports.함수이름`이 있고, 배포 시 `--entry-point`로 어느 함수를 쓸지 지정하는 방식). 즉 폴더가 함수마다 나뉘어 있는 게 아니라, **소스 하나 + 진입점(entry point) 9개** 구조입니다. **2026-08-18, 실제 GCP 콘솔의 `getSettingsTest` 함수 소스 보관 파일을 직접 내려받아 확인** — 그 시점에는 `index.js`에 `exports.*` 핸들러 8개가 들어있어 위 설명과 정확히 일치함을 확인했습니다. **(2026-08-19 갱신)** 이후 같은 날(2026-08-18) `pollSignalTest`가 추가되어 실제로는 9개이며, 아래 함수별 목록표에도 반영했습니다. 이 저장소의 `cloud-run/mro-functions/index.js`도 그 파일 그대로입니다(포맷팅 손실 없이 원본 그대로).
+`cloud-run/mro-functions/`에 있는 **하나의 소스 디렉터리**에서 함수가 모두 배포됩니다 (`index.js` 하나에 여러 개의 `exports.함수이름`이 있고, 배포 시 `--entry-point`로 어느 함수를 쓸지 지정하는 방식). 즉 폴더가 함수마다 나뉘어 있는 게 아니라, **소스 하나 + 여러 진입점(entry point)** 구조입니다. **2026-08-18, 실제 GCP 콘솔의 `getSettingsTest` 함수 소스 보관 파일을 직접 내려받아 확인** — 그 시점에는 `index.js`에 `exports.*` 핸들러 8개가 들어있어 위 설명과 정확히 일치함을 확인했습니다. **(2026-08-21 갱신)** 이후 `pollSignalTest`, `getFeedTest`, `getNotificationsTest`, `getPostByIdTest`, `getCommentsTest`, `getThreadSeenTest`, `markThreadSeenTest`, `postCommentTest`가 차례로 추가되어 `index.js`의 `exports.*` 핸들러는 총 16개입니다(`grep -c "^exports\." index.js`로 직접 재확인). 아래 함수별 목록표에도 반영했습니다. 이 저장소의 `cloud-run/mro-functions/index.js`도 그 파일 그대로입니다(포맷팅 손실 없이 원본 그대로).
+
+`index.js` 외에 `cloud-run/mro-functions/lib/` 아래에 여러 함수가 공유하는 모듈이 있습니다: `auth.js`(Firestore 세션 인증 공통화 — `getFeedTest`/`getNotificationsTest`/`getPostByIdTest`가 사용, 다른 함수들은 아직 각자 인라인된 동일 로직을 씀), `sheetsClient.js`(Sheets 읽기 공통 클라이언트), `feedEngine.js`(피드/댓글 판정 공용 로직 — Apps Script의 `buildFeedEntry_` 대응), `feedResponses.js`(응답 형태 조립), `writeIdempotency.js`(idempotencyKey 기반 쓰기 중복 방지 — `markThreadSeenTest`/`postCommentTest`가 사용).
 
 의존 패키지(`package.json`): `@google-cloud/firestore@9.0.0`, `google-auth-library`(`package-lock.json` 기준 실제 설치 버전 `9.15.1`). Google Sheets 접근은 `google-auth-library`의 `GoogleAuth`가 Cloud Functions 실행 서비스 계정의 권한을 그대로 사용하고, Firestore도 마찬가지로 서비스 계정 IAM 권한만으로 동작합니다 (코드에 `process.env` 참조가 전혀 없음 — 직접 확인함). **다만 앱 코드가 직접 쓰는 환경변수/Secret은 없지만, Cloud Run/Functions 배포판이 자동으로 붙이는 `LOG_EXECUTION_ID=true` 라는 플랫폼 관리 환경변수 1개는 존재합니다** (2026-08-18 콘솔의 "변수 및 보안 비밀" 탭에서 직접 확인 — 이건 로그에 실행 ID를 남기는 GCF 표준 옵션이고, 개발자가 넣은 값이 아니며 Secret도 아닙니다).
 
@@ -25,13 +27,21 @@
 | `getSettingsTest` | `.../getSettingsTest` | `handleGetSettings_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 실패 시 프론트에서 자동으로 Apps Script로 폴백 |
 | `pollSignalTest` | `.../pollSignalTest` | `handlePollSignal_`(및 `buildFeedEntry_`/`getRelatedItems_`/`canViewComment_`) | ✅ **프로덕션에 실제 연동됨** (`feed.html`, 30초 폴링) | POST + `sessionToken` 필요. `POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md`에서 역할별 12개 시나리오 100% 일치 검증 후 연동. 실패 시 프론트에서 자동으로 Apps Script `pollSignal`로 폴백 **(2026-08-19 갱신: 기존에 이 표에 빠져 있던 것을 반영)** |
 | `getTeamManagersTest` | `.../getTeamManagersTest` | `handleGetTeamManagers_` | ⏸ 검증만 완료, 미연동 | 프론트에 이 기능을 호출하는 곳이 없음 (최상위 `README.md`의 "getTeamManagers 분석" 참고) |
-| `whoamiTest` | `.../whoamiTest` | (로그인/세션 확인 로직) | 🧪 실험/성능 측정용 | 세션 조회 성능(콜드/웜 스타트) 검증에 사용. 프로덕션 미연동 |
+| `whoamiTest` | `.../whoamiTest` | (로그인/세션 확인 로직) | ✅ **프로덕션에 실제 연동됨** (`feed.html`, `CLOUD_RUN_WHOAMI_URL`) | 로그인/whoami 전환 계획 2단계(`LOGIN_WHOAMI_MIGRATION_PLAN.md`) — 새로고침/재실행 시 세션을 가볍게 재확인. 실패 시 기존 `getFeed`의 `UNAUTHORIZED` 처리로 폴백 **(2026-08-21 정정: 이전에는 "실험/성능 측정용, 프로덕션 미연동"으로 표시되어 있었으나 실제로는 연동되어 있었음)** |
 | `sessionSyncTest` | `.../sessionSyncTest` | `syncSessionToCloudRun_`가 호출하는 대상 | ⚙️ 내부 동기화용 | Apps Script 로그인 성공 시 이 함수를 호출해 Firestore `sessions/{sessionToken}`에 세션을 미러링(이중 쓰기). 실패해도 로그인 자체에는 영향 없음 |
+| `getFeedTest` | `.../getFeedTest` | `handleGetFeed_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. `lib/auth.js`+`lib/feedEngine.js` 사용. 실패 시 자동으로 Apps Script `getFeed`로 폴백 |
+| `getNotificationsTest` | `.../getNotificationsTest` | `handleGetNotifications_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 실패 시 자동으로 Apps Script `getNotifications`로 폴백 |
+| `getPostByIdTest` | `.../getPostByIdTest` | `handleGetPostById_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 실패 시 자동으로 Apps Script `getPostById`로 폴백 |
+| `getCommentsTest` | `.../getCommentsTest` | `handleGetComments_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 순수 읽기. 실패 시 자동으로 Apps Script `getComments`로 폴백 |
+| `getThreadSeenTest` | `.../getThreadSeenTest` | `handleGetThreadSeen_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 순수 읽기. 실패 시 자동으로 Apps Script `getThreadSeen`으로 폴백 |
+| `markThreadSeenTest` | `.../markThreadSeenTest` | `handleMarkThreadSeen_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(Sheets `spreadsheets` 스코프, 이 함수와 `postCommentTest`만 최소 권한으로 부여). upsert라 Apps Script와 각자 성공해도 안전하게 수렴 — 실패 시 자동으로 Apps Script `markThreadSeen`으로 폴백. `MARKTHREADSEEN_CLOUDRUN_DESIGN.md` 참고 |
+| `postCommentTest` | `.../postCommentTest` | `handlePostComment_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(Sheets `spreadsheets` 스코프). append 전용이라 markThreadSeen과 다른 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패) 적용 — 애매한 실패가 재시도까지 실패하면 Apps Script로 넘기지 않고 사용자에게 확인을 요청. `POSTCOMMENT_CLOUDRUN_DESIGN_v2.md` 참고 |
 | `firestoreTest` | `.../firestoreTest` | 없음 | 🧪 진단용 | Firestore 연결 확인용 스캐폴딩. 공개 API가 아님 |
 | `sheetPingTest` | `.../sheetPingTest` | 없음 | 🧪 진단용 | Google Sheets API 연결 확인용 스캐폴딩. 공개 API가 아님 |
 | `pingTest` | `.../pingTest` | 없음 | 🧪 진단용 | 가장 단순한 헬스체크. 공개 API가 아님 |
 
 > URL 전체 형식: `https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/<함수이름>`
+> 이 표는 2026-08-21 기준입니다. 이전 버전에는 `getFeedTest`/`getNotificationsTest`/`getPostByIdTest`/`getCommentsTest`/`getThreadSeenTest`/`markThreadSeenTest`/`postCommentTest` 7개 함수가 통째로 빠져 있었고(추가된 시점에 표 갱신이 누락됨), `whoamiTest`도 실제로는 연동되어 있는데 "실험용"으로 잘못 표시되어 있었습니다.
 
 ## Firestore 구조
 
