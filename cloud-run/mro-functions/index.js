@@ -1055,3 +1055,233 @@ async function postCommentAction_(viewer, allUsers, allPosts, allItems, allComme
 
   return { ok: true, commentId: commentId, comments: commentsResp.comments, updatedPost: updatedPost };
 }
+
+// ---------------------------------------------------------------------------
+// POST /loginTest (login 3단계 — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: LOGIN_WHOAMI_MIGRATION_PLAN.md(1·2단계, 완료) -> NEXT_PHASE_ANALYSIS_2026-08-21.md
+// (3단계 재검토) -> LOGIN_CLOUDRUN_DESIGN.md(설계 확정 승인) -> LOGIN_CLOUDRUN_IMPL_PLAN.md
+// (파일/함수 단위 계획 승인) -> 이번 코드 구현 승인(2026-08-21). 다음 단계(별도 승인 필요):
+// 로컬 parity 테스트 -> GitHub 커밋 -> Cloud Run 배포 -> feed.html/index.html 연결(이번
+// 범위 아님 — 로그인 폼 배선은 3단계 설계 문서가 별도로 다룸).
+//
+// [권한] 이 함수만 쓰기 스코프(spreadsheets, 읽기+쓰기)를 쓴다 — markThreadSeenTest/
+// postCommentTest와 동일한 최소 권한 원칙. 정확히는 updateLoginFailCountCell_ 하나만
+// 이 스코프를 새로 만들고(사용자팀마스터 H열 한 칸만 쓴다), 사용자/설정 조회는 기존
+// getSheetsClient()(읽기 전용, lib/sheetsClient.js — 수정 없이 재사용)를 그대로 쓴다.
+//
+// [세션] login은 기존 세션을 검증하는 쪽이 아니라 새로 발급하는 쪽이라, authenticateSession
+// (lib/auth.js, 수정 없이 재사용 대상이지만 이 함수는 아예 호출하지 않음)을 쓰지 않는다 —
+// 다른 모든 세션-소비 함수와 구조적으로 다른 지점.
+//
+// [Split-brain 방지, LOGIN_CLOUDRUN_DESIGN.md 4번] postComment와 달리 실패 시에도 Apps
+// Script로 넘기지 않는다(실패 자체가 failCount 증가라는 부작용을 가지므로, 두 백엔드가
+// 각자 처리하면 이중 카운트 위험). idempotencyKey + withIdempotency(lib/writeIdempotency.js,
+// 수정 없이 재사용)로 "같은 시도의 재시도" 중복 쓰기를 막는다 — 이 함수 자체는 한 번
+// 요청받으면 한 번 처리할 뿐이고, 애매한 실패 시 같은 키로 재시도할지는 호출부(이번 범위
+// 아님)가 결정한다.
+const LOGIN_LOCK_STALE_MS = 10000; // 10초 — 죽은 락(크래시 등으로 해제 안 됨) 자가 회수 기준
+const LOGIN_LOCK_WAIT_MS = 3000;   // 최대 3초 대기
+const LOGIN_LOCK_POLL_MS = 200;    // 200ms 간격으로 재확인
+
+// LOGIN_CLOUDRUN_DESIGN.md 7-2/7-3: "이 이메일에 대한 로그인 시도"를 Firestore 문서
+// loginLocks/{email}로 표현하는 분산 락. Firestore 트랜잭션은 이 락 문서 자체(Firestore
+// 네이티브 데이터)에만 원자성을 보장한다 — failCount의 실제 값은 Sheets 셀에 있어서 이
+// 트랜잭션이 "Sheets 읽기 -> 계산 -> 쓰기" 구간까지 원자화하지는 못한다. 대신 이 락이 그
+// 구간을 "한 번에 한 요청만" 실행하도록 직렬화해서 같은 효과를 낸다(idempotencyKey/
+// withIdempotency와는 다른 메커니즘 — 그건 "같은 시도의 재시도"를, 이건 "다른 시도끼리의
+// 동시 실행"을 다룬다).
+//
+// [알려진 한계, 미리 밝혀둠] 같은 idempotencyKey의 재시도가 원본 요청이 아직 처리 중일 때
+// 도착하면, withIdempotency의 IN_PROGRESS 폴링에 도달하기 전에 이 락에서 먼저 대기/실패할
+// 수 있다(LOGIN_BUSY_RETRY). login 처리 시간이 보통 1초 안팎이고 클라이언트 재시도는
+// 응답 타임아웃(초 단위) 이후에만 발생하므로 실제로는 드문 경합이며, 이 경우에도 이중
+// 실행은 발생하지 않는다(실패로 끝날 뿐 — 안전한 방향의 트레이드오프).
+async function acquireLoginLock_(email, holderId) {
+  const ref = firestore.collection('loginLocks').doc(email);
+  const deadline = Date.now() + LOGIN_LOCK_WAIT_MS;
+  for (;;) {
+    const acquired = await firestore.runTransaction(async function (tx) {
+      const snap = await tx.get(ref);
+      const now = Date.now();
+      if (snap.exists) {
+        const lockedAtRaw = snap.data().lockedAt;
+        // 실제 Firestore는 Date를 Timestamp로 저장/반환하지만(lib/auth.js의
+        // authenticateSession과 동일한 방어), 로컬 parity 테스트의 fake_firestore.js는
+        // 그냥 JS Date를 그대로 돌려주므로 두 경우 모두 처리한다.
+        const lockedAt = (lockedAtRaw && lockedAtRaw.toMillis) ? lockedAtRaw.toMillis() : new Date(lockedAtRaw).getTime();
+        if (now - lockedAt < LOGIN_LOCK_STALE_MS) {
+          return false; // 다른 요청이 아직 유효한 락을 쥐고 있음
+        }
+        // LOGIN_LOCK_STALE_MS보다 오래된 락은 죽은 락으로 간주하고 뺏어옴(자가 복구)
+      }
+      tx.set(ref, { lockedAt: new Date(now), holderId: holderId });
+      return true;
+    });
+    if (acquired) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise(function (resolve) { setTimeout(resolve, LOGIN_LOCK_POLL_MS); });
+  }
+}
+
+async function releaseLoginLock_(email, holderId) {
+  const ref = firestore.collection('loginLocks').doc(email);
+  try {
+    const snap = await ref.get();
+    if (snap.exists && snap.data().holderId === holderId) {
+      await ref.delete(); // 내가 잡은 락일 때만 해제(다른 요청의 락을 실수로 지우지 않음)
+    }
+  } catch (e) {
+    console.error('releaseLoginLock_ 실패(무시, ' + LOGIN_LOCK_STALE_MS + 'ms 뒤 자동 회수됨): ' + e);
+  }
+}
+
+// Code.gs의 hashPassword_(331~335행)를 Node 표준 crypto로 이식. 신규 npm 의존성 없음
+// (crypto는 파일 상단에서 이미 require됨 — postComment의 commentId 생성용으로 먼저 추가됨).
+function hashPassword_(password, email) {
+  const raw = password + ':' + String(email).trim().toLowerCase();
+  return crypto.createHash('sha256').update(raw, 'utf8').digest('hex');
+}
+
+// markThreadSeenAction_/appendCommentRow_과 동일한 최소 권한 원칙: 이 함수 안에서만
+// 쓰기 스코프(spreadsheets, 읽기+쓰기)의 GoogleAuth를 새로 만든다. 사용자팀마스터 시트의
+// H열(로그인실패횟수) 한 칸만 쓴다 — rowIndex는 LOGIN_USER_RANGE(A2:I) 기준 0-indexed
+// 행 위치이며, 실제 시트 행 번호는 rowIndex + 2이다.
+async function updateLoginFailCountCell_(rowIndex, value) {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  const client = await auth.getClient();
+  const sheetRow = rowIndex + 2;
+  const cellRange = encodeURIComponent(SHEET_USER_NAME + '!H' + sheetRow);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${cellRange}?valueInputOption=RAW`;
+  await client.request({ url: url, method: 'PUT', data: { values: [[value]] } });
+}
+
+// 사용자팀마스터 !A2:I — 이미 존재하는 USER_DATA_RANGE(whoamiTest 등이 씀)를 그대로 재사용.
+// login에는 whoamiTest가 안 쓰는 passwordHash(G)/failCount(H)/passwordChangedAt(I)도 필요해서,
+// lib/sheetsClient.js의 rowsToUsers()(6개 필드만 매핑)는 쓰지 않고 이 파일 안에서 직접
+// row를 읽는다(아래 loginAction_ 참고) — lib/sheetsClient.js는 수정하지 않는다.
+const LOGIN_BATCH_RANGES = [USER_DATA_RANGE, SETTINGS_RANGE];
+
+// Code.gs handleLogin_(231~293행)의 검증 체인 포팅. withIdempotency()가 이 함수 전체를
+// 감싸므로(아래 exports.loginTest 참고), 실패 응답(WRONG_PASSWORD 등)도 그대로 idempotency
+// 캐시에 남는다 — 같은 idempotencyKey로 재시도하면 failCount를 다시 건드리지 않고 캐시된
+// 응답을 그대로 돌려받는다(postComment/markThreadSeen과 동일한 보장).
+async function loginAction_(email, password, userRows, settings) {
+  if (!email || !password) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  let userRowIndex = -1;
+  let user = null;
+  for (let i = 0; i < userRows.length; i++) {
+    const row = userRows[i];
+    if (String(row[0] || '').trim().toLowerCase() === normalizedEmail) {
+      userRowIndex = i;
+      user = {
+        email: row[0], name: row[1], role: row[2], team: row[3], status: row[4],
+        passwordHash: row[6] || null, failCount: Number(row[7]) || 0, passwordChangedAtRaw: row[8]
+      };
+      break;
+    }
+  }
+  if (!user) {
+    return { ok: false, error: 'USER_NOT_FOUND' };
+  }
+  if (user.status !== '활성') {
+    return { ok: false, error: 'USER_INACTIVE' };
+  }
+  if (user.failCount >= 5) {
+    return { ok: false, error: 'ACCOUNT_LOCKED' };
+  }
+
+  const computedHash = hashPassword_(password, email);
+  if (!user.passwordHash || user.passwordHash !== computedHash) {
+    await updateLoginFailCountCell_(userRowIndex, user.failCount + 1);
+    return { ok: false, error: 'WRONG_PASSWORD' };
+  }
+
+  await updateLoginFailCountCell_(userRowIndex, 0);
+
+  const sessionToken = crypto.randomUUID();
+  const now = Date.now();
+  // sessionSyncTest/Apps Script 로그인이 만드는 것과 동일한 필드 구조(email/createdAt/
+  // expiresAt) — 다른 Cloud Run 함수들이 그대로 이 문서를 조회할 수 있어야 한다(2026-08-21
+  // 사용자 요청으로 명시 확인됨). sessionSyncTest를 거치는 간접 경로 대신, 이미 Firestore
+  // 클라이언트를 갖고 있으므로 직접 쓴다(불필요한 내부 HTTP 호출 한 단계 제거).
+  await firestore.collection('sessions').doc(sessionToken).set({
+    email: email,
+    createdAt: new Date(now),
+    expiresAt: new Date(now + SESSION_TTL_MS)
+  });
+
+  // [날짜 처리 주의] passwordChangedAt(I열)이 실제 날짜형 셀이면 UNFORMATTED_VALUE로 시트
+  // 시리얼 넘버가 온다(Apps Script의 new Date(user.passwordChangedAt)은 SpreadsheetApp이
+  // 이미 Date 객체로 반환해주므로 이 변환이 필요 없음 — Cloud Run만 필요). postComment 때
+  // 발견된 것과 같은 종류의 함정을 피하기 위해, 새로 계산하지 않고 이미 검증된
+  // lib/feedEngine.js의 sheetSerialToMs를 그대로 재사용한다(서울 UTC+9 보정 포함).
+  const changedAtMs = feedEngine.sheetSerialToMs(user.passwordChangedAtRaw);
+  const daysSincePwChange = changedAtMs !== null ? (now - changedAtMs) / 86400000 : Infinity;
+  const expireDays = Number(settings['비밀번호만료일수']) || 90;
+  const passwordExpired = daysSincePwChange > expireDays;
+
+  return {
+    ok: true,
+    sessionToken: sessionToken,
+    email: email,
+    name: user.name,
+    role: user.role,
+    team: user.team,
+    passwordExpired: passwordExpired
+  };
+}
+
+exports.loginTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { email, password, idempotencyKey } = req.body || {};
+    if (!idempotencyKey) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, error: 'MISSING_IDEMPOTENCY_KEY' });
+      return;
+    }
+
+    const timings = {};
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, LOGIN_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+    const userRows = (valueRanges[0] && valueRanges[0].values) || [];
+    const settings = parseSettings((valueRanges[1] && valueRanges[1].values) || []);
+
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const holderId = crypto.randomUUID();
+    let locked = true;
+    const l0 = Date.now();
+    if (normalizedEmail) {
+      locked = await acquireLoginLock_(normalizedEmail, holderId);
+    }
+    timings.lockMs = Date.now() - l0;
+    if (!locked) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'LOGIN_BUSY_RETRY' });
+      return;
+    }
+
+    try {
+      const result = await withIdempotency(firestore, idempotencyKey, 'login', async function () {
+        return loginAction_(email, password, userRows, settings);
+      });
+      const serverMs = Date.now() - t0;
+      res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+    } finally {
+      if (normalizedEmail) {
+        await releaseLoginLock_(normalizedEmail, holderId);
+      }
+    }
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
