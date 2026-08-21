@@ -1,0 +1,365 @@
+[
+  {
+    "group": "A",
+    "name": "1",
+    "desc": "필수값 누락(password 빈 문자열) -> MISSING_FIELDS",
+    "appsScript": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "2",
+    "desc": "존재하지 않는 사용자 -> USER_NOT_FOUND",
+    "appsScript": {
+      "ok": false,
+      "error": "USER_NOT_FOUND"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "USER_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "3",
+    "desc": "비활성 계정 -> USER_INACTIVE",
+    "appsScript": {
+      "ok": false,
+      "error": "USER_INACTIVE"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "USER_INACTIVE"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "4",
+    "desc": "잠긴 계정(failCount=5) -> ACCOUNT_LOCKED(비밀번호 맞아도 통과 못함)",
+    "appsScript": {
+      "ok": false,
+      "error": "ACCOUNT_LOCKED"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "ACCOUNT_LOCKED"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "5",
+    "desc": "잘못된 비밀번호(failCount=2) -> WRONG_PASSWORD, failCountAfter=3",
+    "appsScript": {
+      "ok": false,
+      "error": "WRONG_PASSWORD",
+      "failCountAfter": 3
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "WRONG_PASSWORD",
+      "failCountAfter": 3
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "6",
+    "desc": "정상 로그인(기본 90일 만료, 10일 전 변경) -> passwordExpired=false, failCountAfter=0",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-6",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-6",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "7",
+    "desc": "정상 로그인(기본 90일 만료, 100일 전 변경) -> passwordExpired=true",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-7",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-7",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "8",
+    "desc": "passwordChangedAt 미설정(빈 셀) -> daysSincePwChange=Infinity -> passwordExpired=true",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-8",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-8",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9",
+    "desc": "설정값 비밀번호만료일수=30 + 45일 전 변경 -> passwordExpired=true",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-9",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-9",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": true,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9b",
+    "desc": "설정값 비밀번호만료일수=60 + 45일 전 변경 -> passwordExpired=false",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-9b",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-9b",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "10",
+    "desc": "경계값 — daysSincePwChange가 expireDays(90)와 정확히 같음 -> passwordExpired=false(>=아니라 > 비교)",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-10",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-10",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "11",
+    "desc": "이메일 대소문자/공백(\" KIM@NKMRO.COM \") -> 정규화되어 정상 로그인",
+    "appsScript": {
+      "ok": true,
+      "sessionToken": "tok-11",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "cloudRun": {
+      "ok": true,
+      "sessionToken": "tok-11",
+      "email": "kim@nkmro.com",
+      "name": "김담당",
+      "role": "일반",
+      "team": "자재팀",
+      "passwordExpired": false,
+      "failCountAfter": 0
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "12",
+    "desc": "idempotencyKey 중복 -> actionFn 1회만 실행, WRONG_PASSWORD 응답도 그대로 캐시(split-brain 재시도 정책 근거)",
+    "detail": {
+      "callCount": 1,
+      "r1": {
+        "ok": false,
+        "error": "WRONG_PASSWORD",
+        "failCountAfter": 1
+      },
+      "r2": {
+        "ok": false,
+        "error": "WRONG_PASSWORD",
+        "failCountAfter": 1
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "13-a",
+    "desc": "IN_PROGRESS -> 폴링 중 DONE 전환 -> 그 응답을 그대로 받음(failCount 중복 증가 없이 재시도 안전)",
+    "detail": {
+      "r": {
+        "ok": true,
+        "sessionToken": "from-other-process"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "13-b",
+    "desc": "IN_PROGRESS가 끝까지 안 풀림 -> DUPLICATE_IN_PROGRESS_RETRY_LATER",
+    "detail": {
+      "r": {
+        "ok": false,
+        "error": "DUPLICATE_IN_PROGRESS_RETRY_LATER"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "14",
+    "desc": "애매한 실패(예외) 후 같은 키로 재시도 -> 선점 해제되어 재실행 성공(1회 재시도 정책 검증)",
+    "detail": {
+      "callCount": 2,
+      "r2": {
+        "ok": true,
+        "sessionToken": "succeeded-on-retry"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "15",
+    "desc": "loginAction_이 만드는 세션 문서 구조({email,createdAt,expiresAt})를 authenticateSession(실제 lib/auth.js)이 정상 조회 -> 다른 Cloud Run 함수와 세션 호환",
+    "detail": {
+      "auth": {
+        "ok": true,
+        "email": "kim@nkmro.com",
+        "ref": {
+          "store": {},
+          "id": "login-issued-session-token"
+        },
+        "timings": {
+          "sessionMs": 0
+        }
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "16",
+    "desc": "정상 락 획득 -> holderId 일치 해제 -> 문서 삭제됨",
+    "detail": {
+      "acquired": true,
+      "afterReleaseExists": false
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "17",
+    "desc": "이미 잡힌 신선한 락에 다른 holder가 시도 -> 3초 대기 후 획득 실패(LOGIN_BUSY_RETRY로 이어짐)",
+    "detail": {
+      "acquired": false,
+      "waitedMs": 3008
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "18",
+    "desc": "10초 TTL 만료된 락 -> 대기 없이 즉시 회수, holderId 불일치 해제 요청은 무시됨(문서 그대로 유지)",
+    "detail": {
+      "acquired": true,
+      "waitedMs": 0,
+      "afterWrongRelease": {
+        "lockedAt": "2026-08-21T05:36:22.700Z",
+        "holderId": "holder-C"
+      }
+    },
+    "same": true
+  }
+]
