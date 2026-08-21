@@ -1,0 +1,374 @@
+[
+  {
+    "group": "A",
+    "name": "1",
+    "desc": "정상 댓글 작성 — 첫 댓글, 담당소장(자기 담당 품목)",
+    "appsScript": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "kim@nkmro.com",
+        "김담당",
+        "담당",
+        "",
+        "첫 댓글입니다",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "cloudRun": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "kim@nkmro.com",
+        "김담당",
+        "담당",
+        "",
+        "첫 댓글입니다",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "2",
+    "desc": "정상 댓글 작성 — 답글, 팀장(이미 댓글 있는 품목에 자유 답글)",
+    "appsScript": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "lead@nkmro.com",
+        "이팀장",
+        "팀장",
+        "C1",
+        "답글입니다",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "cloudRun": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "lead@nkmro.com",
+        "이팀장",
+        "팀장",
+        "C1",
+        "답글입니다",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "3",
+    "desc": "필수값 누락(content 빈 문자열) -> MISSING_FIELDS",
+    "appsScript": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "4",
+    "desc": "존재하지 않는 게시물(P999) -> POST_NOT_FOUND",
+    "appsScript": {
+      "ok": false,
+      "error": "POST_NOT_FOUND"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "POST_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "5",
+    "desc": "존재하지 않는 품목(IT-999) -> NOT_ASSIGNED_MANAGER (원본에 별도 코드 없음)",
+    "appsScript": {
+      "ok": false,
+      "error": "NOT_ASSIGNED_MANAGER"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "NOT_ASSIGNED_MANAGER"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "6",
+    "desc": "댓글 작성 권한 없음(일반 역할) -> FORBIDDEN_VIEWER",
+    "appsScript": {
+      "ok": false,
+      "error": "FORBIDDEN_VIEWER"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "FORBIDDEN_VIEWER"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "7",
+    "desc": "담당이지만 다른 담당자 품목의 첫 댓글 -> NOT_ASSIGNED_MANAGER",
+    "appsScript": {
+      "ok": false,
+      "error": "NOT_ASSIGNED_MANAGER"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "NOT_ASSIGNED_MANAGER"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "8",
+    "desc": "첫 댓글에 팀장(비담당)이 시도 -> FIRST_COMMENT_MANAGER_ONLY",
+    "appsScript": {
+      "ok": false,
+      "error": "FIRST_COMMENT_MANAGER_ONLY"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "FIRST_COMMENT_MANAGER_ONLY"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9",
+    "desc": "첫 댓글에 parentCommentId 지정 -> FIRST_COMMENT_CANNOT_HAVE_PARENT",
+    "appsScript": {
+      "ok": false,
+      "error": "FIRST_COMMENT_CANNOT_HAVE_PARENT"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "FIRST_COMMENT_CANNOT_HAVE_PARENT"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "10",
+    "desc": "답글의 parentCommentId가 존재하지 않음(itemId 분기) -> PARENT_COMMENT_NOT_FOUND",
+    "appsScript": {
+      "ok": false,
+      "error": "PARENT_COMMENT_NOT_FOUND"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "PARENT_COMMENT_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "10b",
+    "desc": "답글의 parentCommentId가 존재하지 않음(itemId 없는 분기) -> PARENT_COMMENT_NOT_FOUND",
+    "appsScript": {
+      "ok": false,
+      "error": "PARENT_COMMENT_NOT_FOUND"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "PARENT_COMMENT_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "11",
+    "desc": "itemId 없는 일반 댓글 + 확인된 품목 없음 -> NO_CONFIRMED_ITEM_YET",
+    "appsScript": {
+      "ok": false,
+      "error": "NO_CONFIRMED_ITEM_YET"
+    },
+    "cloudRun": {
+      "ok": false,
+      "error": "NO_CONFIRMED_ITEM_YET"
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "12",
+    "desc": "itemId 없는 일반 댓글 + 확인된 품목 있음 -> 성공(appendedRow)",
+    "appsScript": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "",
+        "lead@nkmro.com",
+        "이팀장",
+        "팀장",
+        "",
+        "일반 댓글",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "cloudRun": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "",
+        "lead@nkmro.com",
+        "이팀장",
+        "팀장",
+        "",
+        "일반 댓글",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "13",
+    "desc": "댓글 내용 경계값(이모지/특수문자/장문) -> 길이 제한 없이 성공",
+    "appsScript": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "kim@nkmro.com",
+        "김담당",
+        "담당",
+        "",
+        "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂 <script>\"'특수문자테스트xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "cloudRun": {
+      "ok": true,
+      "appendedRow": [
+        "cmt-fixed-id",
+        "P1",
+        "IT-1",
+        "kim@nkmro.com",
+        "김담당",
+        "담당",
+        "",
+        "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂 <script>\"'특수문자테스트xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "2026-08-21T00:00:00.000Z"
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "14",
+    "desc": "idempotencyKey 중복 -> actionFn 1회만 실행, 에러 응답도 그대로 캐시",
+    "detail": {
+      "callCount": 1,
+      "r1": {
+        "ok": false,
+        "error": "MISSING_FIELDS",
+        "calledWith": 1
+      },
+      "r2": {
+        "ok": false,
+        "error": "MISSING_FIELDS",
+        "calledWith": 1
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "15-a",
+    "desc": "IN_PROGRESS -> 폴링 중 DONE으로 전환 -> 그 응답을 그대로 받음(중복 append 방지)",
+    "detail": {
+      "r": {
+        "ok": true,
+        "commentId": "from-other-process"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "15-b",
+    "desc": "IN_PROGRESS가 끝까지 안 풀림 -> DUPLICATE_IN_PROGRESS_RETRY_LATER",
+    "detail": {
+      "r": {
+        "ok": false,
+        "error": "DUPLICATE_IN_PROGRESS_RETRY_LATER"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "16",
+    "desc": "애매한 실패(예외) 후 같은 키로 재시도 -> 선점 해제되어 재실행 성공(3-2 정책 검증)",
+    "detail": {
+      "callCount": 2,
+      "r2": {
+        "ok": true,
+        "commentId": "succeeded-on-retry"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "17",
+    "desc": "세션 오류 4종(토큰없음/세션없음/만료/정상) -> 에러 코드 표와 일치",
+    "detail": {
+      "noToken": {
+        "ok": false,
+        "status": 400,
+        "error": "MISSING_SESSION_TOKEN"
+      },
+      "notFound": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_NOT_FOUND",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "expired": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_EXPIRED",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "valid": {
+        "ok": true,
+        "email": "kim@nkmro.com",
+        "ref": {
+          "store": {},
+          "id": "valid-token"
+        },
+        "timings": {
+          "sessionMs": 0
+        }
+      }
+    },
+    "same": true
+  }
+]
