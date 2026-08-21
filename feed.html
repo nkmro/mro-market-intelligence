@@ -565,6 +565,12 @@ const CLOUD_RUN_GET_COMMENTS_URL = 'https://asia-northeast3-mro-market-intellige
 // 그대로 실어 보낸다(callApi의 IDEMPOTENT_WRITE_ACTIONS 처리 로직상, body에 이미 idempotencyKey가
 // 있으면 그 값을 그대로 쓰고 새로 만들지 않는다).
 const CLOUD_RUN_MARKTHREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/markThreadSeenTest';
+// postComment 2단계(2026-08-21, 설계 승인 완료 — POSTCOMMENT_CLOUDRUN_DESIGN_v2.md): markThreadSeen과
+// 달리 postComment는 append 전용이라, "실패하면 조용히 Apps Script로 폴백"하는 패턴을 쓰지 않는다
+// (두 백엔드가 각각 성공하면 댓글이 실제로 두 번 등록될 위험이 있음 — 설계 문서 3번). 대신
+// postCommentRemote_()가 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패)을 직접 처리한다.
+// 자세한 정책은 postCommentRemote_() 주석 참고.
+const CLOUD_RUN_POSTCOMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/postCommentTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -1907,8 +1913,22 @@ async function submitComment(postId, itemId, parentCommentId) {
   renderThread(postId, itemId);
 
   try {
-    const res = await callApi('postComment', { postId, itemId, content, parentCommentId });
+    // postComment 2단계(2026-08-21, 설계 승인 완료): CLOUD_RUN_POSTCOMMENT_URL이 채워져 있으면
+    // postCommentRemote_()의 3단 폴백 정책(사전 실패/애매한 실패/최종 실패)을 먼저 시도하고,
+    // 비어 있으면(롤백 상태) 기존 Apps Script 경로를 그대로 쓴다 — markThreadSeen과 동일한
+    // "빈 문자열로 롤백" 스위치 패턴.
+    const res = (await postCommentRemote_(postId, itemId, content, parentCommentId))
+      || await callApi('postComment', { postId, itemId, content, parentCommentId });
     if (!res.ok) {
+      if (res.error === 'AMBIGUOUS_NEEDS_CONFIRMATION') {
+        // 설계 문서 3-3: 서버가 실제로 처리했을 수도 있는 애매한 실패라 임시 댓글을 지우지
+        // 않는다(지우면 실제로는 등록된 댓글이 화면에서 사라진 것처럼 보여 재시도를 유도하고,
+        // 그 재시도가 진짜 중복 등록으로 이어질 위험이 있음). Apps Script로도 자동 전달하지 않음.
+        renderThread(postId, itemId);
+        alert('댓글 등록 여부를 확인할 수 없습니다.\n잠시 후 새로고침해서 댓글이 실제로 등록됐는지 확인해주세요.\n등록되지 않았다면 다시 시도해주세요.');
+        btn.disabled = false; btn.textContent = '등록';
+        return;
+      }
       postComments[postId].comments = postComments[postId].comments.filter(c => c.commentId !== tempId);
       renderThread(postId, itemId);
       alert(res.error === 'FORBIDDEN_VIEWER' ? '이 작업을 수행할 권한이 없어요.' : ('오류가 발생했어요 (' + res.error + ')'));
@@ -2356,6 +2376,77 @@ if (cloudOk) {
   await callApi('markThreadSeen', { postId: postId, itemId: itemId, idempotencyKey: idempotencyKey });
   console.log('[markThreadSeen] source=apps-script clientMs=' + (Date.now() - __mtsT0));
 }
+}
+
+// postComment 2단계 폴백 정책(POSTCOMMENT_CLOUDRUN_DESIGN_v2.md 3번, 승인 완료).
+// CLOUD_RUN_POSTCOMMENT_URL이 비어 있으면 null을 반환해 호출부(submitComment)가 기존
+// callApi('postComment', ...) Apps Script 경로를 그대로 쓰게 한다(롤백 방법과 동일한 스위치).
+//
+// URL이 채워져 있으면:
+// 1) Cloud Run에 1차 시도.
+//    - 정상 JSON 응답(ok:true 또는 ok:false + error)이 오면 그 응답을 그대로 반환한다. ok:false여도
+//      이건 "시트에 쓰기 전에 걸린" 사전 실패로 간주하고(3-1) — Apps Script로 넘기지 않고 그 에러를
+//      그대로 화면에 보여준다(2026-08-21 확정: 4xx 사전 실패 시 Apps Script 재확인 안 함).
+//    - 응답 자체를 못 받음(fetch 예외 — 타임아웃/네트워크 끊김/JSON 파싱 실패)은 "서버가 실제로
+//      댓글을 저장했는지 알 수 없는" 애매한 실패(3-2)로 분류한다.
+// 2) 애매한 실패면, 같은 idempotencyKey로 Cloud Run 자신에게 1회 재시도한다. withIdempotency()가
+//    이미 DONE 처리된 요청이면 실제로 다시 쓰지 않고 캐시된 응답을 그대로 돌려주므로, 1차 시도가
+//    실제로는 성공했던 경우 이 재시도로 중복 없이 그 결과를 받을 수 있다.
+// 3) 재시도까지도 애매하면, Apps Script로 조용히 넘기지 않고(설계 문서 3-3의 핵심 — 두 백엔드가
+//    서로 몰래 각각 실행되면 댓글이 두 번 등록될 수 있음) { ok:false, error:'AMBIGUOUS_NEEDS_CONFIRMATION' }
+//    를 반환한다. 호출부(submitComment)가 이 코드를 보고 "등록 여부 확인 필요" 안내를 띄운다.
+async function postCommentRemote_(postId, itemId, content, parentCommentId) {
+  if (!CLOUD_RUN_POSTCOMMENT_URL) return null;
+
+  const idempotencyKey = generateIdempotencyKey_();
+  const requestBody = {
+    sessionToken: session ? session.sessionToken : null,
+    postId: postId, itemId: itemId, content: content, parentCommentId: parentCommentId,
+    idempotencyKey: idempotencyKey
+  };
+
+  async function attemptOnce_() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    try {
+      const res = await fetch(CLOUD_RUN_POSTCOMMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      let json;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        return { ambiguous: true }; // 응답은 왔지만 JSON이 아님 -> 애매한 실패
+      }
+      if (json && typeof json.ok === 'boolean') {
+        return { ambiguous: false, json: json };
+      }
+      return { ambiguous: true };
+    } catch (networkErr) {
+      return { ambiguous: true }; // fetch 자체 실패(타임아웃/연결 끊김 등) -> 애매한 실패
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  const first = await attemptOnce_();
+  if (!first.ambiguous) {
+    console.log('[postComment] source=cloud-run attempt=1 ok=' + first.json.ok);
+    return first.json;
+  }
+
+  console.log('[postComment] source=cloud-run ambiguous(attempt=1) -> retrying with same idempotencyKey');
+  const second = await attemptOnce_();
+  if (!second.ambiguous) {
+    console.log('[postComment] source=cloud-run attempt=2(retry) ok=' + second.json.ok);
+    return second.json;
+  }
+
+  console.log('[postComment] source=cloud-run ambiguous(attempt=2) -> no silent Apps Script fallback, needs user confirmation');
+  return { ok: false, error: 'AMBIGUOUS_NEEDS_CONFIRMATION' };
 }
 
 
