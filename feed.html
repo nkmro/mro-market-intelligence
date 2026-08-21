@@ -525,7 +525,7 @@ const CLOUD_RUN_POLLSIGNAL_URL = 'https://asia-northeast3-mro-market-intelligenc
 // getThreadSeen 단독 이전 1단계(2026-08-19): 로그인/세션 복원 시 1회만 불리는 '댓글확인이력' 조회를
 // Cloud Run으로 먼저 시도하고, 실패/타임아웃/예외 시 기존 Apps Script getThreadSeen으로 자동
 // 폴백한다(CLOUD_RUN_GET_SETTINGS_URL과 동일한 패턴). 쓰기(markThreadSeen)는 그대로 Apps Script.
-const CLOUD_RUN_GET_THREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getThreadSeenTest';
+const CLOUD_RUN_GET_THREADSEEN_URL = '';
 // getPostById 단독 이전(승인 A 옵션 2, 2026-08-20): goToItem()에서 아직 로드되지 않은 게시물을
 // 딥링크(알림 클릭 등)로 불러올 때만 쓰인다. 다른 3개 전환 사례(getSettings/pollSignal/
 // getThreadSeen)는 "ok:true만 성공"으로 봤지만, getPostById는 NOT_FOUND/FORBIDDEN이 세션
