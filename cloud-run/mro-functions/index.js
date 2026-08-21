@@ -1,4 +1,7 @@
 const {GoogleAuth} = require('google-auth-library');
+// 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
+// commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
+const crypto = require('crypto');
 
 // 2026-08-20 (2단계, getFeed/getNotifications/getPostById 공동 이전 준비): 공통 판정/
 // 변환 로직(lib/feedEngine.js), Sheets 읽기 공통화(lib/sheetsClient.js), Firestore 세션
@@ -843,4 +846,212 @@ async function markThreadSeenAction_(email, postId, itemId) {
   }
 
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// POST /postCommentTest (postComment 1단계 — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: WRITE_API_MIGRATION_PREP_REVIEW.md(분석) -> POSTCOMMENT_CLOUDRUN_DESIGN_v2.md
+// (설계 확정 승인, 2026-08-21) -> 이번 코드 구현 승인. 다음 단계(별도 승인 필요):
+// 로컬 parity 테스트 -> GitHub 커밋 -> Cloud Run 배포 -> feed.html 연결(3단 폴백 정책).
+//
+// Code.gs의 handlePostComment_(2269~2370행)을 그대로 옮긴 것. 세션 인증(lib/auth.js)·시트
+// 읽기(lib/sheetsClient.js)·updatedPost 재계산(lib/feedEngine.js, lib/feedResponses.js)은
+// getCommentsTest/getFeedTest/getPostByIdTest와 완전히 동일한 기존 모듈을 그대로 재사용한다
+// (설계 문서 2번/9번 결론). 이번에 새로 작성한 것은 (a) 댓글 작성 권한 게이트(findPost_/
+// isManagerForItem_ 대응, postCommentAction_ 내부)와 (b) Sheets API append(appendCommentRow_)
+// 두 가지뿐이다.
+//
+// [권한] 이 함수만 쓰기 스코프(spreadsheets, 읽기+쓰기)를 쓴다(markThreadSeenTest와 동일한
+// 최소 권한 원칙). 다른 모든 읽기 함수(lib/sheetsClient.js 공유 클라이언트 포함)는 건드리지
+// 않았다 — grep으로 재확인: 이 함수 밖에서 'spreadsheets'(쓰기) 스코프를 쓰는 곳은
+// markThreadSeenAction_뿐이다.
+//
+// [폴백 정책, 설계 문서 3번] 이 함수의 응답 자체에는 "사전 실패/애매한 실패" 구분 필드를
+// 넣지 않는다 — 클라이언트가 "정상 JSON 응답을 받았는가"만으로 이미 구분할 수 있기 때문
+// (설계 문서 3-4 결론). ok:false로 오는 에러 코드는 전부 "시트에 쓰기 전에 걸린" 사전 실패이고,
+// 응답 자체를 못 받은 경우(타임아웃/5xx/네트워크 예외)만 클라이언트가 애매한 실패로 판단한다.
+//
+// [idempotency, 설계 문서 4번] withIdempotency()가 postCommentAction_ 전체(권한 검증 포함)를
+// 감싼다 — Code.gs 디스패처가 handlePostComment_ 전체를 withIdempotency_로 감싸는 것과 동일
+// (197행). 즉 같은 idempotencyKey로 재요청하면, 최초 실행이 검증 에러(MISSING_FIELDS 등)로
+// 끝났어도 재검증 없이 그 에러를 그대로 캐시에서 돌려준다 — Code.gs와 동일한 동작.
+exports.postCommentTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, postId, itemId, content, parentCommentId, idempotencyKey } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    // authenticateRequest_의 findUser_ 실패(Code.gs 187~190행, UNAUTHORIZED)에 대응 — 다른
+    // *Test 함수들과 동일하게 세션 인증 자체와는 별개로, 세션의 이메일이 실제 사용자팀마스터에
+    // 있는지 여기서 확인한다(withIdempotency로 감싸지 않는 부분 — Code.gs도 이 확인은
+    // 디스패처의 switch 진입 전에 하고, withIdempotency_는 handlePostComment_ 호출만 감싼다).
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'postComment', async function () {
+      return postCommentAction_(viewer, allUsers, allPosts, allItems, allComments, settings, {
+        postId: postId, itemId: itemId, content: content, parentCommentId: parentCommentId
+      });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// Code.gs isManagerForItem_(2228~2234행) 포팅. Code.gs는 getItemById_로 품목마스터를 다시
+// 읽지만, 여기서는 postCommentTest가 이미 batchGet으로 받아온 allItems 배열에서 조회한다
+// (다른 *Test 함수들이 fresh read 대신 배치 결과를 재사용하는 것과 동일한 패턴). manager 이름
+// 비교(trim), post.materialName이 item.materials에 포함되는지(indexOf) — Code.gs와 동일.
+function isManagerForItem_(viewer, itemId, post, allItems) {
+  const item = allItems.find(function (it) { return String(it.itemId).trim() === String(itemId).trim(); });
+  if (!item) return false;
+  if (String(item.manager).trim() !== String(viewer.name).trim()) return false;
+  if (post && String(item.materials || '').indexOf(post.materialName) === -1) return false;
+  return true;
+}
+
+// Code.gs appendComment_(2180~2184행) 대응. Sheets API values:append로 '댓글' 시트에 한 행
+// 추가한다. markThreadSeenAction_과 동일한 최소 권한 원칙에 따라, 이 함수 안에서만 쓰기
+// 스코프(spreadsheets, 읽기+쓰기)의 GoogleAuth를 새로 만든다 — 다른 모든 함수(lib/sheetsClient.js
+// 공유 클라이언트 포함)는 여전히 spreadsheets.readonly만 쓴다.
+async function appendCommentRow_(row) {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  const client = await auth.getClient();
+  const appendRange = encodeURIComponent(SHEET_COMMENT_NAME + '!A:I');
+  const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  await client.request({ url: appendUrl, method: 'POST', data: { values: [row] } });
+}
+
+// [2026-08-21 수정] Code.gs의 appendComment_는 실제 Date 객체를 시트에 써서(sheet.appendRow의
+// 마지막 인자가 new Date()) 진짜 날짜형 셀이 되는데, 처음 구현에서는 이 함수가 ISO 문자열
+// (new Date().toISOString())을 그대로 써서 문자(텍스트)형 셀이 되는 실수가 있었다. 이번에
+// lib/feedEngine.js의 sheetSerialToMs(시트 시리얼 -> UTC ms, 25~30행)의 정확한 역함수를 만들어,
+// Apps Script가 실제로 만드는 것과 같은 시트 시리얼 "숫자"를 계산해서 쓴다 — 그래야 이 셀이
+// 기존 행들과 동일하게 숫자(날짜)형 셀이 되고, 이후 getCommentsTest/getFeedTest/pollSignalTest가
+// UNFORMATTED_VALUE로 다시 읽었을 때도 기존 행과 같은 숫자 형태로 돌아온다.
+// (feedEngine.js는 이 오프셋 상수를 export하지 않아 값(서울=UTC+9, DST 없음)만 그대로
+// 복사해 둔다 — feedEngine.js의 SPREADSHEET_UTC_OFFSET_MS가 바뀌면 이 값도 함께 바꿔야 한다.
+// 이 상수/함수는 postCommentAction_ 전용이며 다른 함수에는 쓰지 않는다.)
+const POSTCOMMENT_SPREADSHEET_UTC_OFFSET_MS = 9 * 60 * 60 * 1000; // Asia/Seoul, DST 없음
+function msToSheetSerial_(ms) {
+  return (ms + POSTCOMMENT_SPREADSHEET_UTC_OFFSET_MS) / 86400000 + 25569;
+}
+
+// Code.gs handlePostComment_(2269~2370행)의 검증 + 작성 + 응답 재계산 로직 포팅.
+// withIdempotency()가 이 함수 전체를 감싸므로(위 exports.postCommentTest 주석 참고), 여기서
+// 반환하는 에러 응답도 그대로 idempotency 캐시에 남는다 — Code.gs와 동일한 동작.
+//
+// [설계 문서 2-2/2-3 결론] 권한 게이트(findPost_/isManagerForItem_ 대응)는 이번에 새로
+// 포팅했고, updatedPost 재계산은 lib/feedEngine.js의 buildFeedEntry + lib/feedResponses.js의
+// shapeEntryAsPost를 그대로 재사용한다(getFeedTest/getPostByIdTest가 이미 검증한 것과 동일한
+// 함수) — 새 계산 로직을 따로 만들지 않았다.
+async function postCommentAction_(viewer, allUsers, allPosts, allItems, allComments, settings, body) {
+  if (viewer.role === '일반') {
+    return { ok: false, error: 'FORBIDDEN_VIEWER' };
+  }
+
+  const postId = body.postId;
+  const content = body.content;
+  const itemId = body.itemId || '';
+  const parentCommentId = body.parentCommentId || '';
+
+  if (!postId || !content) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const post = allPosts.find(function (p) { return String(p.id).trim() === String(postId).trim(); });
+  if (!post) {
+    return { ok: false, error: 'POST_NOT_FOUND' };
+  }
+
+  const existingForPost = allComments.filter(function (c) { return String(c.postId).trim() === String(postId).trim(); });
+
+  if (itemId) {
+    const existingForItem = existingForPost.filter(function (c) { return String(c.itemId) === String(itemId); });
+
+    if (existingForItem.length === 0) {
+      if (viewer.role !== '담당') {
+        return { ok: false, error: 'FIRST_COMMENT_MANAGER_ONLY' };
+      }
+      if (!isManagerForItem_(viewer, itemId, post, allItems)) {
+        return { ok: false, error: 'NOT_ASSIGNED_MANAGER' };
+      }
+      if (parentCommentId) {
+        return { ok: false, error: 'FIRST_COMMENT_CANNOT_HAVE_PARENT' };
+      }
+    } else if (parentCommentId) {
+      const parentExists = existingForPost.some(function (c) { return String(c.commentId) === String(parentCommentId); });
+      if (!parentExists) {
+        return { ok: false, error: 'PARENT_COMMENT_NOT_FOUND' };
+      }
+    }
+  } else {
+    if (existingForPost.length === 0) {
+      return { ok: false, error: 'NO_CONFIRMED_ITEM_YET' };
+    }
+    if (parentCommentId) {
+      const parentExists = existingForPost.some(function (c) { return String(c.commentId) === String(parentCommentId); });
+      if (!parentExists) {
+        return { ok: false, error: 'PARENT_COMMENT_NOT_FOUND' };
+      }
+    }
+  }
+
+  const commentId = crypto.randomUUID();
+  // [2026-08-21 수정] ISO 문자열 대신 Apps Script의 new Date()와 동일한 의미를 갖는 시트
+  // 시리얼 번호로 써서, 실제 날짜형 셀이 되도록 한다(위 msToSheetSerial_ 주석 참고).
+  const createdAtSerial = msToSheetSerial_(Date.now());
+  await appendCommentRow_([commentId, postId, itemId, viewer.email, viewer.name, viewer.role, parentCommentId, content, createdAtSerial]);
+
+  // Code.gs 2331~2369행과 동일한 절차: 갱신된 댓글 목록 + 이 게시물의 최신 buildFeedEntry_
+  // 결과를 함께 반환. lib/feedEngine.js/lib/feedResponses.js를 그대로 재사용(신규 계산 없음).
+  // createdAtRaw도 시트에서 UNFORMATTED_VALUE로 읽었을 때와 같은 "숫자" 형태(createdAtSerial)로
+  // 넣는다 — sheetSerialToMs가 다른 기존 댓글(숫자)과 정확히 같은 분기(숫자 처리)를 타게 하기
+  // 위함이다(ISO 문자열도 sheetSerialToMs의 문자열 분기에서 결과적으로는 올바른 UTC ms를
+  // 계산해내지만, 굳이 다른 분기를 타게 두지 않고 기존 댓글과 완전히 같은 형태로 통일한다).
+  const newComment = {
+    commentId: commentId, postId: postId, itemId: itemId, authorEmail: viewer.email,
+    authorName: viewer.name, authorRole: viewer.role, parentCommentId: parentCommentId,
+    content: content, createdAtRaw: createdAtSerial
+  };
+  const updatedAllComments = allComments.concat([newComment]);
+
+  const leadScope = settings['팀장_열람범위'] || null;
+  const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+  const commentsResp = feedResponses.buildGetCommentsResponse(visibleComments);
+
+  const commentsByPost = feedEngine.groupCommentsByPost(updatedAllComments);
+  const entry = feedEngine.buildFeedEntry(viewer, post, allItems, commentsByPost, leadScope, teamByEmail);
+  const updatedPost = entry ? feedResponses.shapeEntryAsPost(entry) : null;
+
+  return { ok: true, commentId: commentId, comments: commentsResp.comments, updatedPost: updatedPost };
 }
