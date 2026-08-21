@@ -14,6 +14,8 @@ mro-market-intelligence/
 
 > **2026-08-18 업데이트**: `apps-script/Code.gs`, `apps-script/appsscript.json`, `cloud-run/mro-functions/*`(index.js·package.json·package-lock.json·fix.py·fix2.py) 실제 소스 파일을 이 저장소에 처음으로 커밋했습니다. 지금까지는 README만 있고 실제 코드는 Apps Script 편집기/GCP 콘솔에만 있었는데, 이제 GitHub에서도 실제 코드를 볼 수 있습니다. (세부 사항은 각 하위 README 참고.)
 
+> **2026-08-21 업데이트**: 아래 API 매핑표를 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드를 직접 대조해 갱신했습니다. `getFeed`·`getNotifications`·`getPostById`·`getComments`·`getThreadSeen`·`markThreadSeen`·`postComment`가 그 사이 실제로 Cloud Run 전환·실서비스 연동까지 완료되어 있었는데 표에는 반영되지 않고 있었습니다.
+
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
 
@@ -25,10 +27,10 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
       ▼
 [callApi()]  ┸  프론트 공용 함수]
       │
-      ├── 기존 경로 (전체 API의 기본 경로) ──────────────► [Google Apps Script Web App] ─┐
-      │                                                     (Code.gs, doPost)              │
-      └── 신규 경로 (getTeams·getSettings만, 상수로 켜짐) ─► [Google Cloud Run 함수들]      │
-                                                             (cloud-run/mro-functions)       │
+      ├── 기존 경로 (아직 Cloud Run으로 안 옮긴 API의 기본 경로) ──► [Google Apps Script Web App] ─┐
+      │                                                              (Code.gs, doPost)              │
+      └── 신규 경로 (읽기 9개 + 쓰기 2개, 상수로 켜짐, 실패 시 자동 폴백) ─► [Google Cloud Run 함수들] │
+                                                                      (cloud-run/mro-functions)       │
                                                                      │                        │
                                                                      ▼                        ▼
                                                           [Firestore: sessions]      [Google Sheets — 실제 DB]
@@ -37,8 +39,8 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 ```
 
 - **Google Sheets가 실제 데이터베이스입니다.** 사용자 계정(사용자팀마스터), 설정값(설정), 시황 게시물, 품목, 고객, 댓글 등 모든 데이터가 스프레드시트에 저장됩니다.
-- **Google Apps Script(Code.gs)가 지금까지의 유일한 백엔드였고, 지금도 대부분의 기능을 담당합니다.** 로그인/회원가입, 피드, 설정 변경, 항목 관리, 고객 관리 등 전부 여기서 처리됩니다.
-- **Google Cloud Run은 Apps Script의 느린 응답(특히 CacheService 기반 세션 조회)을 개선하기 위해 최근 도입된 신규 백엔드입니다.** 전체 기능을 옮기는 게 아니라, **실제로 트래픽이 있고 안전하게 검증 가능한 API부터 하나씩** Cloud Run으로 옮기고 있습니다. Cloud Run은 세션을 Apps Script의 캐시가 아니라 Firestore에서 조회합니다 (Apps Script 로그인 시 Firestore에도 세션을 같이 기록하는 "이중 쓰기" 방식으로 동기화).
+- **Google Apps Script(Code.gs)가 지금까지의 유일한 백엔드였고, 지금도 로그인(세션 발급)과 항목/고객/사용자 관리, 설정 변경 등 나머지 기능을 담당합니다.** (2026-08-21 기준: `doPost` action 15개가 아직 Apps Script만 처리 — `login`, `updateComment`, `deleteComment`, `markChecked`, `upsertItem`, `suggestMaterials`, `updateSettings`, `getUsers`, `updateUser`, `getItems`, `getCustomers`, `upsertCustomer`, `changePassword`, `getAttentionPosts`, `clientDebugLog`.)
+- **Google Cloud Run은 Apps Script의 느린 응답(특히 CacheService 기반 세션 조회)을 개선하기 위해 최근 도입된 신규 백엔드입니다.** 전체 기능을 옮기는 게 아니라, **실제로 트래픽이 있고 안전하게 검증 가능한 API부터 하나씩** Cloud Run으로 옮기고 있습니다. 2026-08-21 기준 읽기 9개(`getTeams`(세션 불필요), `getSettings`, `whoami`, `pollSignal`, `getThreadSeen`, `getPostById`, `getFeed`, `getNotifications`, `getComments`)와 쓰기 2개(`markThreadSeen`, `postComment`)가 전환·실서비스 연동되어 있습니다. Cloud Run은 세션을 Apps Script의 캐시가 아니라 Firestore에서 조회합니다 (Apps Script 로그인 시 Firestore에도 세션을 같이 기록하는 "이중 쓰기" 방식으로 동기화, 세션 조회마다 슬라이딩 연장도 동일하게 적용).
 - **전환 원칙(중요): 기존 Apps Script 코드는 절대 삭제하지 않습니다.** 프론트엔드에는 `CLOUD_RUN_..._URL`이라는 이름의 상수가 있고, 이 상수가 채워져 있으면 Cloud Run을 먼저 시도하고, 비어 있으면(혹은 실패하면) 기존 Apps Script로 자동/수동 롤백됩니다.
 
 ## API 매핑표 (프론트 호출 → 백엔드 대응)
@@ -48,12 +50,14 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | `loadTeamOptions()` (index.html, 회원가입 팀 선택) | `getTeams` | ✅ 전환됨 (`CLOUD_RUN_GET_TEAMS_URL`) | `handleGetTeams_` (또는 동일 로직) | 인증 불필요, 실서비스 검증 완료 (결과 100% 동일, clientMs 개선 확인) |
 | `loadIdleTimeoutSetting()`, `loadSettingsPage()` (feed.html) | `getSettings` | ✅ 전환됨 (`CLOUD_RUN_GET_SETTINGS_URL`), 실패 시 자동 Apps Script 폴백 | `handleGetSettings_` | 세션 인증 필요 (Firestore 세션 조회 → Sheets 읽기). ok:false·오류·타임아웃 등 모든 실패 시 자동 폴백 |
 | (프론트 호출 지점 없음) | `getTeamManagers` | ⏸ 보류 (Cloud Run에 `getTeamManagersTest`는 배포·검증되어 있으나 프론트에서 부르는 곳이 없음) | `handleGetTeamManagers_` | 아래 "getTeamManagers 분석" 참고 — 사실상 미사용/대체된 기능으로 판단됨 |
-| `handleLogin_()` / 로그인 폼 | `login` | ✅ 1·2단계 완료 (Firestore 세션 슬라이딩 + `whoami` 엔드포인트, `LOGIN_WHOAMI_MIGRATION_PLAN.md` 참고), 3단계(login 발급 자체 이전)는 보류 | `handleLogin_` | 가장 민감한 기능 — 세션 발급 자체를 통째로 옮기면 다른 대부분 기능(CacheService 인증)이 깨짐. 1·2단계는 합성 테스트 계정으로 검증 완료, 실서비스 반영됨 |
-| 시황 피드 조회·알림·실시간 배지 | `getFeed`, `getNotifications`, `getPostById`, `pollSignal` | `pollSignal`: ✅ **전환됨**(`CLOUD_RUN_POLLSIGNAL_URL`, 실패 시 자동 Apps Script 폴백) / `getFeed`·`getNotifications`·`getPostById`: 📋 이전 후보로 확정, 공동 이전 설계 진행 중 — 승인 대기 (`FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md`, `THREADSEEN_FEED_NOTIFICATIONS_CLOUDRUN_PLAN.md` 참고) **(2026-08-19 갱신: pollSignal이 실제로는 이미 전환되어 있던 것을 반영 — 이전에는 4개 전부 "승인 대기"로만 표시되어 있었음)** | `handleGetFeed_`, `handleGetNotifications_`, `handleGetPostById_`, `handlePollSignal_` | 4개 모두 순수 읽기 — 쓰기 권한 문제 없음(postComment와 다름). 4개가 공용 판정 로직(`buildFeedEntry_`)을 같이 써서, 가장 자주 불리는 `pollSignal`을 1차로 먼저 전환·검증 완료(`POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md`, 12개 시나리오 100% 일치). 나머지 3개는 같은 판정 로직을 공용 엔진으로 재사용하는 공동 이전 설계 단계(별도 승인 필요) |
-| 댓글 조회/작성/수정/삭제 (`feed.html` 댓글 UI) | `getComments`, `postComment`, `updateComment`, `deleteComment` | 🚫 작성·수정·삭제는 이전 보류, 조회(`getComments`)만 향후 후보 (`POSTCOMMENT_CLOUDRUN_ANALYSIS.md` 참고) | `handleGetComments_`, `handlePostComment_`, `handleUpdateComment_`, `handleDeleteComment_` | 쓰기 작업(시트 쓰기 권한 없음)·중복 등록 방지 장치(Apps Script `LockService` 전용)가 구조적 블로커. 순수 읽기인 `getComments`만 `getTeams`/`getSettings`와 동일 방식으로 이전 가능성 있음(후순위) |
-| 그 외 모든 action (`getUsers`, `updateUser`, `getItems`, `getCustomers`, `upsertCustomer`, `changePassword`, `getThreadSeen`, `markThreadSeen`, `updateSettings` 등) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용 |
+| `handleLogin_()` / 로그인 폼, 새로고침 시 세션 재확인 | `login`, `whoami` | `whoami`: ✅ 1·2단계 완료 (Firestore 세션 슬라이딩 연장 + `whoami` 엔드포인트 신설·연동, `CLOUD_RUN_WHOAMI_URL`) / `login`(세션 발급 자체): 📐 3단계 설계 문서 작성 착수 — 아직 코드 변경 없음 (`LOGIN_CLOUDRUN_DESIGN.md` 참고, `LOGIN_WHOAMI_MIGRATION_PLAN.md`가 전제로 삼은 "다른 주요 action들의 선행 이전"은 2026-08-21 기준 충족됨) | `handleLogin_` | 가장 민감한 기능 — 세션 발급 자체를 통째로 옮기면 다른 대부분 기능(CacheService 인증)이 깨짐. `login` 이전은 별도 설계 승인 후에만 코드 작성 |
+| 시황 피드 조회·알림·실시간 배지 | `getFeed`, `getNotifications`, `getPostById`, `pollSignal` | ✅ 4개 전부 전환됨 (`CLOUD_RUN_GET_FEED_URL`/`CLOUD_RUN_GET_NOTIFICATIONS_URL`/`CLOUD_RUN_GET_POST_BY_ID_URL`/`CLOUD_RUN_POLLSIGNAL_URL`), 실패 시 자동 Apps Script 폴백 **(2026-08-21 갱신: 이전에는 3개가 "승인 대기"로 표시되어 있었으나 실제로는 이미 전환·연동 완료 상태였음)** | `handleGetFeed_`, `handleGetNotifications_`, `handleGetPostById_`, `handlePollSignal_` | 4개 모두 순수 읽기, 공용 판정 로직(`buildFeedEntry_`→`lib/feedEngine.js`) 공유. 상세 설계는 `FEED_NOTIFICATIONS_POSTBYID_LIB_SPEC.md`, 검증은 `POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md` 참고 |
+| 댓글 조회/작성 (`feed.html` 댓글 UI) | `getComments`, `postComment` | ✅ 2개 전부 전환됨 (`CLOUD_RUN_GET_COMMENTS_URL`/`CLOUD_RUN_POSTCOMMENT_URL`) **(2026-08-21 갱신: 이전에는 "이전 보류/향후 후보"로 표시되어 있었으나 실제로는 전환·연동 완료 상태였음)** | `handleGetComments_`, `handlePostComment_` | `getComments`는 순수 읽기. `postComment`는 append 전용 쓰기라 markThreadSeen과 다른 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패) 적용 — `POSTCOMMENT_CLOUDRUN_DESIGN_v2.md` 참고 |
+| 댓글 수정/삭제 (`feed.html` 댓글 UI) | `updateComment`, `deleteComment` | ⏳ 미착수 | `handleUpdateComment_`, `handleDeleteComment_` | 아직 분석·설계 전 |
+| 스레드 확인 처리(알림함 '댓글 필요' 정확도) | `getThreadSeen`, `markThreadSeen` | ✅ 2개 전부 전환됨 (`CLOUD_RUN_GET_THREADSEEN_URL`/`CLOUD_RUN_MARKTHREADSEEN_URL`) **(2026-08-21 갱신: 마지막 "미착수" 그룹에 잘못 포함되어 있던 것을 반영)** | `handleGetThreadSeen_`, `handleMarkThreadSeen_` | `markThreadSeen`은 upsert라 markThreadSeenAction_/Apps Script 양쪽이 각자 성공해도 안전하게 수렴 — postComment(append 전용)와 다른, 더 단순한 폴백 정책. `MARKTHREADSEEN_CLOUDRUN_DESIGN.md` 참고 |
+| 그 외 모든 action (`getUsers`, `updateUser`, `getItems`, `getCustomers`, `upsertCustomer`, `changePassword`, `updateSettings`, `markChecked`, `upsertItem`, `suggestMaterials`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. `login`과 마찬가지로 다수가 쓰기 작업이라 각각 별도 분석·설계 필요 |
 
-> 이 표는 postComment Cloud Run 이전 가능성 분석이 완료된 시점(2026-08-18) 기준입니다. 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
+> 이 표는 2026-08-21 기준입니다(실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드를 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
 
 ## getTeamManagers 분석 (2026-08-14)
 
@@ -73,8 +77,16 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 - [`apps-script/README.md`](./apps-script/README.md) — Apps Script 백엔드: 배포 방법, Script Properties 목록(이름만), 롤백 방법
 - [`cloud-run/README.md`](./cloud-run/README.md) — Cloud Run 함수별 URL, 프로젝트/리전, 상태, 배포/롤백 방법
 - [`NODE22_UPGRADE_REPORT.md`](./NODE22_UPGRADE_REPORT.md) — Node.js 20→22 업그레이드 함수별 결과 보고 (2026-08-18)
-- [`LOGIN_WHOAMI_MIGRATION_PLAN.md`](./LOGIN_WHOAMI_MIGRATION_PLAN.md) — login/whoami Cloud Run 전환 상세 계획 (1·2단계 실행·검증·반영 완료, 3단계는 보류)
-- [`POSTCOMMENT_CLOUDRUN_ANALYSIS.md`](./POSTCOMMENT_CLOUDRUN_ANALYSIS.md) — 댓글(postComment 등) 기능 Cloud Run 이전 가능성 분석 (작성·수정·삭제는 보류, 조회만 후순위 후보)
-- [`FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md`](./FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md) — 피드·알림·실시간 배지(getFeed/getNotifications/getPostById/pollSignal) Cloud Run 이전 가능성 분석 (이전 후보로 확정, 실제 이전은 승인 대기)
-- [`POLLSIGNAL_CLOUDRUN_TEST_PLAN.md`](./POLLSIGNAL_CLOUDRUN_TEST_PLAN.md) — pollSignal Cloud Run 이전 검증 테스트 계획 (계획 단계, 실제 이전·배포는 아직 진행 안 함)
-- [`POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md`](./POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md) — 위 계획의 1단계(로직 비교 테스트) 결과 — 12개 시나리오 전부 일치 확인, 실제 이전·배포는 아직 진행 안 함
+- [`LOGIN_WHOAMI_MIGRATION_PLAN.md`](./LOGIN_WHOAMI_MIGRATION_PLAN.md) — login/whoami Cloud Run 전환 상세 계획 (1·2단계 실행·검증·반영 완료)
+- [`LOGIN_CLOUDRUN_DESIGN.md`](./LOGIN_CLOUDRUN_DESIGN.md) — login(세션 발급 자체) Cloud Run 전환 3단계 상세 설계 (2026-08-21 작성 착수, 코드 변경 없음 — 별도 승인 필요)
+- [`FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md`](./FEED_NOTIFICATIONS_CLOUDRUN_ANALYSIS.md) — 피드·알림·실시간 배지(getFeed/getNotifications/getPostById/pollSignal) Cloud Run 이전 가능성 분석 (최초 분석 — 실제 상세 설계는 아래 두 문서로 이어짐)
+- [`FEED_NOTIFICATIONS_POSTBYID_LIB_SPEC.md`](./FEED_NOTIFICATIONS_POSTBYID_LIB_SPEC.md) — getFeed/getNotifications/getPostById 공용 판정 로직(`lib/feedEngine.js`) 설계
+- [`THREADSEEN_FEED_NOTIFICATIONS_CLOUDRUN_PLAN.md`](./THREADSEEN_FEED_NOTIFICATIONS_CLOUDRUN_PLAN.md) — getThreadSeen/getFeed/getNotifications 공동 이전 계획
+- [`POLLSIGNAL_CLOUDRUN_TEST_PLAN.md`](./POLLSIGNAL_CLOUDRUN_TEST_PLAN.md) — pollSignal Cloud Run 이전 검증 테스트 계획
+- [`POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md`](./POLLSIGNAL_CLOUDRUN_TEST_RESULTS.md) — 위 계획의 1단계(로직 비교 테스트) 결과 — 12개 시나리오 전부 일치 확인
+- [`WRITE_API_CLOUDRUN_PREREQ_NOTES.md`](./WRITE_API_CLOUDRUN_PREREQ_NOTES.md) — 쓰기 API Cloud Run 이전 사전 조사 (초안 — 아래 문서로 이어짐)
+- [`WRITE_API_MIGRATION_PREP_REVIEW.md`](./WRITE_API_MIGRATION_PREP_REVIEW.md) — 쓰기 API(markThreadSeen/postComment) Cloud Run 이전 준비 검토 (최신)
+- [`MARKTHREADSEEN_CLOUDRUN_DESIGN.md`](./MARKTHREADSEEN_CLOUDRUN_DESIGN.md) — markThreadSeen Cloud Run 전환 설계·구현·연동 (완료)
+- [`POSTCOMMENT_CLOUDRUN_ANALYSIS.md`](./POSTCOMMENT_CLOUDRUN_ANALYSIS.md) — 댓글 기능 Cloud Run 이전 가능성 최초 분석 (초안 — 아래 `_v2` 문서로 대체됨)
+- [`POSTCOMMENT_CLOUDRUN_DESIGN.md`](./POSTCOMMENT_CLOUDRUN_DESIGN.md) — postComment 전환 설계 초안 (`_v2`로 대체됨)
+- [`POSTCOMMENT_CLOUDRUN_DESIGN_v2.md`](./POSTCOMMENT_CLOUDRUN_DESIGN_v2.md) — postComment 전환 최종 설계(3단 폴백 정책 등, 승인·구현·연동 완료) — 최신
