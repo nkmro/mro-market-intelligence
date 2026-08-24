@@ -525,7 +525,7 @@ const CLOUD_RUN_POLLSIGNAL_URL = 'https://asia-northeast3-mro-market-intelligenc
 // getThreadSeen 단독 이전 1단계(2026-08-19): 로그인/세션 복원 시 1회만 불리는 '댓글확인이력' 조회를
 // Cloud Run으로 먼저 시도하고, 실패/타임아웃/예외 시 기존 Apps Script getThreadSeen으로 자동
 // 폴백한다(CLOUD_RUN_GET_SETTINGS_URL과 동일한 패턴). 쓰기(markThreadSeen)는 그대로 Apps Script.
-const CLOUD_RUN_GET_THREADSEEN_URL = '';
+const CLOUD_RUN_GET_THREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getThreadSeenTest';
 // getPostById 단독 이전(승인 A 옵션 2, 2026-08-20): goToItem()에서 아직 로드되지 않은 게시물을
 // 딥링크(알림 클릭 등)로 불러올 때만 쓰인다. 다른 3개 전환 사례(getSettings/pollSignal/
 // getThreadSeen)는 "ok:true만 성공"으로 봤지만, getPostById는 NOT_FOUND/FORBIDDEN이 세션
@@ -564,7 +564,7 @@ const CLOUD_RUN_GET_COMMENTS_URL = 'https://asia-northeast3-mro-market-intellige
 // 조용히 기존 callApi('markThreadSeen', {postId, itemId})로 폴백한다. 이때도 같은 idempotencyKey를
 // 그대로 실어 보낸다(callApi의 IDEMPOTENT_WRITE_ACTIONS 처리 로직상, body에 이미 idempotencyKey가
 // 있으면 그 값을 그대로 쓰고 새로 만들지 않는다).
-const CLOUD_RUN_MARKTHREADSEEN_URL = '';
+const CLOUD_RUN_MARKTHREADSEEN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/markThreadSeenTest';
 // postComment 2단계(2026-08-21, 설계 승인 완료 — POSTCOMMENT_CLOUDRUN_DESIGN_v2.md): markThreadSeen과
 // 달리 postComment는 append 전용이라, "실패하면 조용히 Apps Script로 폴백"하는 패턴을 쓰지 않는다
 // (두 백엔드가 각각 성공하면 댓글이 실제로 두 번 등록될 위험이 있음 — 설계 문서 3번). 대신
