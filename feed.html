@@ -1665,8 +1665,11 @@ function goToItem(postId, itemId) {
     row.classList.add('flash');
     setTimeout(() => row.classList.remove('flash'), 1600);
     const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
-    if (!st.open) toggleThread(postId, itemId);
-        if (session.role !== '담당') { markThreadSeenLocal(postId, itemId); }
+    if (!st.open) {
+      toggleThread(postId, itemId);
+    } else if (session.role !== '담당') {
+      markThreadSeenLocal(postId, itemId);
+    }
   }, 50);
 }
 
