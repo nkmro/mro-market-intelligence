@@ -1005,22 +1005,47 @@ let nextCodeNum = freshRows.length
 ? Math.max.apply(null, freshRows.map(r => parseInt(String(r[0]).replace('RM', '')))) + 1
 : 1;
 
+const appendedRows = []; // 이번 실행이 실제로 추가한 행 기록 (사후 자가검증용)
+
 parsed.materials.forEach(m => {
 const key = normalize(m.korean);
 if (m.isNew && !freshNames.has(key)) {
 const newCode = 'RM' + String(nextCodeNum).padStart(3, '0');
 rmSheet.appendRow([newCode, m.korean, m.keyword, '활성', new Date()]);
-rmSheet.getRange(rmSheet.getLastRow(), 5).setNumberFormat('yyyy-mm-dd'); // 등록일은 기존 onEdit 자동화가 채움
-const dRange = rmSheet.getRange(2, 4, rmSheet.getLastRow() - 1, 1); const dRule =
+const newRow = rmSheet.getLastRow();
+rmSheet.getRange(newRow, 5).setNumberFormat('yyyy-mm-dd'); // 등록일은 기존 onEdit 자동화가 채움
+const dRange = rmSheet.getRange(2, 4, newRow - 1, 1); const dRule =
 rmSheet.getRange('D2').getDataValidation(); if (dRule) dRange.setDataValidation(dRule);
 nextCodeNum++;
 freshNames.add(key);
+appendedRows.push({ row: newRow, key: key });
 } else if (m.isNew && freshNames.has(key)) {
 console.log('suggestRawMaterials: skipped duplicate append for ' + m.korean + ' (already exists)');
 }
 koreanNames.push(m.korean);
 });
 SpreadsheetApp.flush(); // 락 해제 전 쓰기 내용을 확실히 커밋해, 다음 실행이 최신 상태를 읭도록 보장 (코드 번호 경합 방지)
+
+// 2026-08-24: 락 안에서 fresh read를 하고도(동시 실행 경합 또는 Sheets 쓰기 전파 지연으로)
+// 같은 원자재명이 중복 추가되는 사례가 있어, append 직후 같은 락 안에서 한 번 더 검증한다.
+// 항상 "더 먼저 생긴 행(낮은 행 번호)"을 남기고, 이번 실행이 만든 행만 지운다 — row 번호
+// 내림차순으로 처리해서, 삭제가 아직 처리하지 않은 다른 항목의 row 번호를 밀어내리지 않게 한다.
+if (appendedRows.length > 0) {
+const verifyRows = rmSheet.getDataRange().getValues().slice(1)
+.map((r, i) => ({ row: i + 2, key: normalize(r[1]) })).filter(r => r.key);
+appendedRows.sort((a, b) => b.row - a.row).forEach(added => {
+const matches = verifyRows.filter(r => r.key === added.key).map(r => r.row);
+if (matches.length > 1 && matches.includes(added.row)) {
+const keepRow = Math.min.apply(null, matches);
+if (added.row !== keepRow) {
+rmSheet.deleteRow(added.row);
+console.error('suggestRawMaterials: 사후 검증에서 중복 발견 — 방금 추가한 행(' + added.row
++ ')을 자동 삭제함 (유지: ' + keepRow + ', 원자재: ' + added.key + ')');
+}
+}
+});
+SpreadsheetApp.flush();
+}
 } finally {
 lock.releaseLock();
 }
