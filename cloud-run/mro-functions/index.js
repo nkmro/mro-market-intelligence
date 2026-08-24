@@ -829,8 +829,7 @@ async function markThreadSeenAction_(email, postId, itemId) {
     const row = rows[i];
     if (String(row[0]).toLowerCase() === String(email).toLowerCase() &&
         String(row[1]) === postIdStr && String(row[2]) === itemIdStr) {
-      matchedRowIndex = i;
-      break;
+      matchedRowIndex = i; // 2026-08-24 수정: 마지막 일치 행을 계속 갱신 (break 제거)
     }
   }
 
