@@ -243,6 +243,9 @@
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 const CLOUD_RUN_GET_TEAMS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getTeamsTest';
+// login Cloud Run 배선(2026-08-24, 설계 승인 완료 — LOGIN_CLOUDRUN_DESIGN.md, LOGIN_CLOUDRUN_FRONTEND_WIRING_PLAN.md).
+// 빈 문자열로 바꾸면 즉시 기존 Apps Script login 경로로만 동작한다(다른 CLOUD_RUN_*_URL과 동일한 롤백 스위치).
+const CLOUD_RUN_LOGIN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/loginTest';
 
 // 로그인진단로그에 접속 기기 종류(iOS/Android/Windows/Mac 등)를 남기기 위한 판별 함수.
 // navigator.userAgentData(최신 표준)는 사파리/파이어폭스가 지원을 안 해서 iOS 전체가 빠지므로
@@ -323,6 +326,7 @@ const ERROR_MESSAGES = {
   CODE_MISMATCH_OR_EXPIRED: '인증코드가 일치하지 않거나 만료됐어요.',
   SERVER_ERROR: '일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.',
   DUPLICATE_IN_PROGRESS_RETRY_LATER: '이전 로그인 요청을 아직 처리 중이에요. 잠시 후 다시 시도해주세요.',
+  LOGIN_BUSY_RETRY: '지금 로그인 요청이 많아 처리 중이에요. 잠시 후 다시 시도해주세요.',
     TOO_MANY_ATTEMPTS: '시도 횟수를 초과했어요. 인증코드를 다시 요청해주세요.',
     TOO_MANY_REQUESTS: '너무 많이 요청하셨어요. 1시간 후 다시 시도해주세요.'
 };
@@ -459,6 +463,77 @@ function cancelLoadingFill(btnId) {
   fill.style.clipPath = 'inset(0 100% 0 0)';
 }
 
+// login Cloud Run 배선(2026-08-24, 설계 승인 완료 — LOGIN_CLOUDRUN_DESIGN.md 4번).
+// postComment와 마찬가지로 login도 "실패해도 조용히 Apps Script로 폴백"하지 않는다 — login은
+// 실패 자체가 부작용(failCount 증가)을 가지는 액션이라, 두 백엔드가 같은 시도를 몰래 각자
+// 처리하면 계정이 실제보다 빨리 잠길 수 있다(설계 문서 0/4번 참고).
+//
+// CLOUD_RUN_LOGIN_URL이 비어 있으면 null을 반환해 호출부(doLogin)가 기존
+// callApi('login', ...) Apps Script 경로를 그대로 쓰게 한다(다른 API들과 동일한 롤백 스위치).
+//
+// URL이 채워져 있으면:
+// 1) Cloud Run에 1차 시도.
+//    - 정상 JSON 응답(ok:true 또는 ok:false + 에러 코드)이 오면 그대로 반환한다 — 사전 실패는
+//      Apps Script로 넘기지 않고 그 에러를 그대로 화면에 보여준다.
+//    - 응답 자체를 못 받음(타임아웃/네트워크 예외/JSON 파싱 실패)은 애매한 실패로 분류한다.
+// 2) 애매한 실패면, 같은 idempotencyKey로 Cloud Run 자신에게 1회 재시도한다(withIdempotency가
+//    이미 처리된 요청이면 재실행 없이 캐시된 결과를 그대로 돌려준다).
+// 3) 재시도까지도 애매하면, Apps Script로 넘기지 않고 { ok:false, error:'SERVER_ERROR' }를
+//    반환한다 — postComment의 "등록 여부 확인" 문구는 쓰지 않는다(로그인 폼에는 지울 낙관적
+//    UI 상태가 없고, 사용자가 할 수 있는 행동은 "다시 시도"뿐이라 확인을 요청할 대상이 없음).
+async function loginRemote_(email, password) {
+  if (!CLOUD_RUN_LOGIN_URL) return null;
+
+  const idempotencyKey = generateIdempotencyKey_();
+  const requestBody = {
+    email: email, password: password, platform: detectPlatform(),
+    idempotencyKey: idempotencyKey
+  };
+
+  async function attemptOnce_() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    try {
+      const res = await fetch(CLOUD_RUN_LOGIN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      let json;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        return { ambiguous: true };
+      }
+      if (json && typeof json.ok === 'boolean') {
+        return { ambiguous: false, json: json };
+      }
+      return { ambiguous: true };
+    } catch (networkErr) {
+      return { ambiguous: true };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  const first = await attemptOnce_();
+  if (!first.ambiguous) {
+    console.log('[login] source=cloud-run attempt=1 ok=' + first.json.ok);
+    return first.json;
+  }
+
+  console.log('[login] source=cloud-run ambiguous(attempt=1) -> retrying with same idempotencyKey');
+  const second = await attemptOnce_();
+  if (!second.ambiguous) {
+    console.log('[login] source=cloud-run attempt=2(retry) ok=' + second.json.ok);
+    return second.json;
+  }
+
+  console.log('[login] source=cloud-run ambiguous(attempt=2) -> no silent Apps Script fallback');
+  return { ok: false, error: 'SERVER_ERROR' };
+}
+
 async function doLogin() {
   hideError('login-error');
   const email = document.getElementById('login-email').value.trim();
@@ -477,7 +552,11 @@ async function doLogin() {
     // 3회(회당 20초, 800ms/1600ms 간격) 재시도하므로 여기서 별도로 재시도하지 않는다. 예전에는
     // doLogin이 직접 1.5초 뒤 1회만 재시도했는데, 재시도가 callApi 안에도 있었다면 두 겹으로
     // 쌓였을 것이다(feed.html의 loadThreadSeenMap에서 겪었던 것과 같은 문제).
-    const res = await callApi('login', { email, password, platform: detectPlatform() });
+    // login Cloud Run 배선(2026-08-24, 설계 승인 완료): CLOUD_RUN_LOGIN_URL이 채워져 있으면
+    // loginRemote_()의 3단 정책을 먼저 시도하고, 비어 있으면(롤백 상태) 기존 Apps Script 경로를
+    // 그대로 쓴다 — postComment/markThreadSeen과 동일한 "빈 문자열로 롤백" 스위치 패턴.
+    const res = (await loginRemote_(email, password))
+      || await callApi('login', { email, password, platform: detectPlatform() });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-login');
     saveSession(res);
