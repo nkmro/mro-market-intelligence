@@ -1436,3 +1436,240 @@ exports.getCustomersTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// POST /updateCommentTest, POST /deleteCommentTest (댓글 수정/삭제 이전 2단계 — 코드 구현만,
+// 아직 미배포/미연결)
+// 승인 경로: 2026-08-25 채팅에서 분석/계획 승인(1순위 읽기 2개 다음으로 댓글 수정/삭제,
+// upsertItem 순서로 진행하기로 합의) -> 2026-08-26 이번 코드 구현 승인. 다음 단계(별도 승인
+// 필요): parity 테스트 -> GitHub 커밋 -> Cloud Run 배포 -> feed.html 연결(postComment와
+// 동일한 "1회 시도 + 같은 idempotencyKey로 재시도, 그래도 애매하면 폴백 없이 에러" 쓰기 정책).
+//
+// [재사용] 세션 인증(lib/auth.js), 초기 조회(lib/sheetsClient.js — allUsers/allPosts/allItems/
+// settings), updatedPost 재계산(lib/feedEngine.js/lib/feedResponses.js), idempotency
+// (lib/writeIdempotency.js)까지 postCommentTest와 완전히 동일한 기존 모듈을 그대로 재사용한다.
+//
+// [parity 주의 — fresh read, 2026-08-25 채팅에서 결정] Code.gs의 handleUpdateComment_/
+// handleDeleteComment_(2446~2510행)는 각자 sheet.getDataRange()/getRange().getValues()로
+// "그 요청 시점의" 댓글 시트를 직접 다시 읽어서 대상 행을 찾는다 — 요청 앞부분에서 이미
+// 읽어둔 배열을 재사용하지 않는다. 이 파일도 동일하게, 요청 맨 앞 batchGet(allUsers/allPosts/
+// allItems/settings)과는 별도로, 댓글 시트만 withIdempotency() 안(실제 쓰기 직전)에서 매번
+// 새로 GET한다 — 앞선 배치의 댓글 스냅샷은 두 함수 다 아예 쓰지 않는다.
+//
+// [락 없음, 2026-08-25 채팅에서 결정] Code.gs 원본에도 이 두 핸들러에는 LockService가 없다
+// (upsertItem만 있음) — 패리티 우선으로 이번에도 새 락을 추가하지 않는다.
+//
+// [권한] 둘 다 쓰기 스코프(spreadsheets, 읽기+쓰기)를 쓴다 — postCommentTest/
+// markThreadSeenTest와 동일한 최소 권한 원칙에 따라, 이 두 함수 전용 헬퍼
+// (getCommentWriteClient_) 안에서만 새로 만든다. 초기 조회(getSheetsClient, allUsers/
+// allPosts/allItems/settings)는 여전히 기존 읽기 전용 공유 클라이언트를 그대로 쓴다.
+const UPDATE_DELETE_COMMENT_BATCH_RANGES = [POLL_USER_RANGE, POLL_POST_RANGE, POLL_ITEM_RANGE, POLL_SETTINGS_RANGE];
+
+exports.updateCommentTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, commentId, content, idempotencyKey } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, UPDATE_DELETE_COMMENT_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const settings = parseSettings((valueRanges[3] && valueRanges[3].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'updateComment', async function () {
+      return updateCommentAction_(viewer, allUsers, allPosts, allItems, settings, { commentId: commentId, content: content });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+exports.deleteCommentTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, commentId, idempotencyKey } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, UPDATE_DELETE_COMMENT_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const settings = parseSettings((valueRanges[3] && valueRanges[3].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'deleteComment', async function () {
+      return deleteCommentAction_(viewer, allUsers, allPosts, allItems, settings, { commentId: commentId });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// updateComment/deleteComment 전용 쓰기 클라이언트. appendCommentRow_/markThreadSeenAction_과
+// 동일한 최소 권한 원칙 — 이 함수 안에서만 쓰기 스코프(spreadsheets, 읽기+쓰기)의 GoogleAuth를
+// 새로 만든다.
+async function getCommentWriteClient_() {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  return auth.getClient();
+}
+
+// 댓글 시트(POLL_COMMENT_RANGE, 헤더 제외 A2:I)를 지금 이 순간 값으로 다시 읽는다 — Code.gs
+// handleUpdateComment_/handleDeleteComment_가 매번 sheet.getDataRange()로 직접 다시 읽는 것과
+// 동일한 "fresh read"를 재현하기 위함(요청 맨 앞의 batchGet 스냅샷을 쓰지 않음). UNFORMATTED_VALUE로
+// 받아서 날짜(createdAt) 열의 시트 시리얼 숫자를 그대로 보존한다 — FORMATTED_VALUE로 받으면
+// 문자열이 되어, deleteComment가 그대로 다시 써넣을 때(재기록) 날짜 셀이 텍스트 셀로 망가진다.
+async function getFreshCommentRows_(client) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${POLL_COMMENT_RANGE}?valueRenderOption=UNFORMATTED_VALUE`;
+  const resp = await client.request({ url });
+  return (resp.data && resp.data.values) || [];
+}
+
+// updateComment/deleteComment 둘 다 마지막에 필요한 "갱신된 댓글 목록 + 최신 buildFeedEntry_"
+// 응답을 만든다. postCommentAction_이 이미 검증한 lib/feedEngine.js/lib/feedResponses.js
+// 조합을 그대로 재사용 — Code.gs의 buildCommentUpdateResponse_(2402~2441행)에 대응(반환 모양도
+// {comments, updatedPost}로 동일하고 commentId는 넣지 않는다 — postComment 응답과 다른 점).
+function buildCommentUpdateResponse_(viewer, allUsers, allPosts, allItems, settings, updatedAllComments, postId) {
+  const post = allPosts.find(function (p) { return String(p.id).trim() === String(postId).trim(); });
+  const leadScope = settings['팀장_열람범위'] || null;
+  const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+  const commentsResp = feedResponses.buildGetCommentsResponse(visibleComments);
+
+  const commentsByPost = feedEngine.groupCommentsByPost(updatedAllComments);
+  const entry = post ? feedEngine.buildFeedEntry(viewer, post, allItems, commentsByPost, leadScope, teamByEmail) : null;
+  const updatedPost = entry ? feedResponses.shapeEntryAsPost(entry) : null;
+
+  return { comments: commentsResp.comments, updatedPost: updatedPost };
+}
+
+// Code.gs handleUpdateComment_(2446~2467행) 포팅. 본인이 작성한 댓글만 수정 가능, 내용(H열)만
+// 바꾸고 작성자/시각 등은 그대로 둔다. withIdempotency()가 이 함수 전체를 감싸므로(위
+// exports.updateCommentTest 주석 참고), 여기서 반환하는 에러 응답도 그대로 idempotency
+// 캐시에 남는다 — Code.gs와 동일한 동작.
+async function updateCommentAction_(viewer, allUsers, allPosts, allItems, settings, body) {
+  const commentId = body.commentId;
+  const content = String(body.content || '').trim();
+  if (!commentId || !content) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const client = await getCommentWriteClient_();
+  const rows = await getFreshCommentRows_(client); // 헤더 제외, A2:I부터(index 0 == 시트 2행)
+
+  let targetIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(commentId)) { targetIndex = i; break; }
+  }
+  if (targetIndex === -1) {
+    return { ok: false, error: 'COMMENT_NOT_FOUND' };
+  }
+  if (String(rows[targetIndex][3]).trim().toLowerCase() !== String(viewer.email).trim().toLowerCase()) {
+    return { ok: false, error: 'FORBIDDEN_NOT_AUTHOR' };
+  }
+
+  const postId = rows[targetIndex][1];
+  const sheetRow = targetIndex + 2; // A2:I 기준이라 실제 시트 행 = index + 2
+  const updateRange = encodeURIComponent(SHEET_COMMENT_NAME + '!H' + sheetRow);
+  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=RAW`;
+  await client.request({ url: updateUrl, method: 'PUT', data: { values: [[content]] } });
+
+  // 방금 성공한 쓰기를 메모리상의 rows에도 그대로 반영해, 재조회 없이 최신 상태로
+  // buildCommentUpdateResponse_에 넘긴다 — Code.gs가 invalidateSheetCache_ 후 getAllComments_()로
+  // 다시 읽는 것과 최종적으로 같은 값이 된다(같은 요청 안에서 다른 동시 쓰기가 없다고 가정).
+  rows[targetIndex][7] = content;
+
+  const updatedAllComments = rowsToComments(rows);
+  return Object.assign({ ok: true }, buildCommentUpdateResponse_(viewer, allUsers, allPosts, allItems, settings, updatedAllComments, postId));
+}
+
+// Code.gs handleDeleteComment_(2476~2510행) 포팅. 본인이 작성한 댓글만 삭제 가능. 원본과
+// 동일하게 대상 행을 뺀 나머지를 위로 당겨 다시 쓰고(kept), 밀려서 남는 마지막 1행(항상
+// 정확히 1행 — 한 번에 댓글 1개만 지운다)을 비운다(Code.gs의 setValues + clearContent 2단계에
+// 대응 — 여기서는 values PUT + values:clear).
+async function deleteCommentAction_(viewer, allUsers, allPosts, allItems, settings, body) {
+  const commentId = body.commentId;
+  if (!commentId) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const client = await getCommentWriteClient_();
+  const rows = await getFreshCommentRows_(client); // 헤더 제외, A2:I부터(index 0 == 시트 2행)
+  if (rows.length === 0) {
+    return { ok: false, error: 'COMMENT_NOT_FOUND' };
+  }
+
+  let targetIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(commentId)) { targetIndex = i; break; }
+  }
+  if (targetIndex === -1) {
+    return { ok: false, error: 'COMMENT_NOT_FOUND' };
+  }
+  if (String(rows[targetIndex][3]).trim().toLowerCase() !== String(viewer.email).trim().toLowerCase()) {
+    return { ok: false, error: 'FORBIDDEN_NOT_AUTHOR' };
+  }
+
+  const postId = rows[targetIndex][1];
+  const kept = rows.filter(function (_, idx) { return idx !== targetIndex; });
+
+  if (kept.length > 0) {
+    const writeRange = encodeURIComponent(SHEET_COMMENT_NAME + '!A2:I' + (kept.length + 1));
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${writeRange}?valueInputOption=RAW`;
+    await client.request({ url: writeUrl, method: 'PUT', data: { values: kept } });
+  }
+  const staleRow = rows.length + 1; // A2:I 기준이라 삭제 전 마지막 데이터 행 = rows.length + 1
+  const clearRange = encodeURIComponent(SHEET_COMMENT_NAME + '!A' + staleRow + ':I' + staleRow);
+  const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${clearRange}:clear`;
+  await client.request({ url: clearUrl, method: 'POST', data: {} });
+
+  const updatedAllComments = rowsToComments(kept);
+  return Object.assign({ ok: true }, buildCommentUpdateResponse_(viewer, allUsers, allPosts, allItems, settings, updatedAllComments, postId));
+}
