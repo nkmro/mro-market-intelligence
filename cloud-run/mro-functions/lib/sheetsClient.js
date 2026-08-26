@@ -105,6 +105,19 @@ function parseSettings(rows) {
   return settings;
 }
 
+// 고객사마스터 (!A2:C) : code,name,manager
+// (2026-08-26, getItems/getCustomers 이전 — 분석/계획 승인. Code.gs의 handleGetCustomers_가
+// push하는 { code, name, manager } 객체와 필드 이름·순서를 그대로 맞췄다.)
+function rowsToCustomers(rows) {
+  return rows.map(function (row) {
+    return {
+      code: row[0],
+      name: row[1],
+      manager: row[2]
+    };
+  });
+}
+
 module.exports = {
   getSheetsClient,
   batchGetValues,
@@ -112,5 +125,6 @@ module.exports = {
   rowsToPosts,
   rowsToItems,
   rowsToComments,
+  rowsToCustomers,
   parseSettings
 };
