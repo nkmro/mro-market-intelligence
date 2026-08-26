@@ -1,0 +1,419 @@
+[
+  {
+    "name": "1",
+    "desc": "commentId 없음 -> MISSING_FIELDS",
+    "input": {
+      "user": {
+        "email": "a@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "내용",
+          100
+        ]
+      ],
+      "body": {
+        "commentId": ""
+      }
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "MISSING_FIELDS"
+    },
+    "same": true
+  },
+  {
+    "name": "2",
+    "desc": "댓글 시트에 데이터 행이 하나도 없음 -> COMMENT_NOT_FOUND",
+    "input": {
+      "user": {
+        "email": "a@nkmro.com"
+      },
+      "rows": [],
+      "body": {
+        "commentId": "C-1"
+      }
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "COMMENT_NOT_FOUND"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "COMMENT_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "name": "3",
+    "desc": "존재하지 않는 commentId -> COMMENT_NOT_FOUND",
+    "input": {
+      "user": {
+        "email": "a@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "내용",
+          100
+        ]
+      ],
+      "body": {
+        "commentId": "C-999"
+      }
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "COMMENT_NOT_FOUND"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "COMMENT_NOT_FOUND"
+    },
+    "same": true
+  },
+  {
+    "name": "4",
+    "desc": "다른 사람이 작성한 댓글을 삭제 시도 -> FORBIDDEN_NOT_AUTHOR",
+    "input": {
+      "user": {
+        "email": "b@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "내용",
+          100
+        ]
+      ],
+      "body": {
+        "commentId": "C-1"
+      }
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "FORBIDDEN_NOT_AUTHOR"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "FORBIDDEN_NOT_AUTHOR"
+    },
+    "same": true
+  },
+  {
+    "name": "5",
+    "desc": "중간 행(C-2) 삭제 -> 나머지 행(C-1, C-3) 순서 그대로 유지",
+    "input": {
+      "user": {
+        "email": "b@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "첫댓글",
+          100
+        ],
+        [
+          "C-2",
+          "P-1",
+          "IT-1",
+          "b@nkmro.com",
+          "B",
+          "팀장",
+          "C-1",
+          "지울댓글",
+          200
+        ],
+        [
+          "C-3",
+          "P-1",
+          "IT-1",
+          "c@nkmro.com",
+          "C",
+          "담당",
+          "C-1",
+          "세번째댓글",
+          300
+        ]
+      ],
+      "body": {
+        "commentId": "C-2"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedSheetRows": [
+        [
+          "commentId",
+          "postId",
+          "itemId",
+          "authorEmail",
+          "authorName",
+          "authorRole",
+          "parentCommentId",
+          "content",
+          "createdAt"
+        ],
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "첫댓글",
+          100
+        ],
+        [
+          "C-3",
+          "P-1",
+          "IT-1",
+          "c@nkmro.com",
+          "C",
+          "담당",
+          "C-1",
+          "세번째댓글",
+          300
+        ]
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedDataRows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "첫댓글",
+          100
+        ],
+        [
+          "C-3",
+          "P-1",
+          "IT-1",
+          "c@nkmro.com",
+          "C",
+          "담당",
+          "C-1",
+          "세번째댓글",
+          300
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "6",
+    "desc": "마지막 남은 댓글 1개를 삭제 -> 데이터 행이 0개가 됨",
+    "input": {
+      "user": {
+        "email": "a@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "내용",
+          100
+        ]
+      ],
+      "body": {
+        "commentId": "C-1"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedSheetRows": [
+        [
+          "commentId",
+          "postId",
+          "itemId",
+          "authorEmail",
+          "authorName",
+          "authorRole",
+          "parentCommentId",
+          "content",
+          "createdAt"
+        ]
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedDataRows": []
+    },
+    "same": true
+  },
+  {
+    "name": "7",
+    "desc": "작성자 이메일 대소문자/앞뒤 공백이 달라도(' A@NKMRO.com ') 본인으로 인정 -> 정상 삭제",
+    "input": {
+      "user": {
+        "email": " A@NKMRO.com "
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "내용",
+          100
+        ]
+      ],
+      "body": {
+        "commentId": "C-1"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedSheetRows": [
+        [
+          "commentId",
+          "postId",
+          "itemId",
+          "authorEmail",
+          "authorName",
+          "authorRole",
+          "parentCommentId",
+          "content",
+          "createdAt"
+        ]
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedDataRows": []
+    },
+    "same": true
+  },
+  {
+    "name": "8",
+    "desc": "첫 번째 행(C-1) 삭제 -> 남은 행(C-2)이 그대로 유지됨",
+    "input": {
+      "user": {
+        "email": "a@nkmro.com"
+      },
+      "rows": [
+        [
+          "C-1",
+          "P-1",
+          "IT-1",
+          "a@nkmro.com",
+          "A",
+          "담당",
+          "",
+          "첫댓글",
+          100
+        ],
+        [
+          "C-2",
+          "P-1",
+          "IT-1",
+          "b@nkmro.com",
+          "B",
+          "팀장",
+          "C-1",
+          "답글",
+          200
+        ]
+      ],
+      "body": {
+        "commentId": "C-1"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedSheetRows": [
+        [
+          "commentId",
+          "postId",
+          "itemId",
+          "authorEmail",
+          "authorName",
+          "authorRole",
+          "parentCommentId",
+          "content",
+          "createdAt"
+        ],
+        [
+          "C-2",
+          "P-1",
+          "IT-1",
+          "b@nkmro.com",
+          "B",
+          "팀장",
+          "C-1",
+          "답글",
+          200
+        ]
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "postId": "P-1",
+      "updatedDataRows": [
+        [
+          "C-2",
+          "P-1",
+          "IT-1",
+          "b@nkmro.com",
+          "B",
+          "팀장",
+          "C-1",
+          "답글",
+          200
+        ]
+      ]
+    },
+    "same": true
+  }
+]
