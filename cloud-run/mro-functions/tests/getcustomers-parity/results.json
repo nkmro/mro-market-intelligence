@@ -1,0 +1,229 @@
+[
+  {
+    "name": "1",
+    "desc": "role='담당' -> FORBIDDEN(팀장만 허용)",
+    "input": {
+      "name": "1",
+      "desc": "role='담당' -> FORBIDDEN(팀장만 허용)",
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당"
+      },
+      "rows": [
+        [
+          "C-1",
+          "고객A",
+          "담당자A"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "same": true
+  },
+  {
+    "name": "2",
+    "desc": "팀장 정상 조회 -> 전체 고객사 목록",
+    "input": {
+      "name": "2",
+      "desc": "팀장 정상 조회 -> 전체 고객사 목록",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장"
+      },
+      "rows": [
+        [
+          "C-1",
+          "고객A",
+          "담당자A"
+        ],
+        [
+          "C-2",
+          "고객B",
+          "담당자B"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-1",
+          "name": "고객A",
+          "manager": "담당자A"
+        },
+        {
+          "code": "C-2",
+          "name": "고객B",
+          "manager": "담당자B"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-1",
+          "name": "고객A",
+          "manager": "담당자A"
+        },
+        {
+          "code": "C-2",
+          "name": "고객B",
+          "manager": "담당자B"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "3",
+    "desc": "B열(name)이 빈 값인 행은 제외",
+    "input": {
+      "name": "3",
+      "desc": "B열(name)이 빈 값인 행은 제외",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장"
+      },
+      "rows": [
+        [
+          "C-1",
+          "",
+          "담당자A"
+        ],
+        [
+          "C-2",
+          "고객B",
+          "담당자B"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-2",
+          "name": "고객B",
+          "manager": "담당자B"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-2",
+          "name": "고객B",
+          "manager": "담당자B"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "4",
+    "desc": "A열(code)이 빈 값이어도 B열(name)만 있으면 포함됨(제외 기준은 A열이 아니라 B열)",
+    "input": {
+      "name": "4",
+      "desc": "A열(code)이 빈 값이어도 B열(name)만 있으면 포함됨(제외 기준은 A열이 아니라 B열)",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장"
+      },
+      "rows": [
+        [
+          "",
+          "고객A",
+          "담당자A"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "",
+          "name": "고객A",
+          "manager": "담당자A"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "",
+          "name": "고객A",
+          "manager": "담당자A"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "5",
+    "desc": "C열(manager)이 없는 행 -> manager는 undefined 그대로(기본값 없음)",
+    "input": {
+      "name": "5",
+      "desc": "C열(manager)이 없는 행 -> manager는 undefined 그대로(기본값 없음)",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장"
+      },
+      "rows": [
+        [
+          "C-1",
+          "고객A"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-1",
+          "name": "고객A"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "customers": [
+        {
+          "code": "C-1",
+          "name": "고객A"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "6",
+    "desc": "고객사 행이 하나도 없음 -> 빈 배열",
+    "input": {
+      "name": "6",
+      "desc": "고객사 행이 하나도 없음 -> 빈 배열",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장"
+      },
+      "rows": []
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "customers": []
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "customers": []
+    },
+    "same": true
+  }
+]
