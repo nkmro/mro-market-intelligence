@@ -1,0 +1,619 @@
+[
+  {
+    "name": "1",
+    "desc": "role='일반' -> FORBIDDEN(팀장/담당만 허용)",
+    "input": {
+      "name": "1",
+      "desc": "role='일반' -> FORBIDDEN(팀장/담당만 허용)",
+      "user": {
+        "email": "x@nkmro.com",
+        "role": "일반",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ]
+      ],
+      "settings": {}
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "same": true
+  },
+  {
+    "name": "2",
+    "desc": "role='담당'(admin 아님) -> 자기 팀(동부) 항목만, 다른 팀(서부) 제외",
+    "input": {
+      "name": "2",
+      "desc": "role='담당'(admin 아님) -> 자기 팀(동부) 항목만, 다른 팀(서부) 제외",
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {}
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "3",
+    "desc": "role='담당'이면서 admin 이메일 -> 1차 필터(isAdmin) 건너뜀 + 2차 재필터가 다시 자기 팀으로 좁힌 결과는 자기 팀만",
+    "input": {
+      "name": "3",
+      "desc": "role='담당'이면서 admin 이메일 -> 1차 필터(isAdmin) 건너뜀 + 2차 재필터가 다시 자기 팀으로 좁힌 결과는 자기 팀만",
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {}
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "4",
+    "desc": "role='팀장'(admin 아님), 팀장_열람범위='전체' -> 1차 필터에서 이미 자기 팀만 남아 scope와 무관하게 자기 팀만",
+    "input": {
+      "name": "4",
+      "desc": "role='팀장'(admin 아님), 팀장_열람범위='전체' -> 1차 필터에서 이미 자기 팀만 남아 scope와 무관하게 자기 팀만",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {
+        "팀장_열람범위": "전체"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "5",
+    "desc": "role='팀장' + admin 이메일, 팀장_열람범위='전체' -> 1차/2차 필터 둘 다 건너뛰어 모든 팀이 보임",
+    "input": {
+      "name": "5",
+      "desc": "role='팀장' + admin 이메일, 팀장_열람범위='전체' -> 1차/2차 필터 둘 다 건너뛰어 모든 팀이 보임",
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {
+        "팀장_열람범위": "전체"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        },
+        {
+          "itemId": "IT-2",
+          "customer": "고객B",
+          "itemName": "품목B",
+          "manager": "담당자B",
+          "team": "서부",
+          "materials": "원자재B",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        },
+        {
+          "itemId": "IT-2",
+          "customer": "고객B",
+          "itemName": "품목B",
+          "manager": "담당자B",
+          "team": "서부",
+          "materials": "원자재B",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "6",
+    "desc": "role='팀장' + admin 이메일, 팀장_열람범위가 '전체'가 아님 -> 1차는 건너뛰지만 2차 재필터로 자기 팀만 남음",
+    "input": {
+      "name": "6",
+      "desc": "role='팀장' + admin 이메일, 팀장_열람범위가 '전체'가 아님 -> 1차는 건너뛰지만 2차 재필터로 자기 팀만 남음",
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {
+        "팀장_열람범위": "부분"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "7",
+    "desc": "팀장_열람범위 설정 키 자체가 없음 -> undefined !== '전체' -> 자기 팀만",
+    "input": {
+      "name": "7",
+      "desc": "팀장_열람범위 설정 키 자체가 없음 -> undefined !== '전체' -> 자기 팀만",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "서부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {}
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-1",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "8",
+    "desc": "A열(itemId)이 빈 값인 행은 제외",
+    "input": {
+      "name": "8",
+      "desc": "A열(itemId)이 빈 값인 행은 제외",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ],
+        [
+          "IT-2",
+          "고객B",
+          "품목B",
+          "담당자B",
+          "동부",
+          "원자재B",
+          "활성"
+        ]
+      ],
+      "settings": {
+        "팀장_열람범위": "전체"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-2",
+          "customer": "고객B",
+          "itemName": "품목B",
+          "manager": "담당자B",
+          "team": "동부",
+          "materials": "원자재B",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "IT-2",
+          "customer": "고객B",
+          "itemName": "품목B",
+          "manager": "담당자B",
+          "team": "동부",
+          "materials": "원자재B",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "9",
+    "desc": "시트 팀 값에 앞뒤 공백('동부 ') -> 1차 필터(trim 비교)는 통과하지만 2차 재필터(공백 없는 === 비교)에서 제외됨",
+    "input": {
+      "name": "9",
+      "desc": "시트 팀 값에 앞뒤 공백('동부 ') -> 1차 필터(trim 비교)는 통과하지만 2차 재필터(공백 없는 === 비교)에서 제외됨",
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "IT-1",
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부 ",
+          "원자재A",
+          "활성"
+        ]
+      ],
+      "settings": {}
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": []
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": []
+    },
+    "same": true
+  },
+  {
+    "name": "10",
+    "desc": "A열(itemId)이 숫자값 -> String() 변환 결과가 두 구현 동일해야 함",
+    "input": {
+      "name": "10",
+      "desc": "A열(itemId)이 숫자값 -> String() 변환 결과가 두 구현 동일해야 함",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          12345,
+          "고객A",
+          "품목A",
+          "담당자A",
+          "동부",
+          "원자재A",
+          "활성"
+        ]
+      ],
+      "settings": {
+        "팀장_열람범위": "전체"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "12345",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": [
+        {
+          "itemId": "12345",
+          "customer": "고객A",
+          "itemName": "품목A",
+          "manager": "담당자A",
+          "team": "동부",
+          "materials": "원자재A",
+          "status": "활성"
+        }
+      ]
+    },
+    "same": true
+  },
+  {
+    "name": "11",
+    "desc": "품목 행이 하나도 없음 -> 빈 배열",
+    "input": {
+      "name": "11",
+      "desc": "품목 행이 하나도 없음 -> 빈 배열",
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [],
+      "settings": {
+        "팀장_열람범위": "전체"
+      }
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "items": []
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "items": []
+    },
+    "same": true
+  }
+]
