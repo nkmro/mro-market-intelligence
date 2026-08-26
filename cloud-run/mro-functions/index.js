@@ -17,6 +17,7 @@ const {
   rowsToPosts,
   rowsToItems,
   rowsToComments,
+  rowsToCustomers,
   parseSettings
 } = require('./lib/sheetsClient');
 const feedEngine = require('./lib/feedEngine');
@@ -1279,6 +1280,149 @@ exports.loginTest = async (req, res) => {
         await releaseLoginLock_(normalizedEmail, holderId);
       }
     }
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /getItemsTest, POST /getCustomersTest (품목 관리 페이지 읽기 1단계 — 코드 구현만,
+// 아직 미배포/미연결)
+// 승인 경로: 2026-08-25 채팅에서 분석/계획 승인(읽기 2개를 먼저, 댓글 수정/삭제, upsertItem
+// 순서로 진행하기로 합의). 다음 단계(별도 승인 필요): parity 테스트 -> GitHub 커밋 ->
+// Cloud Run 배포 -> feed.html 연결(getComments/getFeed와 동일한 "1회 시도 실패 시 조용히
+// Apps Script로 폴백" 읽기 정책).
+//
+// [재사용] 세션 인증은 lib/auth.js, 시트 읽기는 lib/sheetsClient.js(rowsToUsers/rowsToItems/
+// parseSettings — 전부 기존 함수, 이번에 수정 없음)를 그대로 쓴다. 품목마스터 범위(POLL_ITEM_RANGE)도
+// pollSignalTest/postCommentTest가 이미 쓰는 것과 동일한 상수를 그대로 재사용한다. 새로
+// 추가한 건 고객사마스터 범위(CUSTOMER_DATA_RANGE)와 그 행 변환 함수(lib/sheetsClient.js의
+// rowsToCustomers, 순수 추가) 하나뿐이다.
+//
+// [권한] 둘 다 읽기 전용(spreadsheets.readonly)만 쓴다 — 쓰기 스코프를 새로 만들지 않았다.
+const SHEET_CUSTOMER_NAME = '고객사마스터'; // 고객사마스터
+const CUSTOMER_DATA_RANGE = encodeURIComponent(SHEET_CUSTOMER_NAME + '!A2:C');
+const ITEMS_BATCH_RANGES = [POLL_USER_RANGE, POLL_ITEM_RANGE, POLL_SETTINGS_RANGE];
+
+// Code.gs handleGetItems_(3455~3487행) 포팅. [패리티 주의] 첫 번째 필터(!isAdmin일 때 팀
+// 불일치 행 제외)와 두 번째 필터(역할별 재필터링 — 담당은 무조건, 팀장은 팀장_열람범위 설정이
+// '전체'가 아닐 때만 자기 팀으로 재필터링)가 원본처럼 이중으로 겹쳐 있다 — 겉보기엔 중복 같지만
+// isAdmin이면서 role이 '담당'인 경우 등 실제로 결과가 달라지는 조합이 있어(예: isAdmin=true,
+// role='담당'이면 첫 필터는 건너뛰지만 두 번째 필터가 다시 자기 팀으로 좁힘), 하나로 합치지
+// 않고 원본 두 단계 구조를 그대로 옮겼다. 빈 itemId 행 제외(Code.gs의 `if (!row[0]) continue`)도
+// rowsToItems가 String(row[0])으로 항상 문자열을 만들어버리는 것(빈 값도 "undefined"가 될 위험)을
+// 피하기 위해, 매핑 전 원본 행 배열에서 먼저 걸러낸다.
+exports.getItemsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, ITEMS_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const rawItemRows = (valueRanges[1] && valueRanges[1].values) || [];
+    const allItems = rowsToItems(rawItemRows.filter(function (row) { return !!row[0]; }));
+    const settings = parseSettings((valueRanges[2] && valueRanges[2].values) || []);
+
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+    if (viewer.role !== '팀장' && viewer.role !== '담당') {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN' });
+      return;
+    }
+
+    const isAdmin = String(viewer.email).trim().toLowerCase() === ADMIN_EMAIL;
+    const items = [];
+    allItems.forEach(function (it) {
+      if (!isAdmin && String(it.team).trim() !== String(viewer.team).trim()) return;
+      items.push({
+        itemId: it.itemId, customer: it.customer, itemName: it.itemName, manager: it.manager,
+        team: it.team, materials: it.materials, status: it.status
+      });
+    });
+
+    let resultItems = items;
+    if (viewer.role === '담당') {
+      resultItems = items.filter(function (it) { return it.team === viewer.team; });
+    } else if (viewer.role === '팀장') {
+      const scope = settings['팀장_열람범위']; // 팀장_열람범위
+      if (scope !== '전체') { // 전체
+        resultItems = items.filter(function (it) { return it.team === viewer.team; });
+      }
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, items: resultItems });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// Code.gs handleGetCustomers_(3488~3501행) 포팅. [패리티 주의] 빈 행 제외 기준이 getItems와
+// 다르다 — Code.gs가 `if (!row[1]) continue`(B열=name 기준, A열=code가 아님)를 쓰므로 여기서도
+// 그대로 row[1] 기준으로 원본 행을 먼저 걸러낸다.
+exports.getCustomersTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE, CUSTOMER_DATA_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+    if (viewer.role !== '팀장') {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN' });
+      return;
+    }
+
+    const rawCustomerRows = (valueRanges[1] && valueRanges[1].values) || [];
+    const customers = rowsToCustomers(rawCustomerRows.filter(function (row) { return !!row[1]; }));
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, customers: customers });
   } catch (err) {
     const serverMs = Date.now() - t0;
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
