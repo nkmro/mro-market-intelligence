@@ -1301,6 +1301,14 @@ exports.loginTest = async (req, res) => {
 // rowsToCustomers, 순수 추가) 하나뿐이다.
 //
 // [권한] 둘 다 읽기 전용(spreadsheets.readonly)만 쓴다 — 쓰기 스코프를 새로 만들지 않았다.
+//
+// [2026-08-26 버그 수정] 초기 구현에서 getItemsTest 안에서 ADMIN_EMAIL을 참조하면서 정작
+// 이 파일에는 그 상수를 선언하지 않아, 실제로 호출하면 매번 "ADMIN_EMAIL is not defined"
+// ReferenceError로 500이 나는 상태로 커밋되어 있었다(로컬 스텁 테스트로 재현 확인). parity
+// 테스트는 apps_script_ref.js/cloudrun_port.js가 각자 자기 파일에 별도로 ADMIN_EMAIL을
+// 선언해 두어서 이 누락을 잡아내지 못했다 — index.js 자체를 실행해보지 않은 것이 원인.
+// Code.gs 33행과 값이 완전히 같다.
+const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const SHEET_CUSTOMER_NAME = '고객사마스터'; // 고객사마스터
 const CUSTOMER_DATA_RANGE = encodeURIComponent(SHEET_CUSTOMER_NAME + '!A2:C');
 const ITEMS_BATCH_RANGES = [POLL_USER_RANGE, POLL_ITEM_RANGE, POLL_SETTINGS_RANGE];
