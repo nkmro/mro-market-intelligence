@@ -577,6 +577,10 @@ const CLOUD_RUN_POSTCOMMENT_URL = 'https://asia-northeast3-mro-market-intelligen
 const CLOUD_RUN_GET_ITEMS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getItemsTest';
 const CLOUD_RUN_GET_CUSTOMERS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCustomersTest';
 
+// getUsers Cloud Run 배선(Track B, 설계 승인 완료 — getItems/getCustomers와 동일한 읽기 폴백 패턴).
+// 빈 문자열로 바꾸면 즉시 기존 Apps Script 경로로만 동작한다(다른 CLOUD_RUN_*_URL과 동일한 롤백 스위치).
+const CLOUD_RUN_GET_USERS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getUsersTest';
+
 // updateComment/deleteComment Cloud Run 배선(Track A, 설계 승인 완료 — postComment와 동일한 3단 폴백
 // 정책: 명확한 실패는 그대로, 애매한 실패만 같은 idempotencyKey로 1회 재시도, 그래도 애매하면 Apps
 // Script로 조용히 넘기지 않음). 빈 문자열로 바꾸면 즉시 기존 Apps Script 경로로만 동작한다.
@@ -2081,7 +2085,7 @@ if (isFirstLoad) {
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 }
 try {
-const res = await callApi('getUsers', {});
+const res = await getUsersRemote_();
 if (!res.ok) {
 if (isFirstLoad) {
 root.innerHTML = `<div class="feed-empty">사용자 목록을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
@@ -2759,6 +2763,33 @@ async function getCustomersRemote_() {
   }
   const res = await callApi('getCustomers', {});
   console.log('[getCustomers] source=apps-script');
+  return res;
+}
+
+// getUsers Cloud Run 배선(Track B) — getItems/getCustomers와 동일한 읽기 전용 폴백 패턴(20초
+// 타임아웃, ok:true일 때만 채택, 그 외(예외/타임아웃/ok:false 전부)는 조용히 기존 Apps Script로
+// 폴백). 사용자 현황 화면(loadUsers())에서만 사용한다 — 품목 등록 폼의 담당자 드롭다운을 채우는
+// loadItems() 내부의 별도 callApi('getUsers', {}) 호출은 이번 배선 대상이 아니라 그대로 둔다.
+async function getUsersRemote_() {
+  if (CLOUD_RUN_GET_USERS_URL) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+      const cloudRes = await fetch(CLOUD_RUN_GET_USERS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+        signal: controller.signal
+      }).then(function (r) { return r.json(); });
+      clearTimeout(timeoutId);
+      if (cloudRes && cloudRes.ok === true) {
+        console.log('[getUsers] source=cloud-run');
+        return cloudRes;
+      }
+    } catch (e) {}
+  }
+  const res = await callApi('getUsers', {});
+  console.log('[getUsers] source=apps-script');
   return res;
 }
 
