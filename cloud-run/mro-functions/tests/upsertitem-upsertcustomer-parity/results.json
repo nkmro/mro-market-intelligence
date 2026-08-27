@@ -1,0 +1,1457 @@
+[
+  {
+    "group": "A",
+    "name": "1",
+    "desc": "정상 등록 — 신규 품목(materialCode=MP-200), 기존 고객사",
+    "appsScript": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-200",
+        "mode": "created"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ],
+        [
+          "MP-200",
+          "기존고객사",
+          "새품목",
+          "이담당",
+          "동부",
+          "원자재B",
+          "활성",
+          47000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-200",
+        "mode": "created"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ],
+        [
+          "MP-200",
+          "기존고객사",
+          "새품목",
+          "이담당",
+          "동부",
+          "원자재B",
+          "활성",
+          47000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "2",
+    "desc": "정상 수정 — 기존 품목(MP-100) 내용 변경, 등록일(H) 보존",
+    "appsScript": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-100",
+        "mode": "updated"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "수정된품목명",
+          "이담당",
+          "동부",
+          "원자재A, 원자재C",
+          "비활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-100",
+        "mode": "updated"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "수정된품목명",
+          "이담당",
+          "동부",
+          "원자재A, 원자재C",
+          "비활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "3",
+    "desc": "정상 등록 — 신규 품목(MP-300) + 신규 고객사(C002) 동시 생성",
+    "appsScript": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-300",
+        "mode": "created"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C002",
+          "새고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ],
+        [
+          "MP-300",
+          "새고객사",
+          "새품목2",
+          "이담당",
+          "동부",
+          "",
+          "활성",
+          47000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true,
+        "itemId": "MP-300",
+        "mode": "created"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C002",
+          "새고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ],
+        [
+          "MP-300",
+          "새고객사",
+          "새품목2",
+          "이담당",
+          "동부",
+          "",
+          "활성",
+          47000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "4",
+    "desc": "원자적 롤백(일반 실패) — 신규 고객사 생성 후 자재코드 중복으로 품목 등록 실패 -> 고객사 롤백",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "4b",
+    "desc": "원자적 롤백(예외 경로, 수정 후 회귀 확인) — 품목 쓰기 중 예외 발생 시에도 고객사가 롤백되는가",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "SERVER_ERROR",
+        "detail": "Error: SIMULATED_SHEETS_ERROR"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "SERVER_ERROR",
+        "detail": "Error: SIMULATED_SHEETS_ERROR"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "5",
+    "desc": "중복 등록 — 이미 존재하는 자재코드(MP-100)로 신규 등록 시도",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "6",
+    "desc": "중복 등록 — 고객사명(경합: 락 밖 확인 통과 후 락 안 재확인에서 발견)",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C900",
+          "경쟁고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C900",
+          "경쟁고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "7",
+    "desc": "중복 등록 — 고객사코드(경합: 락 안 재확인에서 코드 중복 발견)",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C902",
+          "이미있는고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C902",
+          "이미있는고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "8a",
+    "desc": "권한 없는 사용자(role=담당) -> FORBIDDEN",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "FORBIDDEN"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "FORBIDDEN"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9a",
+    "desc": "잘못된 입력 — customer 누락 -> MISSING_FIELDS",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9b",
+    "desc": "잘못된 입력 — itemName 누락 -> MISSING_FIELDS",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9c",
+    "desc": "잘못된 입력 — manager 누락 -> MISSING_FIELDS",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "9d",
+    "desc": "잘못된 입력 — 신규 등록인데 materialCode 누락 -> MISSING_MATERIAL_CODE",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_MATERIAL_CODE"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_MATERIAL_CODE"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "10a",
+    "desc": "담당소장 검증 — 존재하지 않는 이름 -> MANAGER_NOT_FOUND",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MANAGER_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MANAGER_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "10b",
+    "desc": "담당소장 검증 — 다른 팀 소속 담당소장 -> MANAGER_NOT_IN_YOUR_TEAM",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MANAGER_NOT_IN_YOUR_TEAM"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MANAGER_NOT_IN_YOUR_TEAM"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "11",
+    "desc": "고객사 없음 — 존재하지 않는 고객사명 + newCustomerCode 없음 -> CUSTOMER_NOT_FOUND",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "12",
+    "desc": "수정 대상 없음 — 존재하지 않는 itemId로 수정 시도 -> ITEM_NOT_FOUND",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "ITEM_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "ITEM_NOT_FOUND"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "17",
+    "desc": "롤백 시 다른 고객사 행 보존 — 여러 고객사가 있을 때 방금 만든 것만 정확히 제거",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C010",
+          "고객사A",
+          "이담당"
+        ],
+        [
+          "C011",
+          "고객사B",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C010",
+          "고객사A",
+          "이담당"
+        ],
+        [
+          "C011",
+          "고객사B",
+          "이담당"
+        ]
+      ],
+      "items": [
+        [
+          "MP-100",
+          "기존고객사",
+          "기존품목",
+          "이담당",
+          "동부",
+          "원자재A",
+          "활성",
+          46000
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "UC1",
+    "desc": "upsertCustomer 정상 등록",
+    "appsScript": {
+      "result": {
+        "ok": true,
+        "code": "C100",
+        "name": "새고객사",
+        "manager": "이담당"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C100",
+          "새고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": true,
+        "code": "C100",
+        "name": "새고객사",
+        "manager": "이담당"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ],
+        [
+          "C100",
+          "새고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "UC2",
+    "desc": "upsertCustomer 중복 — 이름",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "UC3",
+    "desc": "upsertCustomer 중복 — 코드",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "CUSTOMER_CODE_ALREADY_EXISTS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "UC4",
+    "desc": "upsertCustomer 권한 없는 사용자 -> FORBIDDEN",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "FORBIDDEN"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "FORBIDDEN"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "A",
+    "name": "UC5",
+    "desc": "upsertCustomer 필드 누락(code 없음) -> MISSING_FIELDS",
+    "appsScript": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "cloudRun": {
+      "result": {
+        "ok": false,
+        "error": "MISSING_FIELDS"
+      },
+      "customers": [
+        [
+          "C001",
+          "기존고객사",
+          "이담당"
+        ]
+      ]
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "15",
+    "desc": "idempotencyKey 중복(upsertItem) -> actionFn은 1회만 실행, 두 응답 동일",
+    "detail": {
+      "callCount": 1,
+      "r1": {
+        "ok": true,
+        "itemId": "MP-900",
+        "mode": "created",
+        "calledWith": 1
+      },
+      "r2": {
+        "ok": true,
+        "itemId": "MP-900",
+        "mode": "created",
+        "calledWith": 1
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "16-a",
+    "desc": "IN_PROGRESS -> 폴링 중 DONE으로 전환 -> 그 응답을 그대로 받음",
+    "detail": {
+      "r": {
+        "ok": true,
+        "itemId": "MP-901",
+        "mode": "created"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "16-b",
+    "desc": "IN_PROGRESS가 끝까지 안 풀림(upsertCustomer) -> DUPLICATE_IN_PROGRESS_RETRY_LATER",
+    "detail": {
+      "r": {
+        "ok": false,
+        "error": "DUPLICATE_IN_PROGRESS_RETRY_LATER"
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "B",
+    "name": "세션재확인",
+    "desc": "세션 오류 4종(토큰없음/세션없음/만료/정상) -> 에러 코드 표와 일치(회귀 재확인)",
+    "detail": {
+      "noToken": {
+        "ok": false,
+        "status": 400,
+        "error": "MISSING_SESSION_TOKEN"
+      },
+      "notFound": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_NOT_FOUND",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "expired": {
+        "ok": false,
+        "status": 200,
+        "error": "SESSION_EXPIRED",
+        "timings": {
+          "sessionMs": 0
+        }
+      },
+      "valid": {
+        "ok": true,
+        "email": "lead-a@nkmro.com",
+        "ref": {
+          "store": {},
+          "id": "valid-token"
+        },
+        "timings": {
+          "sessionMs": 0
+        }
+      }
+    },
+    "same": true
+  },
+  {
+    "group": "C",
+    "name": "C1",
+    "desc": "정상 락 획득 + 해제 — 획득 성공, 해제 후 락 문서 삭제",
+    "detail": {
+      "got": true,
+      "beforeExists": true,
+      "afterExists": false
+    },
+    "same": true
+  },
+  {
+    "group": "C",
+    "name": "C2",
+    "desc": "유효한 락 경합 — 다른 holder가 쥐고 있으면 waitMs 끝까지 기다려도 획득 실패",
+    "detail": {
+      "got": false,
+      "elapsedMs": 403
+    },
+    "same": true
+  },
+  {
+    "group": "C",
+    "name": "C3",
+    "desc": "락 해제 후 재시도 성공 — 먼저 쥔 쪽이 해제하면 대기 중이던 쪽이 곧바로 획득",
+    "detail": {
+      "got": true,
+      "elapsedMs": 302
+    },
+    "same": true
+  },
+  {
+    "group": "C",
+    "name": "C4",
+    "desc": "죽은 락 자가회수 — staleMs보다 오래된 락은 대기 없이 즉시 탈취",
+    "detail": {
+      "got": true,
+      "elapsedMs": 0
+    },
+    "same": true
+  },
+  {
+    "group": "C",
+    "name": "C5",
+    "desc": "holder 불일치 시 해제 무시 — 남의 락을 실수로 지우지 않음",
+    "detail": {
+      "stillExists": true,
+      "holderId": "holder-real"
+    },
+    "same": true
+  },
+  {
+    "group": "D",
+    "name": "13",
+    "desc": "동시 등록(락 경합, 같은 자재코드) — 둘 다 동시에 보내도 하나만 성공, 나머지는 MATERIAL_CODE_ALREADY_EXISTS",
+    "detail": {
+      "r1": {
+        "ok": true,
+        "itemId": "MP-700",
+        "mode": "created"
+      },
+      "r2": {
+        "ok": false,
+        "error": "MATERIAL_CODE_ALREADY_EXISTS"
+      },
+      "mp700CountInFinalItems": 1
+    },
+    "same": true
+  },
+  {
+    "group": "D",
+    "name": "14",
+    "desc": "동시 등록(락 경합, 다른 자재코드) — 둘 다 동시에 보내도 순차 직렬화되어 둘 다 성공",
+    "detail": {
+      "r1": {
+        "ok": true,
+        "itemId": "MP-800",
+        "mode": "created"
+      },
+      "r2": {
+        "ok": true,
+        "itemId": "MP-801",
+        "mode": "created"
+      },
+      "has800": true,
+      "has801": true
+    },
+    "same": true
+  }
+]
