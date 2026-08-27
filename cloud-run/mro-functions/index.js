@@ -1438,6 +1438,84 @@ exports.getCustomersTest = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /getUsersTest (사용자 현황 페이지 읽기, Track B — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: 2026-08-27 채팅에서 분석/설계 계획 승인 -> 이번 코드 구현 승인. 다음 단계
+// (별도 승인 필요): parity 테스트 -> GitHub 커밋 -> Cloud Run 배포 -> feed.html 연결
+// (getItems/getCustomers와 동일한 "1회 시도 실패 시 조용히 Apps Script로 폴백" 읽기 정책).
+//
+// [재사용] 세션 인증은 lib/auth.js, 시트 읽기는 lib/sheetsClient.js(getSheetsClient/
+// batchGetValues/rowsToUsers — 전부 기존 함수, 이번에 수정 없음)를 그대로 쓴다. 새 range
+// 상수도 필요 없다 — 기존 POLL_USER_RANGE(사용자팀마스터!A2:I) 하나만 읽으면 된다.
+//
+// [권한] Code.gs handleGetUsers_(3343~3364행) 포팅. isAdmin(ADMIN_EMAIL 본인)이거나
+// role이 '담당'/'팀장'이면 호출 자체는 허용(FORBIDDEN 아님). admin이 아니면 결과가 자기
+// 팀으로 좁혀진다. role이 '일반'/'임원'이면(admin 아닌 한) FORBIDDEN — settings 의존 없음
+// (getItems의 팀장_열람범위 같은 2차 재필터가 원본에 없음, 그대로 옮김).
+//
+// [권한 범위] 읽기 전용(spreadsheets.readonly)만 쓴다 — 쓰기 스코프를 새로 만들지 않았다.
+//
+// [row 번호] Code.gs는 헤더 포함 배열을 i=1부터 순회하며 row: i+1을 반환한다. 여기서는
+// POLL_USER_RANGE가 A2부터 시작(헤더 제외)하므로, 배열 인덱스 j에 대응하는 실제 시트 행
+// 번호는 j+2다(j=0 -> 시트 2행, Code.gs의 i=1 -> row=2와 동일한 결과). rowsToUsers()는
+// row 번호를 넣어주지 않으므로, viewer(호출자 본인) 조회에는 rowsToUsers()를 그대로 쓰고,
+// 응답에 넣을 사용자 목록은 원본 행 배열(rawUserRows)을 직접 순회해 만든다 — rowsToUsers()
+// 자체는 건드리지 않는다(다른 배포된 함수들이 그대로 쓰고 있음).
+exports.getUsersTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const rawUserRows = (valueRanges[0] && valueRanges[0].values) || [];
+    const allUsers = rowsToUsers(rawUserRows);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const isAdmin = String(viewer.email).trim().toLowerCase() === ADMIN_EMAIL;
+    const isScopedRole = (viewer.role === '담당' || viewer.role === '팀장');
+    if (!isAdmin && !isScopedRole) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN' });
+      return;
+    }
+
+    const users = [];
+    for (let i = 0; i < rawUserRows.length; i++) {
+      const row = rawUserRows[i];
+      if (!row[0]) continue;
+      if (!isAdmin && String(row[3]).trim() !== String(viewer.team).trim()) continue;
+      users.push({ row: i + 2, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4] });
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, users: users });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /updateCommentTest, POST /deleteCommentTest (댓글 수정/삭제 이전 2단계 — 코드 구현만,
 // 아직 미배포/미연결)
 // 승인 경로: 2026-08-25 채팅에서 분석/계획 승인(1순위 읽기 2개 다음으로 댓글 수정/삭제,
