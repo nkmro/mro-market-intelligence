@@ -571,6 +571,17 @@ const CLOUD_RUN_MARKTHREADSEEN_URL = 'https://asia-northeast3-mro-market-intelli
 // postCommentRemote_()가 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패)을 직접 처리한다.
 // 자세한 정책은 postCommentRemote_() 주석 참고.
 const CLOUD_RUN_POSTCOMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/postCommentTest';
+
+// getItems/getCustomers Cloud Run 배선(Track A, 설계 승인 완료 — getComments와 동일한 읽기 폴백 패턴).
+// 빈 문자열로 바꾸면 즉시 기존 Apps Script 경로로만 동작한다(다른 CLOUD_RUN_*_URL과 동일한 롤백 스위치).
+const CLOUD_RUN_GET_ITEMS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getItemsTest';
+const CLOUD_RUN_GET_CUSTOMERS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCustomersTest';
+
+// updateComment/deleteComment Cloud Run 배선(Track A, 설계 승인 완료 — postComment와 동일한 3단 폴백
+// 정책: 명확한 실패는 그대로, 애매한 실패만 같은 idempotencyKey로 1회 재시도, 그래도 애매하면 Apps
+// Script로 조용히 넘기지 않음). 빈 문자열로 바꾸면 즉시 기존 Apps Script 경로로만 동작한다.
+const CLOUD_RUN_UPDATE_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/updateCommentTest';
+const CLOUD_RUN_DELETE_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/deleteCommentTest';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -2001,8 +2012,17 @@ async function submitEditComment(postId, itemId, commentId) {
   const btn = document.getElementById('edit-save-' + commentId); ta.disabled = true; if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
-    const res = await callApi('updateComment', { commentId, content });
+    // updateComment Cloud Run 배선(Track A, 설계 승인 완료): CLOUD_RUN_UPDATE_COMMENT_URL이 채워져
+    // 있으면 updateCommentRemote_()의 3단 폴백 정책을 먼저 시도하고, 비어 있으면(롤백 상태) 기존
+    // Apps Script 경로를 그대로 쓴다 — postComment/login과 동일한 "빈 문자열로 롤백" 스위치 패턴.
+    const res = (await updateCommentRemote_(commentId, content))
+      || await callApi('updateComment', { commentId, content });
     if (!res.ok) {
+      if (res.error === 'AMBIGUOUS_NEEDS_CONFIRMATION') {
+        alert('댓글 수정 여부를 확인할 수 없습니다.\n잠시 후 새로고침해서 수정이 실제로 반영됐는지 확인해주세요.\n반영되지 않았다면 다시 시도해주세요.');
+        ta.disabled = false; if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+        return;
+      }
       alert(res.error === 'FORBIDDEN_NOT_AUTHOR' ? '본인이 작성한 댓글만 수정할 수 있어요.' : ('수정하지 못했어요. (' + res.error + ')'));
       ta.disabled = false; if (btn) { btn.disabled = false; btn.textContent = '저장'; }
       return;
@@ -2021,8 +2041,17 @@ async function submitEditComment(postId, itemId, commentId) {
 async function deleteCommentConfirm(postId, itemId, commentId) {
   if (!confirm('이 댓글을 삭제할까요? 되돌릴 수 없어요.')) return; const __pc = postComments[postId]; const __target = __pc && __pc.comments ? __pc.comments.find(c => c.commentId === commentId) : null; if (__target) { __target.deleting = true; renderThread(postId, itemId); }
   try {
-    const res = await callApi('deleteComment', { commentId });
+    // deleteComment Cloud Run 배선(Track A, 설계 승인 완료): CLOUD_RUN_DELETE_COMMENT_URL이 채워져
+    // 있으면 deleteCommentRemote_()의 3단 폴백 정책을 먼저 시도하고, 비어 있으면(롤백 상태) 기존
+    // Apps Script 경로를 그대로 쓴다 — postComment/login과 동일한 "빈 문자열로 롤백" 스위치 패턴.
+    const res = (await deleteCommentRemote_(commentId))
+      || await callApi('deleteComment', { commentId });
     if (!res.ok) {
+      if (res.error === 'AMBIGUOUS_NEEDS_CONFIRMATION') {
+        alert('댓글 삭제 여부를 확인할 수 없습니다.\n잠시 후 새로고침해서 댓글이 실제로 삭제됐는지 확인해주세요.\n삭제되지 않았다면 다시 시도해주세요.');
+        if (__target) { __target.deleting = false; renderThread(postId, itemId); }
+        return;
+      }
       alert(res.error === 'FORBIDDEN_NOT_AUTHOR' ? '본인이 작성한 댓글만 삭제할 수 있어요.' : ('삭제하지 못했어요. (' + res.error + ')')); if (__target) { __target.deleting = false; renderThread(postId, itemId); }
       return;
     }
@@ -2452,6 +2481,118 @@ async function postCommentRemote_(postId, itemId, content, parentCommentId) {
   return { ok: false, error: 'AMBIGUOUS_NEEDS_CONFIRMATION' };
 }
 
+// updateComment Cloud Run 배선 — postComment와 동일한 3단 폴백 정책(POSTCOMMENT_CLOUDRUN_DESIGN_v2.md
+// 3번 패턴 재사용). CLOUD_RUN_UPDATE_COMMENT_URL이 비어 있으면 null을 반환해 호출부(submitEditComment)가
+// 기존 callApi('updateComment', ...) Apps Script 경로를 그대로 쓰게 한다(롤백 스위치, postComment/login과 동일).
+async function updateCommentRemote_(commentId, content) {
+  if (!CLOUD_RUN_UPDATE_COMMENT_URL) return null;
+
+  const idempotencyKey = generateIdempotencyKey_();
+  const requestBody = {
+    sessionToken: session ? session.sessionToken : null,
+    commentId: commentId, content: content,
+    idempotencyKey: idempotencyKey
+  };
+
+  async function attemptOnce_() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    try {
+      const res = await fetch(CLOUD_RUN_UPDATE_COMMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      let json;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        return { ambiguous: true };
+      }
+      if (json && typeof json.ok === 'boolean') {
+        return { ambiguous: false, json: json };
+      }
+      return { ambiguous: true };
+    } catch (networkErr) {
+      return { ambiguous: true };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  const first = await attemptOnce_();
+  if (!first.ambiguous) {
+    console.log('[updateComment] source=cloud-run attempt=1 ok=' + first.json.ok);
+    return first.json;
+  }
+
+  console.log('[updateComment] source=cloud-run ambiguous(attempt=1) -> retrying with same idempotencyKey');
+  const second = await attemptOnce_();
+  if (!second.ambiguous) {
+    console.log('[updateComment] source=cloud-run attempt=2(retry) ok=' + second.json.ok);
+    return second.json;
+  }
+
+  console.log('[updateComment] source=cloud-run ambiguous(attempt=2) -> no silent Apps Script fallback, needs user confirmation');
+  return { ok: false, error: 'AMBIGUOUS_NEEDS_CONFIRMATION' };
+}
+
+// deleteComment Cloud Run 배선 — updateComment와 동일한 3단 폴백 정책.
+async function deleteCommentRemote_(commentId) {
+  if (!CLOUD_RUN_DELETE_COMMENT_URL) return null;
+
+  const idempotencyKey = generateIdempotencyKey_();
+  const requestBody = {
+    sessionToken: session ? session.sessionToken : null,
+    commentId: commentId,
+    idempotencyKey: idempotencyKey
+  };
+
+  async function attemptOnce_() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    try {
+      const res = await fetch(CLOUD_RUN_DELETE_COMMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      let json;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        return { ambiguous: true };
+      }
+      if (json && typeof json.ok === 'boolean') {
+        return { ambiguous: false, json: json };
+      }
+      return { ambiguous: true };
+    } catch (networkErr) {
+      return { ambiguous: true };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  const first = await attemptOnce_();
+  if (!first.ambiguous) {
+    console.log('[deleteComment] source=cloud-run attempt=1 ok=' + first.json.ok);
+    return first.json;
+  }
+
+  console.log('[deleteComment] source=cloud-run ambiguous(attempt=1) -> retrying with same idempotencyKey');
+  const second = await attemptOnce_();
+  if (!second.ambiguous) {
+    console.log('[deleteComment] source=cloud-run attempt=2(retry) ok=' + second.json.ok);
+    return second.json;
+  }
+
+  console.log('[deleteComment] source=cloud-run ambiguous(attempt=2) -> no silent Apps Script fallback, needs user confirmation');
+  return { ok: false, error: 'AMBIGUOUS_NEEDS_CONFIRMATION' };
+}
+
 
 function resetIdleTimer() {
 touchLastActivity();
@@ -2573,6 +2714,54 @@ function canEditItems() {
 return session.role === '팀장' || session.email === ADMIN_EMAIL;
 }
 
+// getItems/getCustomers Cloud Run 배선 — getComments와 동일한 읽기 전용 폴백 패턴(20초 타임아웃,
+// ok:true일 때만 채택, 그 외(예외/타임아웃/ok:false 전부)는 조용히 기존 Apps Script로 폴백).
+async function getItemsRemote_() {
+  if (CLOUD_RUN_GET_ITEMS_URL) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+      const cloudRes = await fetch(CLOUD_RUN_GET_ITEMS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+        signal: controller.signal
+      }).then(function (r) { return r.json(); });
+      clearTimeout(timeoutId);
+      if (cloudRes && cloudRes.ok === true) {
+        console.log('[getItems] source=cloud-run');
+        return cloudRes;
+      }
+    } catch (e) {}
+  }
+  const res = await callApi('getItems', {});
+  console.log('[getItems] source=apps-script');
+  return res;
+}
+
+async function getCustomersRemote_() {
+  if (CLOUD_RUN_GET_CUSTOMERS_URL) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+      const cloudRes = await fetch(CLOUD_RUN_GET_CUSTOMERS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+        signal: controller.signal
+      }).then(function (r) { return r.json(); });
+      clearTimeout(timeoutId);
+      if (cloudRes && cloudRes.ok === true) {
+        console.log('[getCustomers] source=cloud-run');
+        return cloudRes;
+      }
+    } catch (e) {}
+  }
+  const res = await callApi('getCustomers', {});
+  console.log('[getCustomers] source=apps-script');
+  return res;
+}
+
 async function loadItems(isRetry) {
 const root = document.getElementById('items-view');
 // 이미 한번 불러온 적이 있으면(=백그라운드 복귀 등으로 인한 조용한 갱신) 화면을 비우지 않고
@@ -2587,8 +2776,8 @@ root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불
 // 나머지가 성공했으면 화면은 정상적으로 띄운다 (구글 앱스 스크립트는 동시 요청에
 // 가끔 삐끗할 수 있어, 하나의 실패가 전체를 막아버리지 않도록 하기 위함).
 const settled = await Promise.allSettled([
-callApi('getItems', {}),
-callApi('getCustomers', {}),
+getItemsRemote_(),
+getCustomersRemote_(),
 callApi('getUsers', {})
 ]);
 const itemsRes = settled[0].status === 'fulfilled' ? settled[0].value : { ok: false, error: 'NETWORK_ERROR' };
