@@ -1,0 +1,737 @@
+[
+  {
+    "name": "1",
+    "desc": "role='일반', admin 아님 -> FORBIDDEN",
+    "input": {
+      "user": {
+        "email": "gen@nkmro.com",
+        "role": "일반",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "gen@nkmro.com",
+          "일반사원",
+          "일반",
+          "동부",
+          "활성"
+        ],
+        [
+          "dept@nkmro.com",
+          "담당자",
+          "담당",
+          "동부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "match": true
+  },
+  {
+    "name": "2",
+    "desc": "role='임원', admin 아님 -> FORBIDDEN(임원은 담당/팀장이 아니므로 자동 승인 안 됨)",
+    "input": {
+      "user": {
+        "email": "exec@nkmro.com",
+        "role": "임원",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "exec@nkmro.com",
+          "임원",
+          "임원",
+          "동부",
+          "활성"
+        ],
+        [
+          "dept@nkmro.com",
+          "담당자",
+          "담당",
+          "동부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "cloudRunResult": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    },
+    "match": true
+  },
+  {
+    "name": "3",
+    "desc": "role='담당'(admin 아님) -> 자기 팀(동부)만, 다른 팀(서부) 제외",
+    "input": {
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "dept@nkmro.com",
+          "담당자",
+          "담당",
+          "동부",
+          "활성"
+        ],
+        [
+          "other@nkmro.com",
+          "다른팀원",
+          "일반",
+          "서부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "4",
+    "desc": "role='팀장'(admin 아님) -> 자기 팀(동부)만, 다른 팀(서부) 제외",
+    "input": {
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "lead@nkmro.com",
+          "팀장",
+          "팀장",
+          "동부",
+          "활성"
+        ],
+        [
+          "other@nkmro.com",
+          "다른팀원",
+          "일반",
+          "서부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "lead@nkmro.com",
+          "name": "팀장",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "lead@nkmro.com",
+          "name": "팀장",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "5",
+    "desc": "role='일반'이지만 이메일이 ADMIN_EMAIL -> FORBIDDEN 아니고 전체 팀 노출",
+    "input": {
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "일반",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "jhjoo@nkmro.com",
+          "관리자",
+          "일반",
+          "동부",
+          "활성"
+        ],
+        [
+          "other@nkmro.com",
+          "다른팀원",
+          "일반",
+          "서부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "jhjoo@nkmro.com",
+          "name": "관리자",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "jhjoo@nkmro.com",
+          "name": "관리자",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "6",
+    "desc": "role='담당' + admin 이메일 -> 전체 팀 노출(getItems와 달리 2차 재필터 없음)",
+    "input": {
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "jhjoo@nkmro.com",
+          "관리자",
+          "담당",
+          "동부",
+          "활성"
+        ],
+        [
+          "other@nkmro.com",
+          "다른팀원",
+          "일반",
+          "서부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "jhjoo@nkmro.com",
+          "name": "관리자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "jhjoo@nkmro.com",
+          "name": "관리자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "7",
+    "desc": "관리자 이메일 대소문자 다름(JHJoo@NKMRO.com) -> 정상적으로 admin 판정, 전체 팀 노출",
+    "input": {
+      "user": {
+        "email": "JHJoo@NKMRO.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "JHJoo@NKMRO.com",
+          "관리자",
+          "팀장",
+          "동부",
+          "활성"
+        ],
+        [
+          "other@nkmro.com",
+          "다른팀원",
+          "일반",
+          "서부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "JHJoo@NKMRO.com",
+          "name": "관리자",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "JHJoo@NKMRO.com",
+          "name": "관리자",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "other@nkmro.com",
+          "name": "다른팀원",
+          "role": "일반",
+          "team": "서부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "8",
+    "desc": "이메일(A열)이 빈 행은 결과에서 제외",
+    "input": {
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "dept@nkmro.com",
+          "담당자",
+          "담당",
+          "동부",
+          "활성"
+        ],
+        [
+          "",
+          "유령행",
+          "일반",
+          "동부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "9",
+    "desc": "team 값에 앞뒤 공백('동부 ') -> trim 비교로 정상 포함(getItems 2차 필터처럼 미trim 배제가 없음)",
+    "input": {
+      "user": {
+        "email": "dept@nkmro.com",
+        "role": "담당",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "dept@nkmro.com",
+          "담당자",
+          "담당",
+          "동부",
+          "활성"
+        ],
+        [
+          "spaced@nkmro.com",
+          "공백팀원",
+          "일반",
+          "동부 ",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "spaced@nkmro.com",
+          "name": "공백팀원",
+          "role": "일반",
+          "team": "동부 ",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "dept@nkmro.com",
+          "name": "담당자",
+          "role": "담당",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "spaced@nkmro.com",
+          "name": "공백팀원",
+          "role": "일반",
+          "team": "동부 ",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "10",
+    "desc": "사용자 행이 하나도 없음 -> 빈 배열",
+    "input": {
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": []
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": []
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": []
+    },
+    "match": true
+  },
+  {
+    "name": "11",
+    "desc": "row 번호 계산: 3번째 데이터 행(인덱스 2)의 row 값이 4(=2+2)로 정확히 나오는지",
+    "input": {
+      "user": {
+        "email": "jhjoo@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "u1@nkmro.com",
+          "사용자1",
+          "일반",
+          "동부",
+          "활성"
+        ],
+        [
+          "u2@nkmro.com",
+          "사용자2",
+          "일반",
+          "동부",
+          "활성"
+        ],
+        [
+          "u3@nkmro.com",
+          "사용자3",
+          "일반",
+          "동부",
+          "활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "u1@nkmro.com",
+          "name": "사용자1",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "u2@nkmro.com",
+          "name": "사용자2",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 4,
+          "email": "u3@nkmro.com",
+          "name": "사용자3",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 2,
+          "email": "u1@nkmro.com",
+          "name": "사용자1",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 3,
+          "email": "u2@nkmro.com",
+          "name": "사용자2",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 4,
+          "email": "u3@nkmro.com",
+          "name": "사용자3",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        }
+      ]
+    },
+    "match": true
+  },
+  {
+    "name": "12",
+    "desc": "자기 팀/다른 팀 섞여 있음 -> 자기 팀만, 원본 행 순서 그대로 유지",
+    "input": {
+      "user": {
+        "email": "lead@nkmro.com",
+        "role": "팀장",
+        "team": "동부"
+      },
+      "rows": [
+        [
+          "a@nkmro.com",
+          "A",
+          "일반",
+          "서부",
+          "활성"
+        ],
+        [
+          "lead@nkmro.com",
+          "팀장",
+          "팀장",
+          "동부",
+          "활성"
+        ],
+        [
+          "b@nkmro.com",
+          "B",
+          "일반",
+          "동부",
+          "활성"
+        ],
+        [
+          "c@nkmro.com",
+          "C",
+          "일반",
+          "중부",
+          "활성"
+        ],
+        [
+          "d@nkmro.com",
+          "D",
+          "일반",
+          "동부",
+          "비활성"
+        ]
+      ]
+    },
+    "appsScriptResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 3,
+          "email": "lead@nkmro.com",
+          "name": "팀장",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 4,
+          "email": "b@nkmro.com",
+          "name": "B",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 6,
+          "email": "d@nkmro.com",
+          "name": "D",
+          "role": "일반",
+          "team": "동부",
+          "status": "비활성"
+        }
+      ]
+    },
+    "cloudRunResult": {
+      "ok": true,
+      "users": [
+        {
+          "row": 3,
+          "email": "lead@nkmro.com",
+          "name": "팀장",
+          "role": "팀장",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 4,
+          "email": "b@nkmro.com",
+          "name": "B",
+          "role": "일반",
+          "team": "동부",
+          "status": "활성"
+        },
+        {
+          "row": 6,
+          "email": "d@nkmro.com",
+          "name": "D",
+          "role": "일반",
+          "team": "동부",
+          "status": "비활성"
+        }
+      ]
+    },
+    "match": true
+  }
+]
