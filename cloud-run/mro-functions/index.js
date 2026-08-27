@@ -25,6 +25,11 @@ const feedResponses = require('./lib/feedResponses');
 // 2026-08-20 (markThreadSeen 1단계, 설계 승인 완료 — MARKTHREADSEEN_CLOUDRUN_DESIGN.md):
 // Firestore 트랜잭션 기반 쓰기 idempotency 처리 공통화. markThreadSeenTest만 이번에 사용한다.
 const { withIdempotency } = require('./lib/writeIdempotency');
+// 2026-08-27 (upsertItem/upsertCustomer 1단계, 설계 승인 완료 —
+// UPSERTITEM_UPSERTCUSTOMER_CLOUDRUN_DESIGN.md): Firestore 트랜잭션 기반 분산 락 공통화.
+// upsertItemTest/upsertCustomerTest만 이번에 사용한다(loginTest의 acquireLoginLock_/
+// releaseLoginLock_은 그대로 두고 건드리지 않았다).
+const { acquireLock, releaseLock } = require('./lib/writeLock');
 
 const SPREADSHEET_ID = '1_pvEWU3PRoLM4ZO8aY2v0kEYz--tFNRy2g_fE6MMubU';
 // Sheet tab name is written as a JS unicode escape (Korean debug-log tab name).
@@ -1751,3 +1756,406 @@ async function deleteCommentAction_(viewer, allUsers, allPosts, allItems, settin
   const updatedAllComments = rowsToComments(kept);
   return Object.assign({ ok: true }, buildCommentUpdateResponse_(viewer, allUsers, allPosts, allItems, settings, updatedAllComments, postId));
 }
+
+// ---------------------------------------------------------------------------
+// POST /upsertItemTest, POST /upsertCustomerTest (품목/고객사 등록·수정 이전 1단계 —
+// 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: 2026-08-27 채팅에서 분석/설계 계획 승인(UPSERTITEM_UPSERTCUSTOMER_CLOUDRUN_DESIGN.md)
+// -> 이번 코드 구현 승인. 다음 단계(별도 승인 필요): parity 테스트 -> GitHub 커밋 -> Cloud Run
+// 배포 -> feed.html 연결.
+//
+// [재사용] 세션 인증(lib/auth.js), 초기 조회(lib/sheetsClient.js), idempotency
+// (lib/writeIdempotency.js)는 postCommentTest/markThreadSeenTest와 동일한 기존 모듈을 그대로
+// 재사용한다. 동시성 제어만 새로 만든 lib/writeLock.js(로그인의 acquireLoginLock_ 패턴을
+// 일반화)를 쓴다 — 설계 문서 2-3 참고.
+//
+// [USER_NOT_FOUND, Code.gs authenticateRequest_ 대응] 세션 인증 자체와는 별개로, 세션의
+// 이메일이 실제 사용자팀마스터에 있는지 여기서 확인한다(postCommentTest와 동일 — 이
+// 확인은 withIdempotency로 감싸지 않는다. Code.gs도 이 확인은 디스패처의 switch 진입 전에
+// 하고, withIdempotency_는 handleUpsertItem_/handleUpsertCustomer_ 호출만 감싼다). 다른
+// *Test 함수들과 마찬가지로 viewer.status(활성 여부)는 확인하지 않는다 — 기존 getItemsTest/
+// getCustomersTest/getUsersTest/postCommentTest 등도 동일하게 이 확인이 없는 채로 이미
+// 배포돼 있어(Code.gs authenticateRequest_와의 알려진 차이), 이번에 새로 생기는 차이가
+// 아니라 기존 관례를 그대로 따른 것이다.
+//
+// [권한] 두 함수 모두 쓰기 스코프(spreadsheets, 읽기+쓰기)를 쓴다 — postCommentTest/
+// markThreadSeenTest와 동일한 최소 권한 원칙에 따라, 이 두 함수 전용 헬퍼
+// (getItemCustomerWriteClient_) 안에서만 새로 만든다. 초기 조회(getSheetsClient, allUsers/
+// allCustomers)는 여전히 기존 읽기 전용 공유 클라이언트를 그대로 쓴다.
+//
+// [동시성, 설계 문서 2-3] Apps Script는 스크립트 전체가 공유하는 락 하나를 쓰지만, 여기서는
+// 실제로 정합성이 걸리는 범위(품목마스터/고객사마스터에 동시에 쓸 수 있는 upsertItem/
+// upsertCustomer)로 좁혀 두 함수가 락 이름 하나를 공유한다(2026-08-27 승인).
+const UPSERT_LOCK_NAME = 'upsertItemAndCustomer';
+const UPSERT_LOCK_WAIT_MS = 10000;  // Apps Script LockService.getScriptLock().tryLock(10000)과 동일
+const UPSERT_LOCK_STALE_MS = 15000; // login(10초)보다 여유 있게 — 품목/고객사 쓰기가 조금 더 걸릴 수 있음
+const UPSERT_LOCK_POLL_MS = 200;    // login(acquireLoginLock_)과 동일
+
+// markThreadSeenAction_/appendCommentRow_과 동일한 최소 권한 원칙: 이 함수 안에서만 쓰기
+// 스코프(spreadsheets, 읽기+쓰기)의 GoogleAuth를 새로 만든다. upsertItemAction_/
+// upsertCustomerAction_ 둘 다 이 헬퍼를 공유한다(같은 두 시트에만 쓰기 때문).
+async function getItemCustomerWriteClient_() {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  return auth.getClient();
+}
+
+// 고객사마스터(CUSTOMER_DATA_RANGE, 헤더 제외 A2:C)를 지금 이 순간 값으로 다시 읽는다 —
+// updateCommentAction_/deleteCommentAction_의 getFreshCommentRows_와 동일한 "fresh read"
+// 원칙(요청 맨 앞의 batchGet 스냅샷을 쓰지 않고, 락을 잡은 뒤 다시 읽어서 경합을 줄인다).
+// 고객사마스터에는 날짜형 컬럼이 없어 valueRenderOption을 따로 지정하지 않는다.
+async function getFreshCustomerRows_(client) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${CUSTOMER_DATA_RANGE}`;
+  const resp = await client.request({ url });
+  return (resp.data && resp.data.values) || [];
+}
+
+// 품목마스터(POLL_ITEM_RANGE, 헤더 제외 A2:H)를 지금 이 순간 값으로 다시 읽는다. H열(등록일)이
+// 실제 날짜형 셀이라 UNFORMATTED_VALUE로 받는다(getItemsTest와 동일한 이유) — 이번 두 함수는
+// H열 값 자체를 읽어서 쓰지는 않지만(row index 조회용), 다른 함수들과 같은 방식을 유지한다.
+async function getFreshItemRows_(client) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${POLL_ITEM_RANGE}?valueRenderOption=UNFORMATTED_VALUE`;
+  const resp = await client.request({ url });
+  return (resp.data && resp.data.values) || [];
+}
+
+// Code.gs findCustomerByName_/findCustomerByCode_(3267~3286행) 대응. rows는 fresh read로
+// 받은 원본 행 배열(A2:C 기준, index 0 == 시트 2행)이다.
+function findCustomerRowByName_(rows, name) {
+  return rows.find(function (row) { return String(row[1] || '').trim() === String(name).trim(); }) || null;
+}
+function findCustomerRowByCode_(rows, code) {
+  return rows.find(function (row) { return String(row[0] || '').trim() === String(code).trim(); }) || null;
+}
+
+// Code.gs getItemById_(2229~2247행)이 하는 "자재코드로 품목 찾기"와, itemId 수정 대상 찾기
+// 둘 다에 쓰는 공용 조회(품목마스터 A열은 자재코드=itemId이므로 로직이 동일하다). rows는
+// fresh read로 받은 원본 행 배열(A2:H 기준, index 0 == 시트 2행). 못 찾으면 -1.
+function findItemRowIndexById_(rows, itemId) {
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === String(itemId).trim()) return i;
+  }
+  return -1;
+}
+
+async function appendCustomerRow_(client, row) {
+  const appendRange = encodeURIComponent(SHEET_CUSTOMER_NAME + '!A:C');
+  const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  await client.request({ url: appendUrl, method: 'POST', data: { values: [row] } });
+}
+
+async function appendItemRow_(client, row) {
+  const appendRange = encodeURIComponent(SHEET_ITEM_NAME + '!A:H');
+  const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  await client.request({ url: appendUrl, method: 'POST', data: { values: [row] } });
+}
+
+// Code.gs handleUpsertItem_의 수정 경로(3200행, sheet.getRange(i+2,2,1,6).setValues(...))
+// 대응. B~G(6개 컬럼: customer/itemName/manager/team/materials/status)만 갱신 — A열(itemId)/
+// H열(등록일)은 건드리지 않는다. sheetRow는 실제 시트 행 번호(품목마스터 기준, 1-indexed).
+async function updateItemRow_(client, sheetRow, values6) {
+  const updateRange = encodeURIComponent(SHEET_ITEM_NAME + '!B' + sheetRow + ':G' + sheetRow);
+  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=RAW`;
+  await client.request({ url: updateUrl, method: 'PUT', data: { values: [values6] } });
+}
+
+// Code.gs handleUpsertItem_(3213~3217행)이 appendRow에 new Date()를 쓰고 이후
+// setNumberFormat('yyyy-mm-dd')로 표시 형식을 지정하는 것에 대응. Sheets API에는 Apps
+// Script의 Date 객체 개념이 없어서, postCommentAction_(963~966행)과 동일한 방식으로 시트
+// 시리얼 숫자를 직접 계산해서 raw 값으로 쓴다 — 그래야 등록일(H열)이 문자(텍스트)가 아니라
+// 기존 행들과 동일한 숫자(날짜)형 셀이 된다. postCommentAction_ 전용 상수/함수
+// (POSTCOMMENT_SPREADSHEET_UTC_OFFSET_MS/msToSheetSerial_)는 "다른 함수에는 쓰지 않는다"는
+// 주석이 명시돼 있어 재사용하지 않고, 이 함수 전용으로 별도 복사해 둔다(lib/feedEngine.js의
+// sheetSerialToMs의 정확한 역함수 — 그 오프셋 상수가 바뀌면 이 값도 함께 바꿔야 한다).
+// [확인 필요, 설계 문서 2-7-3] 등록일 컬럼이 실제로 날짜로 인식되는지는 postComment의
+// 댓글 작성일(I열)과 동일한 방식이라 동작할 것으로 예상하지만, 컬럼별 사전 서식이 다를 수
+// 있어 실제 구현 단계(smoke test)에서 재홍님이 직접 시트를 열어 육안 확인이 필요하다.
+const UPSERTITEM_SPREADSHEET_UTC_OFFSET_MS = 9 * 60 * 60 * 1000; // Asia/Seoul, DST 없음
+function msToSheetSerialForItem_(ms) {
+  return (ms + UPSERTITEM_SPREADSHEET_UTC_OFFSET_MS) / 86400000 + 25569;
+}
+
+// Code.gs 롤백(3227~3241행)의 "방금 만든 고객사 행 삭제" 대응. Sheets API에는 Apps Script의
+// deleteRow처럼 한 행을 바로 지우는 values API가 없어서, deleteCommentAction_(1739~1754행)이
+// 쓰는 것과 동일한 "대상 행을 뺀 나머지를 위로 당겨 다시 쓰고 마지막 1행을 비우는" 방식을
+// 그대로 재사용한다(batchUpdate의 deleteDimension 같은, 기존 함수 어디에도 없는 새 API
+// 표면을 쓰지 않기 위함 — 설계 문서 2-7-1에서 리스크로 표시했던 부분을, 이미 검증된 기존
+// 패턴을 재사용하는 방식으로 해소했다). 이 함수는 항상 upsertItemAction_이 락을 쥐고 있는
+// 동안에만 호출되므로(락 해제 전), 다른 upsertItem/upsertCustomer 요청이 같은 시트를 그
+// 사이에 건드릴 수 없다 — "나머지 전체를 다시 쓰는" 방식이 안전한 이유다.
+async function rollbackCustomerRow_(client, code) {
+  const rows = await getFreshCustomerRows_(client); // 헤더 제외, A2:C부터(index 0 == 시트 2행)
+  const targetIndex = rows.findIndex(function (row) { return String(row[0]).trim() === String(code).trim(); });
+  if (targetIndex === -1) return; // 이미 없으면(예: 예기치 못한 중복 롤백 시도) 조용히 무시
+
+  const kept = rows.filter(function (_, idx) { return idx !== targetIndex; });
+  if (kept.length > 0) {
+    const writeRange = encodeURIComponent(SHEET_CUSTOMER_NAME + '!A2:C' + (kept.length + 1));
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${writeRange}?valueInputOption=RAW`;
+    await client.request({ url: writeUrl, method: 'PUT', data: { values: kept } });
+  }
+  const staleRow = rows.length + 1; // A2:C 기준이라 삭제 전 마지막 데이터 행 = rows.length + 1
+  const clearRange = encodeURIComponent(SHEET_CUSTOMER_NAME + '!A' + staleRow + ':C' + staleRow);
+  const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${clearRange}:clear`;
+  await client.request({ url: clearUrl, method: 'POST', data: {} });
+}
+
+// Code.gs handleUpsertItem_(3123~3247행) 포팅. withIdempotency()가 이 함수 전체를 감싸므로
+// (아래 exports.upsertItemTest 참고), 여기서 반환하는 에러 응답(FORBIDDEN 포함)도 그대로
+// idempotency 캐시에 남는다 — Code.gs가 handleUpsertItem_ 전체(역할 검증 포함)를
+// withIdempotency_로 감싸는 것과 동일한 동작.
+//
+// allUsers/allCustomers는 요청 맨 앞 batchGet 스냅샷(exports.upsertItemTest에서 넘겨줌) —
+// MANAGER_NOT_FOUND/MANAGER_NOT_IN_YOUR_TEAM/CUSTOMER_NOT_FOUND/MISSING_MATERIAL_CODE
+// 같은 락 밖 사전 검증에만 쓰고(Code.gs도 이 단계는 락 밖에서 처리), 락을 잡은 뒤 실제
+// 쓰기 직전에는 항상 getFreshCustomerRows_/getFreshItemRows_로 다시 읽어 재검증한다
+// (Code.gs가 락 안에서 findCustomerByName_/findCustomerByCode_/getItemById_를 다시 호출하는
+// 것과 동일한 "락 안 재확인" 원칙).
+async function upsertItemAction_(viewer, allUsers, allCustomers, body) {
+  if (viewer.role !== '팀장') {
+    return { ok: false, error: 'FORBIDDEN' };
+  }
+
+  const itemId = body.itemId || ''; // Code.gs와 동일하게 여기서는 trim하지 않음(비교 시점에만 trim)
+  const customer = body.customer;
+  const itemName = body.itemName;
+  const manager = body.manager;
+  const materials = Array.isArray(body.materials) ? body.materials.join(', ') : (body.materials || '');
+  const status = body.status || '활성';
+  const materialCode = String(body.materialCode || '').trim();
+  const newCustomerCode = String(body.newCustomerCode || '').trim();
+
+  if (!customer || !itemName || !manager) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const managerUser = allUsers.find(function (u) { return String(u.name || '').trim() === String(manager).trim(); });
+  if (!managerUser) {
+    return { ok: false, error: 'MANAGER_NOT_FOUND' };
+  }
+  if (String(managerUser.team).trim() !== String(viewer.team).trim()) {
+    return { ok: false, error: 'MANAGER_NOT_IN_YOUR_TEAM' };
+  }
+  const team = managerUser.team;
+
+  const customerExists = allCustomers.some(function (c) { return String(c.name || '').trim() === String(customer).trim(); });
+  if (!customerExists && !newCustomerCode) {
+    return { ok: false, error: 'CUSTOMER_NOT_FOUND' };
+  }
+  if (!itemId && !materialCode) {
+    return { ok: false, error: 'MISSING_MATERIAL_CODE' };
+  }
+
+  const holderId = crypto.randomUUID();
+  const gotLock = await acquireLock(firestore, UPSERT_LOCK_NAME, holderId, {
+    waitMs: UPSERT_LOCK_WAIT_MS, staleMs: UPSERT_LOCK_STALE_MS, pollMs: UPSERT_LOCK_POLL_MS
+  });
+  if (!gotLock) {
+    return { ok: false, error: 'LOCK_TIMEOUT' };
+  }
+
+  // 2026-08-27: 신규 고객사 등록 + 품목 등록/수정을 하나의 락 구간에서 원자적으로 처리
+  // (Code.gs 3169~3176행 주석과 동일한 이유 — 두 요청으로 나누면 앞 요청만 성공하고 뒤
+  // 요청이 실패했을 때 고객사만 영구히 남는 불일치가 생길 수 있다). "이번 호출로 새로 만든
+  // 고객사"를 createdCustomerCode에 기록해서, 이후 어떤 이유로든 최종 result가 실패이면
+  // 그 고객사 행만 정확히 되돌린다(원래부터 있던 고객사는 롤백 대상이 아니다).
+  let createdCustomerCode = null;
+  let result;
+  // client는 아래 두 번째 try 블록 안에서 할당하지만, 예외 발생 시(catch 이후) 실행되는
+  // 롤백 검사에서도 같은 client가 필요하므로 이 바깥 스코프에서 선언한다(2026-08-27 수정).
+  let client;
+  try {
+    try {
+      client = await getItemCustomerWriteClient_();
+
+      if (!customerExists) {
+        const freshCustomerRows = await getFreshCustomerRows_(client);
+        if (findCustomerRowByName_(freshCustomerRows, customer)) {
+          result = { ok: false, error: 'CUSTOMER_ALREADY_EXISTS' };
+        } else if (findCustomerRowByCode_(freshCustomerRows, newCustomerCode)) {
+          result = { ok: false, error: 'CUSTOMER_CODE_ALREADY_EXISTS' };
+        } else {
+          await appendCustomerRow_(client, [newCustomerCode, customer, manager]);
+          createdCustomerCode = newCustomerCode;
+        }
+      }
+
+      if (!result) {
+        const freshItemRows = await getFreshItemRows_(client);
+        if (itemId) {
+          const rowIndex = findItemRowIndexById_(freshItemRows, itemId);
+          if (rowIndex === -1) {
+            result = { ok: false, error: 'ITEM_NOT_FOUND' };
+          } else {
+            await updateItemRow_(client, rowIndex + 2, [customer, itemName, manager, team, materials, status]);
+            result = { ok: true, itemId: itemId, mode: 'updated' };
+          }
+        } else if (findItemRowIndexById_(freshItemRows, materialCode) !== -1) {
+          result = { ok: false, error: 'MATERIAL_CODE_ALREADY_EXISTS' };
+        } else {
+          const registeredAtSerial = msToSheetSerialForItem_(Date.now());
+          await appendItemRow_(client, [materialCode, customer, itemName, manager, team, materials, status, registeredAtSerial]);
+          result = { ok: true, itemId: materialCode, mode: 'created' };
+        }
+      }
+    } catch (err) {
+      // 등록/수정 로직 중 예기치 못한 예외가 나도 여기서 삼키고, 아래 롤백 로직(이 catch
+      // 블록 바깥, try 블록과 같은 레벨)으로 흘러가게 한다 — Code.gs 3222~3241행과 동일한
+      // 제어 흐름. (2026-08-27 수정: 이전에는 롤백 검사가 이 catch보다 앞, 즉 위 try 블록
+      // 안에 있어서 예외가 나면 롤백 검사 자체가 실행되지 않는 버그가 있었다 — parity 테스트
+      // 시나리오 4b로 발견. 아래로 옮겨 Code.gs와 동일하게 예외 발생 시에도 항상 롤백을
+      // 시도하도록 수정했다.)
+      result = { ok: false, error: 'SERVER_ERROR', detail: String(err) };
+    }
+
+    // Code.gs 3227~3241행과 동일한 위치: 위 try/catch *바깥*에 있다 — catch에서
+    // SERVER_ERROR로 바뀐 경우도 포함해서, result가 실패이고 createdCustomerCode가 있으면
+    // 항상 롤백을 시도한다.
+    if (result && !result.ok && createdCustomerCode) {
+      try {
+        await rollbackCustomerRow_(client, createdCustomerCode);
+      } catch (rollbackErr) {
+        // 롤백 자체가 실패해도 원래 오류(result)는 그대로 반환한다(Code.gs 3238~3240행과 동일).
+        console.error('upsertItemAction_ 고객사 롤백 실패(무시, 원래 오류를 그대로 반환): ' + rollbackErr);
+      }
+    }
+    return result;
+  } finally {
+    await releaseLock(firestore, UPSERT_LOCK_NAME, holderId);
+  }
+}
+
+exports.upsertItemTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, idempotencyKey, itemId, customer, itemName, manager, materials, status, materialCode, newCustomerCode } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE, CUSTOMER_DATA_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const rawCustomerRows = (valueRanges[1] && valueRanges[1].values) || [];
+    const allCustomers = rowsToCustomers(rawCustomerRows.filter(function (row) { return !!row[1]; }));
+
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'upsertItem', async function () {
+      return upsertItemAction_(viewer, allUsers, allCustomers, {
+        itemId: itemId, customer: customer, itemName: itemName, manager: manager,
+        materials: materials, status: status, materialCode: materialCode, newCustomerCode: newCustomerCode
+      });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// Code.gs handleUpsertCustomer_(3502~3537행) 포팅. withIdempotency()가 이 함수 전체를
+// 감싸므로(아래 exports.upsertCustomerTest 참고), FORBIDDEN을 포함한 모든 에러 응답이 그대로
+// idempotency 캐시에 남는다 — Code.gs와 동일한 동작. upsertItemAction_과 같은 락
+// (UPSERT_LOCK_NAME)을 공유한다(설계 문서 2-3).
+//
+// [참고, 분석 단계에서 확인됨] 현재 feed.html은 이 액션을 단독으로 호출하지 않는다(2026-08-19
+// 리팩터링으로 upsertItem의 newCustomerCode 경로에 흡수됨). API 자체는 Code.gs 디스패처에
+// 여전히 살아있으므로 이번 이전에도 그대로 포팅한다.
+async function upsertCustomerAction_(viewer, body) {
+  if (viewer.role !== '팀장') {
+    return { ok: false, error: 'FORBIDDEN' };
+  }
+  const name = String(body.name || '').trim();
+  const code = String(body.code || '').trim();
+  const manager = String(body.manager || '').trim();
+  if (!name || !code) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const holderId = crypto.randomUUID();
+  const gotLock = await acquireLock(firestore, UPSERT_LOCK_NAME, holderId, {
+    waitMs: UPSERT_LOCK_WAIT_MS, staleMs: UPSERT_LOCK_STALE_MS, pollMs: UPSERT_LOCK_POLL_MS
+  });
+  if (!gotLock) {
+    return { ok: false, error: 'LOCK_TIMEOUT' };
+  }
+
+  try {
+    const client = await getItemCustomerWriteClient_();
+    // 2026-08-27: 중복확인 + 등록 전체를 락 구간 안에서 처리(Code.gs 3518~3521행 주석과 동일한
+    // 이유 — 락 밖에서 중복확인을 하면 동시 요청 두 개가 모두 통과해 같은 이름/코드로 두 번
+    // 등록될 수 있는 race condition이 생긴다).
+    const freshCustomerRows = await getFreshCustomerRows_(client);
+    if (findCustomerRowByName_(freshCustomerRows, name)) {
+      return { ok: false, error: 'CUSTOMER_ALREADY_EXISTS' };
+    }
+    if (findCustomerRowByCode_(freshCustomerRows, code)) {
+      return { ok: false, error: 'CUSTOMER_CODE_ALREADY_EXISTS' };
+    }
+    await appendCustomerRow_(client, [code, name, manager]);
+    return { ok: true, code: code, name: name, manager: manager };
+  } finally {
+    await releaseLock(firestore, UPSERT_LOCK_NAME, holderId);
+  }
+}
+
+exports.upsertCustomerTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, idempotencyKey, name, code, manager } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'upsertCustomer', async function () {
+      return upsertCustomerAction_(viewer, { name: name, code: code, manager: manager });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
