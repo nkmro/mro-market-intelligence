@@ -511,6 +511,14 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
   </div>
 </div>
 
+<!-- push 4단계(PUSH_NOTIFICATION_STAGE4_DESIGN.md) — 클라이언트에서 FCM 토큰을 발급받으려면
+     firebase-app-compat.js + firebase-messaging-compat.js가 필요하다. sw.js에 이미 추가한
+     것과 동일한 버전(12.18.0)으로 맞췄다 — 실제 배포 전 최신 버전인지 재확인 권장
+     (https://firebase.google.com/docs/web/setup). 이 파일에 외부 <script src>가 추가되는
+     것은 이번이 처음이며, 기존 어떤 인라인 스크립트/로직도 건드리지 않는다(순수 추가). -->
+<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging-compat.js"></script>
+
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby8ah2Ny5xtp0TMJd093KEsnNZkCItIOsHCoRNFdoOyjnUw4brP7vc28PAeccJms0rh/exec';
 const CLOUD_RUN_GET_SETTINGS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getSettingsTest';
@@ -607,6 +615,26 @@ const CLOUD_RUN_UPSERT_ITEM_URL = 'https://asia-northeast3-mro-market-intelligen
 const CLOUD_RUN_UPDATE_USER_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/updateUserTest';
 const CLOUD_RUN_CHANGE_PASSWORD_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/changePasswordTest';
 const CLOUD_RUN_UPDATE_SETTINGS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/updateSettingsTest';
+// push 4단계(PUSH_NOTIFICATION_STAGE4_DESIGN.md 2번) — registerPushSubscriptionTest는
+// Apps Script 쪽에 대응하는 액션이 없는 완전 신규 엔드포인트라, callApi()(Apps Script
+// 우선 + Cloud Run 있으면 그쪽으로 대체하는 기존 패턴)를 쓰지 않고 이 URL로 직접 호출한다.
+// 다른 CLOUD_RUN_*_URL 상수는 전혀 건드리지 않았다.
+const CLOUD_RUN_REGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/registerPushSubscriptionTest';
+// [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
+// 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
+// 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
+const FCM_FIREBASE_CONFIG = {
+  apiKey: 'REPLACE_WITH_FIREBASE_WEB_API_KEY',
+  authDomain: 'REPLACE_WITH_FIREBASE_AUTH_DOMAIN',
+  projectId: 'REPLACE_WITH_FIREBASE_PROJECT_ID',
+  storageBucket: 'REPLACE_WITH_FIREBASE_STORAGE_BUCKET',
+  messagingSenderId: 'REPLACE_WITH_FIREBASE_MESSAGING_SENDER_ID',
+  appId: 'REPLACE_WITH_FIREBASE_APP_ID'
+};
+const FCM_VAPID_PUBLIC_KEY = 'REPLACE_WITH_FIREBASE_WEB_PUSH_VAPID_PUBLIC_KEY';
+if (typeof firebase !== 'undefined') {
+  try { firebase.initializeApp(FCM_FIREBASE_CONFIG); } catch (e) { console.error('[push] firebase.initializeApp 실패(무시): ' + e); }
+}
 const ADMIN_EMAIL = 'jhjoo@nkmro.com';
 const GAS_PROJECT_URL = 'https://script.google.com/home/projects/1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe/edit';
 function openGasAdmin() {
@@ -1040,6 +1068,11 @@ sendDebugLogBeacon_({ kind: 'authLoadTiming', at: new Date().toISOString(), ms: 
 hideAuthLoadingOverlay();
 hideGenericLoading();
 updateNotifPermButton();
+// push 4단계(재홍님 확정 원칙 1번, 2026-08-28) — 로그인 성공마다 1번, "모든 사용자는
+// 알림을 받는다"는 기본값을 적용한다. initPushOnLogin_() 안에서 이미 permission 상태별로
+// 분기하므로(default/granted/denied) 여기서는 그냥 호출만 한다. 실패해도(권한 거부, 미지원
+// 브라우저 등) 로그인 자체가 막히지 않도록 await 없이 fire-and-forget으로 둔다.
+if (typeof initPushOnLogin_ === 'function') initPushOnLogin_().catch(function () {});
 startPolling();
 setupIdleTimer();
 clearTimeout(__authSafetyTimer);
@@ -2284,6 +2317,10 @@ function requestNotifPermission() {
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(function (perm) {
       updateNotifPermButton();
+      // push 4단계(재홍님 확정 원칙 3번, 2026-08-28) — 이 버튼은 알림을 껐다가 다시 켜려는
+      // 사용자의 "재활성화" 통로다. 재요청해서 허용(granted)되면 그 자리에서 바로 FCM 토큰도
+      // 등록한다 — 별도 토글 UI 없이, 버튼을 누르는 것 자체가 재등록 트리거가 되게 한다.
+      if (perm === 'granted' && typeof syncPushTokenIfNeeded === 'function') syncPushTokenIfNeeded();
     });
   }
 }
@@ -2299,6 +2336,80 @@ function updateNotifPermButton() {
   } else {
     btn.style.display = 'inline-flex';
   }
+}
+
+// ---------------------------------------------------------------------------
+// FCM 푸시 구독 등록 (push 4단계 — 코드 구현만, 아직 미배포/미연결)
+// 설계: PUSH_NOTIFICATION_STAGE4_DESIGN.md 3절. 위 requestNotifPermission()/
+// updateNotifPermButton()/notif-perm-btn(기존)은 전혀 건드리지 않았다 — 아래 3개 함수와,
+// requestNotifPermission() 안에 1줄만 추가로 연결한다(재홍님 승인, 2026-08-28).
+//
+// 기본 원칙(재홍님 확정, 2026-08-28): 모든 사용자는 로그인 시 알림을 받는 것이 기본값이다.
+// 브라우저 알림 권한이 아직 'default'(한 번도 응답 안 함)면 로그인 성공 후 자동으로 요청하고,
+// 이미 'granted'면 앱을 열 때마다 FCM 토큰을 다시 확인해서 필요하면 재등록한다(토큰 갱신
+// 감지, 설계 문서 3-2절). 'denied'(사용자가 브라우저 알림을 꺼둔 경우)는 등록을 시도하지
+// 않는다 — 기존 사이드바의 "🔔 알림 켜기" 버튼(notif-perm-btn)이 재활성화 통로로 남는다
+// (새 토글 UI를 따로 만들지 않는다는 재홍님 지시).
+function pushSupported_() {
+  return typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && typeof firebase !== 'undefined';
+}
+
+// 같은 브라우저/기기에서 재등록해도 Firestore에 새 문서가 쌓이지 않도록(설계 문서 2-1/2-3절),
+// 기기 하나당 안정적인 랜덤 ID를 한 번만 만들어 localStorage에 저장해두고 계속 재사용한다.
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem('mro_device_id');
+  if (!id) {
+    id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev_' + Date.now() + '_' + Math.random().toString(16).slice(2));
+    localStorage.setItem('mro_device_id', id);
+  }
+  return id;
+}
+
+// getToken()이 매번 같은 값을 주면(토큰 안 바뀜) 서버에 재요청하지 않는다 — localStorage에
+// 캐시해둔 이전 값과 비교(설계 문서 3-2절 토큰 갱신 감지). Notification.permission이
+// 'granted'가 아니면 아무 것도 하지 않는다(설계 문서 3-3절 미지원/거부 처리).
+async function syncPushTokenIfNeeded() {
+  if (!pushSupported_()) return;
+  if (Notification.permission !== 'granted') return;
+  if (!CLOUD_RUN_REGISTER_PUSH_SUBSCRIPTION_URL) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const messaging = firebase.messaging();
+    const token = await messaging.getToken({ vapidKey: FCM_VAPID_PUBLIC_KEY, serviceWorkerRegistration: reg });
+    if (!token) return;
+    const prevToken = localStorage.getItem('mro_fcm_token');
+    if (token === prevToken) return;
+    const deviceId = getOrCreateDeviceId();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const resp = await fetch(CLOUD_RUN_REGISTER_PUSH_SUBSCRIPTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, fcmToken: token, deviceId: deviceId }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    if (resp && resp.ok) localStorage.setItem('mro_fcm_token', token);
+  } catch (e) {
+    console.error('[push] syncPushTokenIfNeeded 실패(무시): ' + e);
+  }
+}
+
+// 로그인 성공 시마다 1번 호출(proceedAfterAuth()에서 딱 1줄로 연결). 위 주석의 기본 원칙을
+// 그대로 코드로 옮긴 것 — 'default'면 자동으로 권한을 묻고, 이미 'granted'면 토큰만 재확인,
+// 'denied'면 아무 것도 안 한다.
+async function initPushOnLogin_() {
+  if (!pushSupported_()) return;
+  if (Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    updateNotifPermButton();
+    if (perm === 'granted') await syncPushTokenIfNeeded();
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    await syncPushTokenIfNeeded();
+  }
+  // Notification.permission === 'denied'인 사용자는 등록하지 않는다(재홍님 확정 원칙 2번).
 }
 
 async function loadNotifNewPosts() {
