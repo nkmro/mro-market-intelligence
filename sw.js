@@ -68,12 +68,12 @@ importScripts('https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'REPLACE_WITH_FIREBASE_WEB_API_KEY',
-  authDomain: 'REPLACE_WITH_FIREBASE_AUTH_DOMAIN',
-  projectId: 'REPLACE_WITH_FIREBASE_PROJECT_ID',
-  storageBucket: 'REPLACE_WITH_FIREBASE_STORAGE_BUCKET',
-  messagingSenderId: 'REPLACE_WITH_FIREBASE_MESSAGING_SENDER_ID',
-  appId: 'REPLACE_WITH_FIREBASE_APP_ID'
+  apiKey: 'AIzaSyAkJ1V3BpxQ8ypt1jCYp3o06qlK2tvGnUI',
+  authDomain: 'mro-market-intelligence.firebaseapp.com',
+  projectId: 'mro-market-intelligence',
+  storageBucket: 'mro-market-intelligence.firebasestorage.app',
+  messagingSenderId: '771006650918',
+  appId: '1:771006650918:web:f4afd9132ef82a53b224e7'
 });
 
 const messaging = firebase.messaging();
