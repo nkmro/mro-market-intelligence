@@ -3484,6 +3484,12 @@ if (btn) { btn.disabled = false; btn.textContent = '저장'; }
 function doLogout() {
   localStorage.removeItem('mro_session');
   clearIdleTracking();
+  // 로그아웃 후에도 OS 앱 아이콘 뱃지 숫자가 남아있던 문제 수정. setAppBadge를 지원하지
+  // 않는 브라우저/환경에서도 안전하게 동작하도록 존재 여부를 확인하고, 실패해도(권한 등)
+  // 로그아웃 자체가 막히지 않도록 방어한다.
+  try {
+    if (navigator.clearAppBadge) navigator.clearAppBadge();
+  } catch (e) {}
   window.location.href = 'index.html';
 }
 </script>
