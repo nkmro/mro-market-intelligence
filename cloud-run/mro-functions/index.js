@@ -2484,3 +2484,74 @@ exports.updateSettingsTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// POST /registerPushSubscriptionTest (push 4단계 — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: NOTIFICATION_PUSH_REMINDER_ANALYSIS_AND_PLAN.md(분석) ->
+// PUSH_NOTIFICATION_STAGE3_DESIGN.md(Firestore 스키마 승인) ->
+// PUSH_NOTIFICATION_STAGE4_DESIGN.md(이 함수 설계 승인) -> 이번 코드 구현 승인. 다음 단계
+// (별도 승인 필요): sw.js push 리스너 추가 -> feed.html 토큰 발급/갱신 연결 -> GitHub 커밋 ->
+// Firestore pushSubscriptions 컬렉션 확인 -> Cloud Run 배포 -> Apps Script 배선.
+//
+// 세션 인증은 다른 모든 신규 함수와 동일하게 lib/auth.js의 authenticateSession을 그대로
+// 재사용한다(설계 문서 2-2절). Firestore pushSubscriptions/{email}_{deviceId} 문서에 완전한
+// upsert(merge)로 저장하므로 같은 요청이 여러 번 와도 결과가 같다 — writeIdempotency/
+// writeLock 모듈은 쓰지 않는다(설계 문서 2-3절의 결론). 이 파일의 다른 함수는 전혀 건드리지
+// 않았다(순수 추가).
+const { FieldValue } = require('@google-cloud/firestore');
+
+exports.registerPushSubscriptionTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, fcmToken, deviceId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!fcmToken) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, timings, error: 'MISSING_FCM_TOKEN' });
+      return;
+    }
+    if (!deviceId) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, timings, error: 'MISSING_DEVICE_ID' });
+      return;
+    }
+
+    const u0 = Date.now();
+    await registerPushSubscriptionAction_(email, fcmToken, deviceId);
+    timings.firestoreMs = Date.now() - u0;
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// PUSH_NOTIFICATION_STAGE4_DESIGN.md 2-3절의 upsert 로직 그대로: 문서 ID를
+// {email}_{deviceId}로 고정해서, 같은 이메일+기기에서 재등록하면 새 문서가 쌓이지 않고
+// 같은 문서가 갱신된다. createdAt은 최초 생성 시에만 채우고(이미 있으면 유지), updatedAt은
+// 매번 서버 시각으로 갱신한다.
+async function registerPushSubscriptionAction_(email, fcmToken, deviceId) {
+  const docId = email + '_' + deviceId;
+  const ref = firestore.collection('pushSubscriptions').doc(docId);
+  const snap = await ref.get();
+  await ref.set({
+    email: email,
+    fcmToken: fcmToken,
+    deviceId: deviceId,
+    active: true,
+    updatedAt: FieldValue.serverTimestamp(),
+    createdAt: snap.exists ? snap.data().createdAt : FieldValue.serverTimestamp()
+  }, { merge: true });
+}
