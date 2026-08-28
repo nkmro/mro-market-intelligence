@@ -267,6 +267,44 @@ function buildThreadSeenIndex_(rows) {
   return index;
 }
 
+// ---------------------------------------------------------------------------
+// 담당자 댓글 리마인더 (push 7단계 — 계산 로직만, 아직 어디서도 호출되지 않음/미배포).
+// NOTIFICATION_PUSH_REMINDER_ANALYSIS_AND_PLAN.md 3.1-5번.
+
+// 설정값 "담당자댓글마감시각"을 시(0~23) 배열로 파싱한다. 쉼표로 여러 시각 지원(예: "13,16")
+// — 재홍님 확정 요구사항(2026-08-28, 7~8단계에서 실제 구현하기로 미리 메모해둔 것). 숫자로
+// 못 바꾸는 조각은 버리고, 유효한 시(0~23)만 남긴다.
+function parseReminderHours(raw) {
+  return String(raw == null ? '' : raw).split(',')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s !== ''; }) // Number('')는 0이라, 빈 조각을 먼저 걸러내지
+    // 않으면 "값이 아예 없음"이 "0시(자정)에 리마인더"로 잘못 파싱된다 — 실제 코드 작성
+    // 단계에서 발견해 수정.
+    .map(function (s) { return Number(s); })
+    .filter(function (n) { return Number.isInteger(n) && n >= 0 && n <= 23; });
+}
+
+// 담당(역할) 뷰어 1명 기준으로 "본인이 담당이면서 아직 확인 안 한(댓글 하나도 없는) 품목"
+// 목록을 계산한다. 새 판단 로직을 만들지 않고 buildFeedEntries가 이미 계산하는 것(같은 데이터
+// 소스, summarizeItemFull의 confirmed/manager 필드)을 그대로 재사용한다 — updateNotifBadge()의
+// "새 게시물" 배지 계산(newItemsCount, feed.html 1419~1424행)과 근본적으로 같은 재료를 쓰되,
+// "이 사람이 담당인 품목"으로 한 번 더 좁힌 것이다. 매니저 이름 비교는 품목 관리 팝업의
+// 담당 드롭다운 버그 수정(52ae8c1) 때와 동일하게 trim()으로 공백을 방어한다.
+function computeReminderItemsForManager(viewer, allPosts, allItems, allComments, leadScope, teamByEmail) {
+  if (viewer.role !== '담당') return [];
+  const entries = buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
+  const result = [];
+  const viewerName = String(viewer.name || '').trim();
+  entries.forEach(function (entry) {
+    entry.items.forEach(function (it) {
+      if (String(it.manager || '').trim() === viewerName && !it.confirmed) {
+        result.push({ postId: entry.post.id, itemId: it.itemId, itemName: it.itemName });
+      }
+    });
+  });
+  return result;
+}
+
 module.exports = {
   sheetSerialToMs,
   teamScopeAllows,
@@ -283,5 +321,7 @@ module.exports = {
   hasUnreadReply,
   hasAwaitingReply,
   countNotificationsForViewer,
-  buildThreadSeenIndex_
+  buildThreadSeenIndex_,
+  parseReminderHours,
+  computeReminderItemsForManager
 };

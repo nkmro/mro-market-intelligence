@@ -160,4 +160,28 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
   return { sent: sentCount > 0, sentCount, deactivatedCount, subscriptionCount: subscriptions.length };
 }
 
-module.exports = { sendConsolidatedPushForUser, buildConsolidatedMessage_, buildStateSignature_ };
+// ---------------------------------------------------------------------------
+// [신규, push 7~8단계] 담당자 댓글 리마인더 전용 발송. sendConsolidatedPushForUser와 달리
+// counts 기반 문구 생성이나 pushNotifyState 중복방지를 쓰지 않는다 — 리마인더는 호출부
+// (reminderBatchTest)가 Firestore의 reminderDeliveries(date_hour_email)로 이미 중복 발송을
+// 막고 있고, "앱이 열려 있으면 억제"하는 로직(sendConsolidatedPushForUser 전용)도 마감시각
+// 알림에는 적용하지 않는다 — 마감이 있는 알림은 앱이 열려 있어도 그대로 보내는 게 맞다고
+// 판단했다(성격이 다른 알림이라 5단계의 pushNotifyState 서명 비교 로직을 그대로 재사용하지
+// 않고, 5단계에서 이미 만든 getActiveSubscriptions_/sendFcmMessage_만 재사용한다).
+async function sendReminderPushForUser(firestore, authClient, fcmProjectId, email, message) {
+  const subscriptions = await getActiveSubscriptions_(firestore, email);
+  let sentCount = 0;
+  let deactivatedCount = 0;
+  for (const doc of subscriptions) {
+    const result = await sendFcmMessage_(authClient, fcmProjectId, doc.data().fcmToken, message);
+    if (result.ok) {
+      sentCount++;
+    } else if (result.invalidToken) {
+      await doc.ref.set({ active: false, deactivatedAt: FieldValue.serverTimestamp(), deactivatedReason: result.error }, { merge: true });
+      deactivatedCount++;
+    }
+  }
+  return { sent: sentCount > 0, sentCount, deactivatedCount, subscriptionCount: subscriptions.length };
+}
+
+module.exports = { sendConsolidatedPushForUser, sendReminderPushForUser, buildConsolidatedMessage_, buildStateSignature_ };
