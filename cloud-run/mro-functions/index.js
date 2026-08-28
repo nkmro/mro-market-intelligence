@@ -2159,3 +2159,328 @@ exports.upsertCustomerTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// POST /updateUserTest, POST /changePasswordTest, POST /updateSettingsTest
+// (사용자 관리 페이지 쓰기 3종 이전 — 코드 구현만, 아직 미배포/미연결)
+// 승인 경로: 2026-08-28 채팅에서 분석/설계 계획 승인 -> 이번 코드 구현 승인. 다음 단계
+// (별도 승인 필요): parity 테스트 -> GitHub 커밋 -> Cloud Run 배포 -> feed.html 연결
+// (upsertItem과 동일한 3단 폴백 쓰기 정책 — 명확한 실패는 그대로, 애매한 실패만 같은
+// idempotencyKey로 1회 재시도, 그래도 애매하면 Apps Script로 조용히 넘기지 않음).
+//
+// [재사용] 세션 인증(lib/auth.js), 사용자 조회(lib/sheetsClient.js의 rowsToUsers + 기존
+// POLL_USER_RANGE), 설정 조회(기존 SETTINGS_RANGE/SHEET_SETTING_NAME), 비밀번호 해싱(1145행
+// hashPassword_() — loginTest가 이미 검증한 것을 그대로 재사용, 신규 구현 없음),
+// idempotency(lib/writeIdempotency.js) — 전부 기존 함수/상수 그대로이며 이번에 수정한 곳
+// 없다.
+//
+// [락, 2026-08-28 분석/설계에서 확정] Code.gs의 handleUpdateUser_(3367~3396행)/
+// handleChangePassword_(3586~3618행)/handleUpdateSettings_(3311~3341행) 세 함수 모두
+// LockService.getScriptLock()을 쓰지 않는다(코드로 직접 확인됨) — "기존 동작을 바꾸지
+// 않는다"는 원칙에 따라 이 세 함수의 Cloud Run 포트에도 새 락을 추가하지 않는다
+// (upsertItem/upsertCustomer가 공유하는 UPSERT_LOCK_NAME과는 무관 — 공유하지 않는다).
+// changePasswordTest만 currentPassword 검증을 위해 요청마다 사용자팀마스터를 다시
+// 읽는데(getFreshUserRows_), 이는 Code.gs의 findUser_(user.email)가 매 요청마다 새로
+// 조회하는 것을 그대로 포팅한 것이지 락이 아니다.
+
+// Code.gs 3375~3377행과 값이 완전히 같다.
+const VALID_ROLES_ = ['일반', '담당', '팀장', '임원'];
+const VALID_TEAMS_ = ['동부', '서부', '중부', '영업지원', '소싱', '본사'];
+const VALID_STATUS_ = ['활성', '비활성'];
+
+// updateUserTest/changePasswordTest가 공유한다(둘 다 사용자팀마스터 시트에만 쓴다) —
+// getItemCustomerWriteClient_()와 동일한 최소 권한 원칙: 이 두 함수 전용 쓰기 스코프를
+// 이 헬퍼 안에서만 새로 만든다.
+async function getUserWriteClient_() {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  return auth.getClient();
+}
+
+// 사용자팀마스터 한 칸 쓰기 공통 헬퍼. rowNum은 실제 시트 행 번호(1-indexed, 헤더=1행),
+// colLetter는 'B'~'I' 같은 열 문자. updateLoginFailCountCell_(1154~1161행)과 같은
+// values:update PUT 패턴이며, 새 API 표면을 만들지 않는다.
+async function updateUserCell_(client, rowNum, colLetter, value) {
+  const cellRange = encodeURIComponent(SHEET_USER_NAME + '!' + colLetter + rowNum);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${cellRange}?valueInputOption=RAW`;
+  await client.request({ url: url, method: 'PUT', data: { values: [[value]] } });
+}
+
+// Code.gs handleUpdateUser_(3367~3396행) 포팅. withIdempotency()가 이 함수 전체를 감싸므로
+// (아래 exports.updateUserTest 참고), FORBIDDEN을 포함한 모든 에러 응답이 그대로
+// idempotency 캐시에 남는다 — Code.gs와 동일한 동작.
+//
+// [parity 주의] Code.gs는 body.row가 실제로 존재하는 사용자 행인지 미리 확인하지 않고
+// 바로 setValue한다(존재 범위를 벗어난 큰 row 번호를 막는 코드가 없음) — 이 함수도 동일하게
+// rowNum이 2 이상이기만 하면(INVALID_ROW 아니면) 존재 여부를 확인하지 않고 그대로 쓴다.
+// 이 동작을 이번에 새로 고치지 않는다(parity 테스트에서 별도로 확인만 한다).
+async function updateUserAction_(viewer, body) {
+  if (String(viewer.email).trim().toLowerCase() !== ADMIN_EMAIL) {
+    return { ok: false, error: 'FORBIDDEN' };
+  }
+  const rowNum = Number(body.row);
+  if (!rowNum || rowNum < 2) {
+    return { ok: false, error: 'INVALID_ROW' };
+  }
+  if (body.role !== undefined && VALID_ROLES_.indexOf(body.role) === -1) {
+    return { ok: false, error: 'INVALID_ROLE' };
+  }
+  if (body.team !== undefined && VALID_TEAMS_.indexOf(body.team) === -1) {
+    return { ok: false, error: 'INVALID_TEAM' };
+  }
+  if (body.status !== undefined && VALID_STATUS_.indexOf(body.status) === -1) {
+    return { ok: false, error: 'INVALID_STATUS' };
+  }
+
+  const client = await getUserWriteClient_();
+  // Code.gs와 동일한 순서(name -> role -> team -> status)로, 전달된 필드만 개별 갱신한다
+  // (부분 업데이트 — 나머지 컬럼은 건드리지 않음).
+  if (body.name !== undefined && String(body.name).trim() !== '') {
+    await updateUserCell_(client, rowNum, 'B', String(body.name).trim());
+  }
+  if (body.role !== undefined) {
+    await updateUserCell_(client, rowNum, 'C', body.role);
+  }
+  if (body.team !== undefined) {
+    await updateUserCell_(client, rowNum, 'D', body.team);
+  }
+  if (body.status !== undefined) {
+    await updateUserCell_(client, rowNum, 'E', body.status);
+  }
+  return { ok: true };
+}
+
+exports.updateUserTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, idempotencyKey, row, name, role, team, status } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'updateUser', async function () {
+      return updateUserAction_(viewer, { row: row, name: name, role: role, team: team, status: status });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// 사용자팀마스터(POLL_USER_RANGE, 헤더 제외 A2:I)를 지금 이 순간 값으로 다시 읽는다.
+// changePasswordAction_ 전용 — Code.gs handleChangePassword_가 findUser_(user.email)로
+// 매 요청마다 시트를 다시 조회하는 것과 동일한 원칙(updateComment/deleteComment/upsertItem의
+// "fresh read"와 같은 이유: 요청 맨 앞에서 이미 읽어둔 스냅샷을 쓰지 않고, 실제 비교/쓰기
+// 직전에 다시 읽어 경합을 줄인다). H열(로그인실패횟수)이 unformatted 여부와 무관하고
+// I열(비밀번호변경일)은 애초에 텍스트라 valueRenderOption을 따로 지정하지 않는다.
+async function getFreshUserRows_(client) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${POLL_USER_RANGE}`;
+  const resp = await client.request({ url });
+  return (resp.data && resp.data.values) || [];
+}
+
+// Code.gs handleChangePassword_(3586~3618행) 포팅. withIdempotency()가 이 함수 전체를
+// 감싸므로(아래 exports.changePasswordTest 참고), WRONG_PASSWORD를 포함한 모든 에러 응답이
+// 그대로 idempotency 캐시에 남는다 — Code.gs와 동일한 동작. 검증 순서(MISSING_FIELDS ->
+// PASSWORD_TOO_SHORT -> fresh 사용자 조회/USER_NOT_FOUND -> 해시 비교/WRONG_PASSWORD)를
+// Code.gs와 정확히 같게 유지한다.
+//
+// [비밀번호 해싱] 새로 만들지 않고 1145행의 기존 hashPassword_()를 그대로 재사용한다
+// (loginTest가 이미 실사용/검증 완료).
+//
+// [I열, 중요] Code.gs 3608행은 new Date().toISOString()으로 "실제 Date 셀이 아니라 텍스트
+// (ISO 문자열)"를 쓴다 — upsertItem의 등록일(H열)처럼 시트 시리얼 숫자로 변환하지 않는다.
+// 여기서도 동일하게 순수 ISO 문자열 그대로 쓴다(msToSheetSerialForItem_ 같은 변환 없음).
+async function changePasswordAction_(email, body) {
+  const currentPassword = String(body.currentPassword || '');
+  const newPassword = String(body.newPassword || '');
+  if (!currentPassword || !newPassword) {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+  if (newPassword.length < 6) {
+    return { ok: false, error: 'PASSWORD_TOO_SHORT' };
+  }
+
+  const client = await getUserWriteClient_();
+  const freshRows = await getFreshUserRows_(client);
+  const normalizedEmail = String(email).trim().toLowerCase();
+  let rowIndex = -1;
+  for (let i = 0; i < freshRows.length; i++) {
+    if (String(freshRows[i][0] || '').trim().toLowerCase() === normalizedEmail) {
+      rowIndex = i;
+      break;
+    }
+  }
+  if (rowIndex === -1) {
+    return { ok: false, error: 'USER_NOT_FOUND' };
+  }
+  const currentHash = freshRows[rowIndex][6] || null; // G열(0-indexed 6) = passwordHash
+  if (currentHash !== hashPassword_(currentPassword, email)) {
+    return { ok: false, error: 'WRONG_PASSWORD' };
+  }
+
+  const sheetRow = rowIndex + 2; // POLL_USER_RANGE가 A2부터 시작 -> index 0 == 시트 2행
+  await updateUserCell_(client, sheetRow, 'G', hashPassword_(newPassword, email));
+  await updateUserCell_(client, sheetRow, 'I', new Date().toISOString());
+  return { ok: true };
+}
+
+// [설계] Code.gs handleChangePassword_는 이미 세션에서 확정된 user 객체를 받아 곧바로
+// findUser_(user.email)로 fresh 조회하므로, updateUserTest/updateSettingsTest처럼 별도의
+// 초기 batchGet+viewer 조회 단계가 필요 없다 — 세션 인증(email)만으로 changePasswordAction_에
+// 바로 들어간다(그 안에서 fresh 조회 자체가 "사용자 존재 확인"을 겸한다).
+exports.changePasswordTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, idempotencyKey, currentPassword, newPassword } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'changePassword', async function () {
+      return changePasswordAction_(email, { currentPassword: currentPassword, newPassword: newPassword });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// updateSettingsTest 전용 쓰기 스코프 클라이언트 — getUserWriteClient_()와 스코프는 같지만
+// (spreadsheets, 읽기+쓰기), 실제로 쓰는 시트(설정)가 다르므로 upsertItem/upsertCustomer가
+// getItemCustomerWriteClient_()를 공유하는 것과 같은 원칙으로 별도 헬퍼를 둔다 — "이 함수가
+// 실제로 손대는 범위"를 코드만 보고 알 수 있게 하기 위함(최소 권한 원칙의 문서화 목적,
+// 스코프 문자열 자체가 시트별로 나뉘어 있지는 않다).
+async function getSettingsWriteClient_() {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  return auth.getClient();
+}
+
+// 설정(SETTINGS_RANGE, 헤더 제외 A2:C)을 지금 이 순간 값으로 다시 읽는다. updateSettingsAction_
+// 전용 fresh read — getFreshCustomerRows_/getFreshItemRows_와 동일한 이유(요청 맨 앞
+// 스냅샷을 쓰지 않고 쓰기 직전에 다시 읽는다). 설정 시트에는 날짜형 컬럼이 없어
+// valueRenderOption을 따로 지정하지 않는다(getSettingsTest와 동일).
+async function getFreshSettingsRows_(client) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${SETTINGS_RANGE}`;
+  const resp = await client.request({ url });
+  return (resp.data && resp.data.values) || [];
+}
+
+// Code.gs handleUpdateSettings_(3311~3341행) 포팅. withIdempotency()가 이 함수 전체를
+// 감싸므로(아래 exports.updateSettingsTest 참고), FORBIDDEN을 포함한 모든 에러 응답이
+// 그대로 idempotency 캐시에 남는다 — Code.gs와 동일한 동작.
+//
+// [parity 주의] Code.gs의 유효성 검사는 `typeof updates !== 'object'`만 확인한다(배열도
+// JS에서는 typeof가 'object'라서 그대로 통과됨) — 이 함수도 배열을 별도로 막지 않고 그대로
+// 둔다(배열이 오면 Object.keys가 '0','1'... 같은 인덱스 키를 만들고, 그 키들은 설정 시트에
+// 없을 테니 전부 unknownKeys로만 빠진다 — 에러 없이 안전하게 무시됨. Code.gs와 동일한
+// 동작이므로 이번에 새로 막지 않는다).
+async function updateSettingsAction_(viewer, body) {
+  if (String(viewer.email).trim().toLowerCase() !== ADMIN_EMAIL) {
+    return { ok: false, error: 'FORBIDDEN' };
+  }
+  const updates = body.settings;
+  if (!updates || typeof updates !== 'object') {
+    return { ok: false, error: 'MISSING_FIELDS' };
+  }
+
+  const client = await getSettingsWriteClient_();
+  const freshRows = await getFreshSettingsRows_(client);
+  const updatedKeys = [];
+  const unknownKeys = [];
+
+  const keys = Object.keys(updates);
+  for (let k = 0; k < keys.length; k++) {
+    const key = keys[k];
+    let found = false;
+    for (let i = 0; i < freshRows.length; i++) {
+      if (freshRows[i][0] === key) {
+        const cellRange = encodeURIComponent(SHEET_SETTING_NAME + '!B' + (i + 2));
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${cellRange}?valueInputOption=RAW`;
+        await client.request({ url: url, method: 'PUT', data: { values: [[updates[key]]] } });
+        updatedKeys.push(key);
+        found = true;
+        break;
+      }
+    }
+    if (!found) unknownKeys.push(key);
+  }
+
+  return { ok: true, updatedKeys: updatedKeys, unknownKeys: unknownKeys };
+}
+
+exports.updateSettingsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, idempotencyKey, settings } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const result = await withIdempotency(firestore, idempotencyKey, 'updateSettings', async function () {
+      return updateSettingsAction_(viewer, { settings: settings });
+    });
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
