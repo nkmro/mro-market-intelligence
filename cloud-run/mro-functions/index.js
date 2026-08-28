@@ -30,6 +30,9 @@ const { withIdempotency } = require('./lib/writeIdempotency');
 // upsertItemTest/upsertCustomerTest만 이번에 사용한다(loginTest의 acquireLoginLock_/
 // releaseLoginLock_은 그대로 두고 건드리지 않았다).
 const { acquireLock, releaseLock } = require('./lib/writeLock');
+// 2026-08-28 (push 6단계, PUSH_NOTIFICATION_STAGE6_DESIGN.md): 5단계에서 만든 통합 푸시
+// 발송 공통 모듈. pushBatchTest(이 파일 맨 아래, 신규)만 사용한다.
+const pushSender = require('./lib/pushSender');
 
 const SPREADSHEET_ID = '1_pvEWU3PRoLM4ZO8aY2v0kEYz--tFNRy2g_fE6MMubU';
 // Sheet tab name is written as a JS unicode escape (Korean debug-log tab name).
@@ -2555,3 +2558,63 @@ async function registerPushSubscriptionAction_(email, fcmToken, deviceId) {
     createdAt: snap.exists ? snap.data().createdAt : FieldValue.serverTimestamp()
   }, { merge: true });
 }
+
+// ---------------------------------------------------------------------------
+// GET/POST /pushBatchTest (push 6단계 — 코드 구현만, 아직 미배포/Cloud Scheduler 미연결)
+// 승인 경로: PUSH_NOTIFICATION_STAGE6_DESIGN.md(2절, 재홍님 승인 — 5분 주기). Cloud
+// Scheduler가 5분마다 호출하는 배치 전용 함수라 세션 인증이 없다(사람이 직접 호출하는
+// API가 아니라 스케줄러 전용 — cloud-run/README.md의 "진단 함수는 공개 API로 취급하지
+// 않는다" 원칙과 동일선상). 대상: role !== '일반'인 사용자 전원. 시트는 딱 1번(+댓글확인
+// 이력 1번) 읽어서 메모리에서 전원 계산 — 기존 getFeedTest 등과 동일한 "batchGet 1번" 패턴.
+//
+// 사용자 1명 계산에서 예외가 나도 나머지 사용자 발송이 막히지 않도록 사용자별 try/catch로
+// 감쌌다(설계 문서 4절에서 남겨둔 결정 사항 — 코드 구현 시점에 확정).
+exports.pushBatchTest = async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID,
+      FEED_BATCH_RANGES.concat([THREAD_SEEN_RANGE]), { unformatted: true });
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+    const threadSeenRows = (valueRanges[5] && valueRanges[5].values) || [];
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const threadSeenIndex = feedEngine.buildThreadSeenIndex_(threadSeenRows);
+
+    const authClient = await new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/firebase.messaging'] }).getClient();
+    // [주의 — 실제 배포 전 필수 확인] Cloud Functions URL 패턴에서 추정한 값이다
+    // (PUSH_NOTIFICATION_STAGE5_DESIGN.md 2절에서 이미 남긴 메모와 동일) — GCP 콘솔에서
+    // 정확한 프로젝트 ID를 재확인 후 배포할 것.
+    const fcmProjectId = 'mro-market-intelligence';
+
+    const eligibleUsers = allUsers.filter(function (u) { return u.role !== '일반'; });
+    let processed = 0;
+    let failed = 0;
+    for (const userRow of eligibleUsers) {
+      try {
+        const viewer = feedEngine.findViewer(allUsers, userRow.email);
+        if (!viewer) continue;
+        const entries = feedEngine.buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
+        const threadSeenMap = threadSeenIndex[String(viewer.email).toLowerCase()] || {};
+        const counts = feedEngine.countNotificationsForViewer(viewer, entries, threadSeenMap, ADMIN_EMAIL);
+        await pushSender.sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, viewer.email, counts);
+        processed++;
+      } catch (userErr) {
+        failed++;
+        console.error('[pushBatchTest] 사용자 처리 실패(무시하고 계속): ' + userRow.email + ' - ' + userErr);
+      }
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, processed, failed, totalUsers: allUsers.length, eligibleCount: eligibleUsers.length });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
