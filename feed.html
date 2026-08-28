@@ -3112,6 +3112,12 @@ if (!itemsRes.ok) {
 }
 itemsState.items = itemsRes.items || [];
 itemsState.customers = customersRes.ok ? (customersRes.customers || []) : [];
+// [임시 진단 로그] 담당 드롭다운이 비어있는 문제 원인 확인용 - 원인 확인 후 제거 예정
+console.log('[items-debug] usersRes.ok=', usersRes.ok, 'error=', usersRes.error, 'raw users total=', usersRes.ok ? (usersRes.users || []).length : 0);
+if (usersRes.ok) {
+  console.log('[items-debug] session.team=', JSON.stringify(session.team));
+  console.log('[items-debug] raw users list=', JSON.stringify(usersRes.users));
+}
 itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) {
   // 시트 값에 섞여 들어올 수 있는 공백/형식 차이 때문에 정상적으로 존재하는 담당자가 드롭다운에서
   // 누락되는 문제가 있어(String+trim 없이 비교), 이 프로젝트 전반의 관례대로 공백을 제거하고 비교한다.
@@ -3119,6 +3125,7 @@ itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) 
     && String(u.status || '').trim() === '활성'
     && String(u.role || '').trim() === '담당';
 }) : [];
+console.log('[items-debug] filtered teamUsers count=', itemsState.teamUsers.length, JSON.stringify(itemsState.teamUsers));
 if (!itemsState.loaded) {
 itemsState.filterTeam = session.team || '';
 }
