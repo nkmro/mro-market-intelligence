@@ -2618,3 +2618,110 @@ exports.pushBatchTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// GET/POST /reminderBatchTest (push 7~8단계 — 담당자 댓글 리마인더. 코드 구현만, 아직
+// 미배포/Cloud Scheduler 미연결 — 수동 호출로만 테스트 가능하다는 게 이번 단계의 의도).
+// 승인 경로: NOTIFICATION_PUSH_REMINDER_ANALYSIS_AND_PLAN.md 3.1-5번(계획) -> 재홍님
+// 확정 원칙(2026-08-28, "담당자댓글마감시각은 쉼표 구분 복수 시각 지원") -> 이번 코드 구현.
+//
+// 설정값 담당자댓글리마인더사용이 TRUE일 때만 동작한다(설정 항목 이름/의미는 안 바꿈, 9단계
+// 에서 설명 문구만 보완). 담당자댓글마감시각은 feedEngine.parseReminderHours로 쉼표 구분
+// 복수 시각을 배열로 파싱한다(예: "13,16" -> [13, 16]).
+//
+// 하루 중 이미 지난 시각들(dueHours) 중 "가장 늦은 시각"(targetHour) 하나만 이번 실행의
+// 기준으로 삼는다 — Firestore reminderDeliveries 문서 ID를 date_hour_email로 시각별로
+// 분리해뒀기 때문에, 13시/16시가 각각 지날 때마다 서로 다른 문서로 독립적으로 중복 방지되어
+// 두 번 다 정상 발송된다(같은 시각 안에서 이 함수가 여러 번 실행돼도 같은 문서라 한 번만 감).
+//
+// Cloud Scheduler가 5~10분 간격으로 이 함수를 호출한다고 가정한 설계라, 분 단위 정밀 매칭이
+// 필요 없다(시각을 "지났는지"만 보고, 중복 방지는 문서 존재 여부로 함).
+exports.reminderBatchTest = async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const reminderEnabled = String(settings['담당자댓글리마인더사용'] || '').trim().toUpperCase() === 'TRUE';
+    if (!reminderEnabled) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: true, serverMs, skipped: true, reason: 'REMINDER_DISABLED' });
+      return;
+    }
+
+    const deadlineHours = feedEngine.parseReminderHours(settings['담당자댓글마감시각']);
+    // 시트/스케줄 모두 서울(UTC+9, DST 없음) 벽시계 기준 — sheetSerialToMs와 동일 원칙으로
+    // Date.now()에 9시간을 더한 뒤 getUTCHours()로 "서울 기준 시(hour)"를 얻는다.
+    const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const currentHour = nowKst.getUTCHours();
+    const todayStr = nowKst.toISOString().slice(0, 10);
+
+    const dueHours = deadlineHours.filter(function (h) { return currentHour >= h; });
+    if (dueHours.length === 0) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: true, serverMs, skipped: true, reason: 'NO_DUE_HOUR', currentHour, deadlineHours });
+      return;
+    }
+    const targetHour = Math.max.apply(null, dueHours);
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const authClient = await new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/firebase.messaging'] }).getClient();
+    // [주의 — 실제 배포 전 필수 확인] 5/6단계와 동일한 메모 — GCP 콘솔에서 정확한 프로젝트
+    // ID를 재확인 후 배포할 것.
+    const fcmProjectId = 'mro-market-intelligence';
+
+    const managerUsers = allUsers.filter(function (u) { return u.role === '담당'; });
+    let processed = 0;
+    let skippedAlready = 0;
+    let failed = 0;
+    for (const userRow of managerUsers) {
+      const deliveryDocId = todayStr + '_' + targetHour + '_' + userRow.email;
+      try {
+        const deliveryRef = firestore.collection('reminderDeliveries').doc(deliveryDocId);
+        const deliverySnap = await deliveryRef.get();
+        if (deliverySnap.exists) { skippedAlready++; continue; }
+
+        const viewer = feedEngine.findViewer(allUsers, userRow.email);
+        if (!viewer) continue;
+        const reminderItems = feedEngine.computeReminderItemsForManager(viewer, allPosts, allItems, allComments, leadScope, teamByEmail);
+
+        if (reminderItems.length === 0) {
+          await deliveryRef.set({ sentAt: FieldValue.serverTimestamp(), itemCount: 0, skipped: true });
+          continue;
+        }
+
+        // 리마인더 문구는 pushSender.buildConsolidatedMessage_(새 게시물/댓글 필요/답변 요청
+        // 3종 카운트 전용, 6단계)와 성격이 달라서 여기서 직접 만든다(5단계 title 주입 보완
+        // 덕분에 sendReminderPushForUser는 완성된 {title, body}를 그대로 받기만 하면 됨).
+        const first = reminderItems[0].itemName || '품목';
+        const body = reminderItems.length > 1
+          ? first + ' 외 ' + (reminderItems.length - 1) + '건 확인 필요'
+          : first + ' 확인 필요';
+        const message = { title: '담당 게시글 확인 필요', body: body };
+
+        await pushSender.sendReminderPushForUser(firestore, authClient, fcmProjectId, viewer.email, message);
+        await deliveryRef.set({ sentAt: FieldValue.serverTimestamp(), itemCount: reminderItems.length, skipped: false });
+        processed++;
+      } catch (userErr) {
+        failed++;
+        console.error('[reminderBatchTest] 사용자 처리 실패(무시하고 계속): ' + userRow.email + ' - ' + userErr);
+      }
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({
+      ok: true, serverMs, targetHour, deadlineHours,
+      processed, skippedAlready, failed, managerCount: managerUsers.length
+    });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
