@@ -33,9 +33,15 @@ self.addEventListener('notificationclick', function (event) {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          // push 6단계(PUSH_NOTIFICATION_STAGE6_DESIGN.md 3-1절) — 이미 열려 있는 탭은
+          // focus()만으로는 화면(탭)이 안 바뀌므로, 그 탭에 postMessage로 "알림 탭으로
+          // 가라"는 신호를 보낸다(feed.html의 message 리스너가 받아서 switchView 호출).
+          client.postMessage({ type: 'mro-push-click', view: 'notif' });
+          return client.focus();
+        }
       }
-      if (self.clients.openWindow) return self.clients.openWindow('./feed.html');
+      if (self.clients.openWindow) return self.clients.openWindow('./feed.html?view=notif');
     })
   );
 });

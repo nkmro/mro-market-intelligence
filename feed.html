@@ -1073,6 +1073,13 @@ updateNotifPermButton();
 // 분기하므로(default/granted/denied) 여기서는 그냥 호출만 한다. 실패해도(권한 거부, 미지원
 // 브라우저 등) 로그인 자체가 막히지 않도록 await 없이 fire-and-forget으로 둔다.
 if (typeof initPushOnLogin_ === 'function') initPushOnLogin_().catch(function () {});
+// push 6단계(PUSH_NOTIFICATION_STAGE6_DESIGN.md 3-2절) — 알림 클릭으로 새로 열렸을 때
+// (?view=notif) "알림" 탭으로 전환한다. proceedAfterAuth() 완료 시점(이 줄)에서 처리해서,
+// 세션/화면이 아직 준비 안 된 상태에서 switchView가 호출되는 타이밍 문제를 피한다.
+// switchView는 기존 함수를 그대로 호출만 하는 것이라 새로 정의하지 않는다.
+try {
+  if (new URLSearchParams(location.search).get('view') === 'notif') switchView('notif');
+} catch (e) {}
 startPolling();
 setupIdleTimer();
 clearTimeout(__authSafetyTimer);
@@ -2297,6 +2304,14 @@ let lastNotifCount = null;
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(function () {});
+  // push 6단계(PUSH_NOTIFICATION_STAGE6_DESIGN.md 3-2절) — 이미 열려 있던 탭이 sw.js의
+  // notificationclick(postMessage)으로부터 "알림 탭으로 가라"는 신호를 받으면 전환한다.
+  // switchView는 기존 함수를 그대로 호출만 한다(신규 정의 없음).
+  navigator.serviceWorker.addEventListener('message', function (event) {
+    if (event.data && event.data.type === 'mro-push-click' && event.data.view === 'notif') {
+      try { switchView('notif'); } catch (e) {}
+    }
+  });
 }
 
 function showLocalNotification(title, body) {
