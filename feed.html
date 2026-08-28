@@ -3112,7 +3112,13 @@ if (!itemsRes.ok) {
 }
 itemsState.items = itemsRes.items || [];
 itemsState.customers = customersRes.ok ? (customersRes.customers || []) : [];
-itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) { return u.team === session.team && u.status === '활성' && u.role === '담당'; }) : [];
+itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) {
+  // 시트 값에 섞여 들어올 수 있는 공백/형식 차이 때문에 정상적으로 존재하는 담당자가 드롭다운에서
+  // 누락되는 문제가 있어(String+trim 없이 비교), 이 프로젝트 전반의 관례대로 공백을 제거하고 비교한다.
+  return String(u.team || '').trim() === String(session.team || '').trim()
+    && String(u.status || '').trim() === '활성'
+    && String(u.role || '').trim() === '담당';
+}) : [];
 if (!itemsState.loaded) {
 itemsState.filterTeam = session.team || '';
 }
@@ -3214,7 +3220,7 @@ itemsState.editingItemId = itemId;
 itemsState.pendingNewCustomerName = null;
 itemsState.selectedMaterials = item && item.materials ? item.materials.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
 const managerOptions = itemsState.teamUsers.map(function (u) {
-return `<option value="${escapeHtml(u.name)}" ${item && item.manager === u.name ? 'selected' : ''}>${escapeHtml(u.name)}</option>`;
+return `<option value="${escapeHtml(u.name)}" ${item && String(item.manager || '').trim() === String(u.name || '').trim() ? 'selected' : ''}>${escapeHtml(u.name)}</option>`;
 }).join('');
 const dis = canEdit ? '' : 'disabled';
 const overlay = document.createElement('div');
