@@ -197,6 +197,76 @@ function buildFeedEntries(viewer, allPosts, allItems, allComments, leadScope, te
   return entries;
 }
 
+// ---------------------------------------------------------------------------
+// push 6단계 (PUSH_NOTIFICATION_STAGE6_DESIGN.md 1절) — feed.html의 hasUnreadReply/
+// hasAwaitingReply(2508~2537행)를 조건 그대로 포팅한 것. session -> viewer, 전역
+// ADMIN_EMAIL -> 명시적 인자 adminEmail로만 이름을 바꿨다. 클라이언트는 이 비교에
+// trim()/toLowerCase()를 쓰지 않으므로(session.email === ADMIN_EMAIL) 여기서도 그대로
+// 둔다 — 이 파일의 다른 함수가 아니라 "클라이언트와 정확히 같은 판단"이 이 두 함수의
+// 목적이다. threadSeenMapLoaded 가드(클라이언트 전용 비동기 로딩 상태 체크)는 포팅하지
+// 않는다 — 서버는 같은 요청 안에서 이미 동기적으로 시트를 다 읽은 뒤 호출되므로 그 상태
+// 자체가 없다.
+function hasUnreadReply(viewer, postId, item, threadSeenMap, adminEmail) {
+  const comments = item.comments || [];
+  if (!comments.length) return false;
+  const isOverseer = viewer.role === '팀장' || viewer.role === '임원' || viewer.email === adminEmail;
+  const participant = comments.some(function (c) { return c.authorEmail === viewer.email; });
+  if (!isOverseer && !participant) return false;
+  const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  const last = sorted[sorted.length - 1];
+  if (last.authorEmail === viewer.email) return false;
+  const key = postId + '-' + item.itemId;
+  const seenAt = threadSeenMap[key];
+  if (!seenAt) return true;
+  return new Date(last.createdAt) > new Date(seenAt);
+}
+
+// feed.html hasAwaitingReply(2524~2537행) 포팅, 위와 동일 원칙. ADMIN_EMAIL은 이 함수엔
+// 등장하지 않으므로(팀장/임원 역할만 체크) 인자에 없다.
+function hasAwaitingReply(viewer, postId, item, threadSeenMap) {
+  if (viewer.role !== '팀장' && viewer.role !== '임원') return false;
+  const comments = item.comments || [];
+  if (!comments.length) return false;
+  const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  const last = sorted[sorted.length - 1];
+  if (last.authorEmail !== viewer.email) return false;
+  const key = postId + '-' + item.itemId;
+  const seenAt = threadSeenMap[key];
+  if (!seenAt) return true;
+  return new Date(last.createdAt) > new Date(seenAt);
+}
+
+// feed.html의 updateNotifBadge()(1419~1429행)가 하던 3개 건수 계산을 한 번에 묶은 신규
+// 진입점(설계 문서 1-3절). entries는 getNotificationsTest가 이미 만드는 것과 정확히 같은
+// 소스(buildFeedEntries)를 그대로 받는다 — 별도의 날짜 필터나 다른 계산을 새로 만들지 않는다.
+function countNotificationsForViewer(viewer, entries, threadSeenMap, adminEmail) {
+  let newPosts = 0, needsReply = 0, awaitingReply = 0;
+  entries.forEach(function (entry) {
+    if (entry.needsAttention) {
+      newPosts += entry.items.filter(function (it) { return !it.confirmed; }).length;
+    }
+    entry.items.forEach(function (it) {
+      if (hasUnreadReply(viewer, entry.post.id, it, threadSeenMap, adminEmail)) needsReply++;
+      if (hasAwaitingReply(viewer, entry.post.id, it, threadSeenMap)) awaitingReply++;
+    });
+  });
+  return { newPosts: newPosts, needsReply: needsReply, awaitingReply: awaitingReply };
+}
+
+// [신규, 배치 전용] getThreadSeenTest(index.js)는 한 사람의 threadSeenMap만 만든다(요청자
+// 이메일로 필터링). pushBatchTest는 대상 사용자 전원의 threadSeenMap이 한 번에 필요하므로,
+// 시트를 한 번만 읽고 이메일별로 미리 인덱싱해두는 함수(설계 문서 1-4절). rows는
+// getThreadSeenTest와 동일한 THREAD_SEEN_RANGE에서 읽은 원본 행.
+function buildThreadSeenIndex_(rows) {
+  const index = {};
+  rows.forEach(function (row) {
+    const emailLower = String(row[0]).toLowerCase();
+    const key = row[1] + '-' + row[2];
+    (index[emailLower] = index[emailLower] || {})[key] = row[3];
+  });
+  return index;
+}
+
 module.exports = {
   sheetSerialToMs,
   teamScopeAllows,
@@ -209,5 +279,9 @@ module.exports = {
   summarizeItemFull,
   needsAttentionFor,
   buildFeedEntry,
-  buildFeedEntries
+  buildFeedEntries,
+  hasUnreadReply,
+  hasAwaitingReply,
+  countNotificationsForViewer,
+  buildThreadSeenIndex_
 };
