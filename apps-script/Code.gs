@@ -300,10 +300,34 @@ console.error('syncSessionToCloudRun_ 실패(무시): ' + e);
 }
 }
 
+// 로그인 Cloud Run 재전환 준비(2026-08-28): 세션 저장소 비대칭 해소용 조회 헬퍼.
+// 지금까지는 syncSessionToCloudRun_()로 "Apps Script -> Firestore" 방향의 복사만 있고
+// 반대 방향(Firestore에만 있는 세션을 Apps Script CacheService가 알아보는 경로)이 없었다.
+// login이 Cloud Run(loginTest)으로 전환되면 세션이 Firestore에만 기록되므로, 그 세션으로
+// 들어온 요청이 이 함수를 못 만나면 (아직 이 서버로는 옮기지 않은 다른 액션이거나, 다른
+// Cloud Run 액션이 실패해 Apps Script로 폴백한 경우) authenticateRequest_가 "모르는 세션"으로
+// 판단해 정상 로그인한 사용자를 강제 로그아웃시키는 문제가 생긴다. 이미 배포되어 있는
+// whoamiTest(Cloud Run, sessionToken -> Firestore 세션 조회 + 사용자 정보 반환)를 그대로
+// 재사용해서 이 문제를 해소한다(새 Cloud Run 함수를 추가하지 않음). 실패(네트워크 오류,
+// 세션 없음/만료 등 무엇이든)하면 조용히 null을 반환해 기존과 동일하게 인증 실패로 처리된다
+// — 필수 경로가 아니라 best-effort 보완 조회다.
+function lookupSessionEmailFromCloudRun_(sessionToken) {
+try {
+const resp = UrlFetchApp.fetch('https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/whoamiTest', { method: 'post', contentType: 'application/json', payload: JSON.stringify({ sessionToken: sessionToken }), muteHttpExceptions: true });
+const json = JSON.parse(resp.getContentText());
+if (json && json.ok && json.email) return json.email;
+return null;
+} catch (e) {
+return null;
+}
+}
+
 /**
 * login 이외의 action에서 공통으로 쓰는 인증 헬퍼 (v23, sessionToken 기반).
 * 세션 캐시에 있으면 캐시를 우선 사용해 시트 재조회를 줄이고,
 * 사용 중인 세션은 요청마다 TTL을 6시간으로 슬라이딩 연장한다.
+* (2026-08-28) 캐시에 없으면 Cloud Run(whoamiTest)에도 한 번 물어본다 — login이 Cloud Run에서
+* 발급한 세션은 이 캐시에 원래 기록된 적이 없기 때문. lookupSessionEmailFromCloudRun_() 참고.
 */
 function authenticateRequest_(body) {
 const sessionToken = body.sessionToken;
@@ -311,10 +335,13 @@ if (!sessionToken) return null;
 
 const cache = CacheService.getScriptCache();
 const cacheKey = 'session_' + sessionToken;
-const email = cache.get(cacheKey);
+let email = cache.get(cacheKey);
+if (!email) {
+email = lookupSessionEmailFromCloudRun_(sessionToken);
 if (!email) return null;
+}
 
-cache.put(cacheKey, email, 21600); // 슬라이딩 세션 연장
+cache.put(cacheKey, email, 21600); // 슬라이딩 세션 연장 (Cloud Run 쪽에서 방금 확인된 세션이면 여기서 처음 기록됨)
 
 let user = getCachedUser_(email);
 if (!user) {
