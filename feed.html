@@ -997,6 +997,11 @@ return;
 if (isIdleTimedOut()) {
 localStorage.removeItem('mro_session');
 clearIdleTracking();
+// 무활동 로그아웃(백그라운드 복귀 시 이미 시간 초과 발견) 경로도 doLogout()과 동일하게
+// OS 앱 아이콘 뱃지를 초기화한다. setAppBadge 미지원 환경/권한 실패에도 안전하도록 방어.
+try {
+if (navigator.clearAppBadge) navigator.clearAppBadge();
+} catch (e) {}
 window.location.href = 'index.html';
 return;
 }

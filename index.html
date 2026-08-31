@@ -738,6 +738,11 @@ function showLoginCard() {
     if (isIdleTimedOut()) {
       localStorage.removeItem('mro_session');
       localStorage.removeItem('mro_last_activity');
+      // 무활동 로그아웃 경로도 feed.html의 doLogout()과 동일하게 OS 앱 아이콘 뱃지를 초기화한다.
+      // setAppBadge 미지원 환경/권한 실패에도 안전하도록 방어.
+      try {
+        if (navigator.clearAppBadge) navigator.clearAppBadge();
+      } catch (e) {}
       showLoginCard();
       return;
     }
