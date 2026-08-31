@@ -1242,11 +1242,26 @@ reqMeta.push(mi);
 const BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 1100;
 const itemsByMaterial = materials.map(() => []);
+// 2026-08-31: 8/25 수집이 네이버 API 호출 중 대역폭 할당량 초과 예외로 collectMarketNews
+// 전체가 중단되어 그날 게시물이 0건이 된 사고 재발 방지. fetchAll 한 번이 실패해도 이
+// 배치만 건너뛰고 나머지 배치는 계속 수집하며, 실패가 있었으면 아래 안전마진 재시도
+// 로직(원래 AI 처리 시간초과용)을 함께 타도록 해 1시간 뒤 collectMarketNews가 재실행된다.
+let collectionBatchFailed = false;
 
 for (let i = 0; i < requests.length; i += BATCH_SIZE) {
 const batchRequests = requests.slice(i, i + BATCH_SIZE);
 const batchMeta = reqMeta.slice(i, i + BATCH_SIZE);
-const responses = UrlFetchApp.fetchAll(batchRequests);
+let responses;
+try {
+responses = UrlFetchApp.fetchAll(batchRequests);
+} catch (e) {
+console.error('collectMarketNews 뉴스 수집 fetchAll 예외(이 배치 건너뜀): ' + e);
+collectionBatchFailed = true;
+if (i + BATCH_SIZE < requests.length) {
+Utilities.sleep(BATCH_DELAY_MS);
+}
+continue;
+}
 responses.forEach((res, j) => {
 if (res.getResponseCode() !== 200) return;
 try {
@@ -1259,7 +1274,7 @@ Utilities.sleep(BATCH_DELAY_MS);
 }
 }
 
-Logger.log('뉴스 수집 완료: 원자재 ' + materials.length + '개, 요청 ' + requests.length + '건');
+Logger.log('뉴스 수집 완료: 원자재 ' + materials.length + '개, 요청 ' + requests.length + '건' + (collectionBatchFailed ? ' (일부 배치 실패로 건너뜀 있었음)' : ''));
 
 // 2단계: 원자재별 중복 제거 후 AI 판단 대상 후보 생성 (원자재 간 교차 중복도 방지)
 const runningLinks = new Set(existingLinks);
@@ -1433,13 +1448,13 @@ if (t.getUniqueId() === prevTriggerId) ScriptApp.deleteTrigger(t);
 });
 ss_props.deleteProperty('CATCHUP_TRIGGER_ID');
 }
-if (skipped > 0) {
+if (skipped > 0 || collectionBatchFailed) {
 const newTrigger = ScriptApp.newTrigger('collectMarketNews')
 .timeBased()
 .after(60 * 60 * 1000)
 .create();
 ss_props.setProperty('CATCHUP_TRIGGER_ID', newTrigger.getUniqueId());
-Logger.log('안전마진 도달로 1시간 후 재실행 예약됨 (남은 후보 ' + skipped + '건)');
+Logger.log('안전마진 도달 또는 수집 배치 실패로 1시간 후 재실행 예약됨 (남은 후보 ' + skipped + '건, 수집 배치 실패: ' + collectionBatchFailed + ')');
 }
 // ⭐ 오래된 시황게시물/수집로그 자동 정리 (설정 시트 값 기준, 기본 60일/30일)
 purgeOldRecords_();
