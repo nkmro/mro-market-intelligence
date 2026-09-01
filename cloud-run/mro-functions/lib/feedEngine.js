@@ -212,13 +212,19 @@ function hasUnreadReply(viewer, postId, item, threadSeenMap, adminEmail) {
   const isOverseer = viewer.role === '팀장' || viewer.role === '임원' || viewer.email === adminEmail;
   const participant = comments.some(function (c) { return c.authorEmail === viewer.email; });
   if (!isOverseer && !participant) return false;
-  const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  // [2026-09-01 버그 수정] 댓글 객체는 이 시점에서 아직 feedResponses.js의 응답 변환을
+  // 거치지 않아 createdAt이 아니라 createdAtRaw(시트 시리얼 넘버)만 갖고 있다. 존재하지
+  // 않는 createdAt을 참조하면 new Date(undefined)가 Invalid Date가 되어, "한 번이라도
+  // 읽음 처리된 스레드"는 이후 새 답글이 달려도 서버가 영원히 못 알아채는 버그가 있었다
+  // (pushBatchTest 실사용 중 발견 — 재홍님 실제 테스트로 확인). summarizeItemFull과
+  // 동일하게 sheetSerialToMs로 변환해서 비교한다.
+  const sorted = comments.slice().sort(function (a, b) { return sheetSerialToMs(a.createdAtRaw) - sheetSerialToMs(b.createdAtRaw); });
   const last = sorted[sorted.length - 1];
   if (last.authorEmail === viewer.email) return false;
   const key = postId + '-' + item.itemId;
   const seenAt = threadSeenMap[key];
   if (!seenAt) return true;
-  return new Date(last.createdAt) > new Date(seenAt);
+  return sheetSerialToMs(last.createdAtRaw) > new Date(seenAt).getTime();
 }
 
 // feed.html hasAwaitingReply(2524~2537행) 포팅, 위와 동일 원칙. ADMIN_EMAIL은 이 함수엔
@@ -227,13 +233,14 @@ function hasAwaitingReply(viewer, postId, item, threadSeenMap) {
   if (viewer.role !== '팀장' && viewer.role !== '임원') return false;
   const comments = item.comments || [];
   if (!comments.length) return false;
-  const sorted = comments.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  // [2026-09-01 버그 수정] hasUnreadReply와 동일한 이유로 createdAtRaw 기준으로 비교한다.
+  const sorted = comments.slice().sort(function (a, b) { return sheetSerialToMs(a.createdAtRaw) - sheetSerialToMs(b.createdAtRaw); });
   const last = sorted[sorted.length - 1];
   if (last.authorEmail !== viewer.email) return false;
   const key = postId + '-' + item.itemId;
   const seenAt = threadSeenMap[key];
   if (!seenAt) return true;
-  return new Date(last.createdAt) > new Date(seenAt);
+  return sheetSerialToMs(last.createdAtRaw) > new Date(seenAt).getTime();
 }
 
 // feed.html의 updateNotifBadge()(1419~1429행)가 하던 3개 건수 계산을 한 번에 묶은 신규
