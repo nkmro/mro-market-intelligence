@@ -272,6 +272,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 .notif-tab-count { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
 .notif-tab.active .notif-tab-count { background: var(--accent); color: #fff; }
 .notif-tab-content { display: flex; flex-direction: column; gap: 10px; }
+.notif-clear-toolbar { display: flex; justify-content: flex-end; padding: 0 16px 10px; }
+.notif-clear-btn { border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .notif-group-title { font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 14px 4px 6px; }
 .notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .notif-post-card:last-child { border-bottom: none; }
@@ -1625,9 +1627,13 @@ contentHtml = renderNotifReplyEntries(replyEntries, false);
 contentHtml = renderNotifReplyEntries(awaitingEntries, true);
 }
 
+const showClearBtn = (notifActiveTab === '댓글 필요' || notifActiveTab === '답변 요청') && (session.role === '팀장' || session.role === '임원');
+const clearToolbarHtml = showClearBtn ? `<div class="notif-clear-toolbar"><button class="notif-clear-btn" onclick="clearAllNotifInActiveTab()">알림 전체 지우기</button></div>` : '';
+
 root.innerHTML = `
 <div class="notif-panel">
 <div class="notif-tabs">${tabsHtml}</div>
+${clearToolbarHtml}
 <div class="notif-tab-content">${contentHtml || '<div class="notif-empty">여기엔 알림이 없어요.</div>'}</div>
 </div>
 `;
@@ -1636,6 +1642,33 @@ updateNotifPermButton();
 
 function switchNotifTab(key) {
 notifActiveTab = key;
+renderNotif();
+}
+
+// [2026-09-01 알림 전체 지우기] "댓글 필요"/"답변 요청" 탭 전용, 팀장·임원 역할에서만 노출되는 일괄
+// 삭제. renderNotif()의 replyEntries/awaitingEntries는 그 함수 안의 지역 변수라 여기서 재사용할 수
+// 없으므로, notifNewPostsCache.items를 hasUnreadReply/hasAwaitingReply로 다시 걸러 지금 이 순간
+// 기준으로 새로 계산한다. 실제 삭제(=읽음 처리)는 스레드를 열 때 쓰는 것과 동일한 markThreadSeenLocal()
+// 을 스레드마다 한 번씩 호출해서 수행한다 — threadSeenMap 갱신(클라이언트) + markThreadSeenRemote_()
+// (Cloud Run 우선, 실패 시 Apps Script 폴백, 호출마다 idempotencyKey를 새로 발급)를 그대로 재사용하므로
+// 서버측 "댓글확인이력" 반영도 기존 경로와 동일하게 보장된다.
+function clearAllNotifInActiveTab() {
+if (notifActiveTab !== '댓글 필요' && notifActiveTab !== '답변 요청') return;
+if (session.role !== '팀장' && session.role !== '임원') return;
+
+const isAwaiting = notifActiveTab === '답변 요청';
+const pairs = [];
+notifNewPostsCache.items.forEach(function (p) {
+(p.items || []).forEach(function (it) {
+const matches = isAwaiting ? hasAwaitingReply(p.id, it) : hasUnreadReply(p.id, it);
+if (matches) pairs.push({ postId: p.id, itemId: it.itemId });
+});
+});
+if (!pairs.length) return;
+
+if (!confirm(`'${notifActiveTab}' 탭의 알림 ${pairs.length}건을 모두 지울까요? 되돌릴 수 없어요.`)) return;
+
+pairs.forEach(function (pair) { markThreadSeenLocal(pair.postId, pair.itemId); });
 renderNotif();
 }
 
