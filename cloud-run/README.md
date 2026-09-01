@@ -48,7 +48,7 @@
 | `changePasswordTest` | `.../changePasswordTest` | `handleChangePassword_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(본인 전용). 3단 폴백 정책. `USERMGMT_CLOUDRUN_DESIGN.md` 참고 |
 | `updateSettingsTest` | `.../updateSettingsTest` | `handleUpdateSettings_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(관리자 전용). 3단 폴백 정책. `USERMGMT_CLOUDRUN_DESIGN.md` 참고 |
 | `registerPushSubscriptionTest` | `.../registerPushSubscriptionTest` | 없음(신규 기능, Apps Script 대응 없음) | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. FCM 푸시 토큰을 Firestore `pushSubscriptions/{email}_{deviceId}`에 upsert 저장. 로그인 시 자동 호출(`initPushOnLogin_`). 코드는 8/28에 커밋됐지만 Cloud Run 배포가 누락되어 있었고, **2026-09-01에 배포 완료**(그 전까지는 프론트가 정상 동작하는 것처럼 보여도 실제로는 아무 기기도 푸시를 등록하지 못하는 상태였음) |
-| `pushBatchTest` | `.../pushBatchTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (Cloud Scheduler `push-batch-5min`, 5분마다) | 사람이 직접 호출하는 API가 아님 — Cloud Scheduler 전용 배치. `role !== '일반'`인 사용자 전원에게 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송(0건 카테고리 제외, 전부 0건이면 미발송). `PUSH_NOTIFICATION_STAGE6_DESIGN.md` 참고 |
+| `pushBatchTest` | `.../pushBatchTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (Cloud Scheduler `push-batch-5min`, 5분마다) | 사람이 직접 호출하는 API가 아님 — Cloud Scheduler 전용 배치. `role !== '일반'`인 사용자 전원에게 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송(0건 카테고리 제외, 전부 0건이면 미발송). `PUSH_NOTIFICATION_STAGE6_DESIGN.md` 참고. **(2026-09-01 버그 수정, 커밋 `be8d6fa`)** `lib/feedEngine.js`의 `hasUnreadReply`/`hasAwaitingReply`가 존재하지 않는 `comment.createdAt`(서버 원시 댓글 객체는 `createdAtRaw`만 가짐)을 참조해, 스레드를 한 번이라도 읽음 처리하면 그 뒤 새 답글을 영원히 감지 못하던 버그를 `sheetSerialToMs(createdAtRaw)` 기준 비교로 수정 |
 | `reminderBatchTest` | `.../reminderBatchTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (Cloud Scheduler `reminder-batch-hourly`, 매시 정각) | 사람이 직접 호출하는 API가 아님 — Cloud Scheduler 전용 배치. 설정 시트 `담당자댓글마감시각`(쉼표로 여러 시각 지정 가능, 예: `13,17`)에 맞춰 담당자에게 리마인더 푸시 발송. Firestore `reminderDeliveries`(`날짜_시각_이메일`)로 시각별 중복 발송 방지 |
 | `firestoreTest` | `.../firestoreTest` | 없음 | 🧪 진단용 | Firestore 연결 확인용 스캐폴딩. 공개 API가 아님 |
 | `sheetPingTest` | `.../sheetPingTest` | 없음 | 🧪 진단용 | Google Sheets API 연결 확인용 스캐폴딩. 공개 API가 아님 |
@@ -62,6 +62,34 @@
 - 컬렉션 `sessions`, 문서 ID = `sessionToken`
 - 필드: `email`(string), `createdAt`(Timestamp), `expiresAt`(Timestamp — 6시간 후 만료)
 - Apps Script가 로그인 시 이 컬렉션에 세션을 기록하고(`sessionSyncTest` 경유), Cloud Run 함수들은 요청받은 `sessionToken`으로 이 컬렉션을 조회해 로그인 여부/만료 여부를 확인합니다.
+
+### `pushSubscriptions` — FCM 푸시 구독 (`registerPushSubscriptionTest`가 upsert)
+
+- 문서 ID = `{email}_{deviceId}` (예: `jhjoo@nkmro.com_28831576-8ee7-44e1-...`) — 기기 하나당 문서 하나. 같은 기기로 재등록해도 upsert라 새 문서가 쌓이지 않음
+- 필드: `email`, `deviceId`, `fcmToken`(string), `active`(boolean), `updatedAt`(Timestamp)
+- `deviceId`는 `feed.html`의 `getOrCreateDeviceId()`가 기기당 한 번만 만들어 `localStorage`(`mro_device_id`)에 저장해두고 재사용. 로그인마다 `initPushOnLogin_()` → `syncPushTokenIfNeeded()`가 토큰이 바뀐 경우에만 이 컬렉션에 씀
+
+### `pushNotifyState` — 통합 푸시(`pushBatchTest`) 중복 발송 방지
+
+- 문서 ID = `{email}`
+- 필드: `signature`(string, 예: `"1-8-1"` = 새 게시물-댓글 필요-답변 요청 건수를 하이픈으로 이어붙인 값), `updatedAt`(Timestamp)
+- `pushBatchTest`가 5분마다 이 signature를 최신 집계와 비교해서, 값이 바뀐 경우에만 실제 푸시를 보내고 문서를 갱신함(같은 상태가 계속되면 반복 발송 안 함)
+
+### `reminderDeliveries` — 담당자 댓글 마감 리마인더(`reminderBatchTest`) 중복 발송 방지
+
+- 문서 ID = `{날짜(YYYY-MM-DD)}_{targetHour}_{email}` (예: `2026-09-01_17_jhjoo@nkmro.com`)
+- 시각(`targetHour`)별로 문서를 분리해서, 설정 `담당자댓글마감시각`에 여러 시각(예: `13,17`)을 지정해도 각 시각마다 하루에 딱 한 번씩만 발송됨 — 자세한 로직은 아래 "Cloud Scheduler 작업" 절 참고
+
+## Cloud Scheduler 작업 (2개)
+
+`pushBatchTest`/`reminderBatchTest`는 사람이 호출하는 API가 아니라 Cloud Scheduler가 정해진 주기로 HTTP 호출을 트리거합니다. (콘솔: `console.cloud.google.com/cloudscheduler?project=mro-market-intelligence`, 리전 `asia-northeast3`, 2026-09-01 기준 둘 다 `Enabled`)
+
+| 작업 이름 | cron(Asia/Seoul) | 대상 함수 | 설명 |
+|---|---|---|---|
+| `push-batch-5min` | `*/5 * * * *` (5분마다) | `pushBatchTest` | `role !== '일반'`인 사용자 전원에게 새 게시물/댓글 필요/답변 요청을 통합해 푸시 1건으로 발송(0건 카테고리 제외, 전부 0건이면 미발송) |
+| `reminder-batch-hourly` | `0 * * * *` (매시 정각) | `reminderBatchTest` | 설정 `담당자댓글리마인더사용`이 `TRUE`일 때만 동작. `담당자댓글마감시각`(쉼표로 복수 시각 지정 가능, 예: `13,17`)에 도달한 `role === '담당'` 사용자 중, 배정됐지만 댓글이 0건인 품목이 있으면 리마인더 푸시 발송 |
+
+**`담당자댓글마감시각` 복수 시각 지원 방식**: 매시 정각 실행마다 `deadlineHours`(설정값을 쉼표로 파싱한 배열, 예 `[13, 17]`) 중 `현재시각 >= 시각`을 만족하는 것들(`dueHours`)을 구하고, 그중 가장 큰 값을 `targetHour`로 삼아 `reminderDeliveries/{날짜}_{targetHour}_{email}` 문서 존재 여부로 발송 여부를 판정합니다. 예를 들어 `13,17`을 지정하면 13시 정각 실행에서 `targetHour=13` 문서가 만들어지고, 14~16시 정각 실행은 이미 그 문서가 있어 아무 것도 안 하다가, 17시 정각에 `targetHour=17` 문서가 새로 만들어지며 다시 한 번 발송됩니다 — 시각마다 독립적으로 하루 한 번씩 발송되는 구조입니다.
 
 ## 배포 방법
 
@@ -78,6 +106,7 @@ gcloud functions deploy <함수이름> \
 
 ## 롤백 방법
 
+- **프론트엔드(`feed.html`/`sw.js`) 단독 수정 롤백**: `pushBatchTest`/`reminderBatchTest`/`registerPushSubscriptionTest`처럼 Cloud Run 함수가 관여하지 않는 순수 프론트 수정(예: 2026-09-01 커밋 `2d142b6`, `f214df0`)은 GitHub의 이전 커밋으로 파일만 되돌려 다시 커밋하면 됩니다 — GitHub Pages가 자동 재배포하고, `sw.js`의 `fetch` 리스너가 `cache:'no-store'`를 강제하므로 별도 캐시 무효화가 필요 없습니다.
 - **개별 API 트래픽 롤백**: 프론트엔드(`index.html`/`feed.html`)의 `CLOUD_RUN_..._URL` 상수를 빈 문자열로 바꾸면, 그 즉시 해당 API는 기존 Apps Script 경로로 되돌아갑니다. (가장 흔히 쓰는 방법)
 - **함수 자체 롤백**: `gcloud functions deploy`는 매번 새 리비전을 만듭니다. Cloud Console → Cloud Functions → 해당 함수 → "리비전" 탭에서 이전 리비전으로 트래픽을 이동할 수 있습니다.
 - **소스 롤백**: 이 저장소의 이전 커밋에 있는 `cloud-run/mro-functions/index.js`로 되돌린 뒤 다시 배포하면 됩니다.
