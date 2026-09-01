@@ -34,7 +34,7 @@
 | `getPostByIdTest` | `.../getPostByIdTest` | `handleGetPostById_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 실패 시 자동으로 Apps Script `getPostById`로 폴백 |
 | `getCommentsTest` | `.../getCommentsTest` | `handleGetComments_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 순수 읽기. 실패 시 자동으로 Apps Script `getComments`로 폴백 |
 | `getThreadSeenTest` | `.../getThreadSeenTest` | `handleGetThreadSeen_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 순수 읽기. 실패 시 자동으로 Apps Script `getThreadSeen`으로 폴백 |
-| `markThreadSeenTest` | `.../markThreadSeenTest` | `handleMarkThreadSeen_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(Sheets `spreadsheets` 스코프, 이 함수와 `postCommentTest`만 최소 권한으로 부여). upsert라 Apps Script와 각자 성공해도 안전하게 수렴 — 실패 시 자동으로 Apps Script `markThreadSeen`으로 폴백. `MARKTHREADSEEN_CLOUDRUN_DESIGN.md` 참고 |
+| `markThreadSeenTest` | `.../markThreadSeenTest` | `handleMarkThreadSeen_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(Sheets `spreadsheets` 스코프, 이 함수와 `postCommentTest`만 최소 권한으로 부여). upsert라 Apps Script와 각자 성공해도 안전하게 수렴 — 실패 시 자동으로 Apps Script `markThreadSeen`으로 폴백. `MARKTHREADSEEN_CLOUDRUN_DESIGN.md` 참고. **(2026-09-01 추가, 커밋 `f8ad0da`)** 팀장/임원 전용 "알림 전체 지우기" 버튼(`feed.html`의 `clearAllNotifInActiveTab()`)도 새 API 없이 이 경로를 스레드마다 반복 호출하는 방식으로 구현됨 — 자세한 내용은 최상위 `README.md`의 "Web Push / FCM 알림 구조" 절 참고 |
 | `postCommentTest` | `.../postCommentTest` | `handlePostComment_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. **쓰기**(Sheets `spreadsheets` 스코프). append 전용이라 markThreadSeen과 다른 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패) 적용 — 애매한 실패가 재시도까지 실패하면 Apps Script로 넘기지 않고 사용자에게 확인을 요청. `POSTCOMMENT_CLOUDRUN_DESIGN_v2.md` 참고 |
 | `loginTest` | `.../loginTest` | `handleLogin_` | ✅ **프로덕션에 실제 연동됨** (`index.html`) | POST. 세션 발급 자체 — 가장 민감한 기능이라 postComment와 동일한 3단 폴백 정책(명확한 사전 실패/애매한 실패/최종 실패) 적용, 실패 시 자동으로 Apps Script `login`으로 폴백 (2026-08-24 설계 승인) |
 | `getItemsTest` | `.../getItemsTest` | `handleGetItems_` | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. 순수 읽기, `getComments`와 동일한 읽기 폴백 패턴(Track A) |
@@ -106,7 +106,7 @@ gcloud functions deploy <함수이름> \
 
 ## 롤백 방법
 
-- **프론트엔드(`feed.html`/`sw.js`) 단독 수정 롤백**: `pushBatchTest`/`reminderBatchTest`/`registerPushSubscriptionTest`처럼 Cloud Run 함수가 관여하지 않는 순수 프론트 수정(예: 2026-09-01 커밋 `2d142b6`, `f214df0`)은 GitHub의 이전 커밋으로 파일만 되돌려 다시 커밋하면 됩니다 — GitHub Pages가 자동 재배포하고, `sw.js`의 `fetch` 리스너가 `cache:'no-store'`를 강제하므로 별도 캐시 무효화가 필요 없습니다.
+- **프론트엔드(`feed.html`/`sw.js`) 단독 수정 롤백**: `pushBatchTest`/`reminderBatchTest`/`registerPushSubscriptionTest`처럼 Cloud Run 함수가 관여하지 않는 순수 프론트 수정(예: 2026-09-01 커밋 `2d142b6`, `f214df0`, `f8ad0da`, `abc64bf`)은 GitHub의 이전 커밋으로 파일만 되돌려 다시 커밋하면 됩니다 — GitHub Pages가 자동 재배포하고, `sw.js`의 `fetch` 리스너가 `cache:'no-store'`를 강제하므로 별도 캐시 무효화가 필요 없습니다. `abc64bf`(알림 중복 방지 구조 개선)를 롤백할 경우, 클라이언트 `localStorage`에 이미 저장된 `mro_last_notif_count::{email}` 키는 이전 코드가 그냥 무시하므로 별도로 지울 필요는 없습니다.
 - **개별 API 트래픽 롤백**: 프론트엔드(`index.html`/`feed.html`)의 `CLOUD_RUN_..._URL` 상수를 빈 문자열로 바꾸면, 그 즉시 해당 API는 기존 Apps Script 경로로 되돌아갑니다. (가장 흔히 쓰는 방법)
 - **함수 자체 롤백**: `gcloud functions deploy`는 매번 새 리비전을 만듭니다. Cloud Console → Cloud Functions → 해당 함수 → "리비전" 탭에서 이전 리비전으로 트래픽을 이동할 수 있습니다.
 - **소스 롤백**: 이 저장소의 이전 커밋에 있는 `cloud-run/mro-functions/index.js`로 되돌린 뒤 다시 배포하면 됩니다.
