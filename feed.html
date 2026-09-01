@@ -1039,6 +1039,12 @@ const __authT0 = Date.now();
 // 오류로 무한로딩에 빠졌던 사고 이후 추가 - 그 사고처럼 동기 예외로 함수가 죽어버리는
 // 경우에도 이 타이머는 독립적으로 실행되므로 그대로 안전장치 역할을 한다).
 const __authSafetyTimer = setTimeout(function () { doLogout(); }, 90000);
+// [2026-09-01 알림 구조 개선 3차] 로그인 직후 초기 로딩도 "활성화 중"으로 켜 둔다 — 아래
+// feedPromise(loadFeed) 내부에도 updateNotifBadge() 게이트가 있는데, appActivating이 켜져
+// 있는 동안은 그게 먼저 끝나도(threadSeenMap이 아직 안 채워진 상태의 계산이어도) 안전하게
+// 기준선만 맞추고 넘어간다. 로그인 이메일을 이제 알았으니 그 계정의 영구 기준선도 채운다.
+beginAppActivating_();
+lastNotifCount = getLastNotifCount_();
 // feed와 idle/threadSeen/notif를 처음부터 동시에 실행해 대기시간을 줄인다 (2026-08-07)
 const feedPromise = loadFeed();
 const __authTGroupStart = Date.now();
@@ -1067,6 +1073,7 @@ document.getElementById('nav-gas-admin').style.display = 'flex';
 setupTeamLabelControl();
 const [__authTIdle, __authTSeen, __authTNotif] = await Promise.all([idlePromise, seenPromise, notifPromise]);
 updateNotifBadge();
+endAppActivating_(); // [2026-09-01 알림 구조 개선 3차] 초기 로딩에 필요한 계산이 전부 끝났으니 이제부터는 진짜 알림이 뜬다
 // 알림 개수 집계가 완전히 끝난 뒤에야 "MRO 뉴스 수집 중" 애니메이션을 종료한다.
 // (예전엔 loadFeed() 직후 바로 애니메이션을 끝냈는데, 그 시점엔 알림 집계가 아직
 // 시작도 안 한 상태라 애니메이션이 끝나고 알림 탭에 들어가도 집계가 안 돼 있었음)
@@ -1216,16 +1223,20 @@ function refreshOnResume() {
   if (!(session && session.sessionToken)) return;
   // iOS가 백그라운드에서 깨어난 직후엔 와이파이/셀룰러가 아직 완전히 준비 안 된 경우가 있어
   // 살짝 지연 후 요청하고, 그래도 실패하면 한번 더 재시도한다.
-  // [2026-09-01 알림 중복 수정] 복귀 후 이 사이클에서 나오는 첫 updateNotifBadge() 계산은
-  // 알림을 억제한다(위 suppressNextLocalNotif 선언부 주석 참고) — FCM이 이미 알려준 것과
-  // 같은 사건을 인앱 알림으로 또 띄우는 것을 막기 위함.
-  suppressNextLocalNotif = true;
+  // [2026-09-01 알림 구조 개선 3차] 복귀로 인해 아래에서 동시에 도는 작업들(loadFeed 내부 게이트,
+  // pollForUpdates, 알림탭이면 추가 재조회)이 각자 updateNotifBadge()를 부를 수 있다. 예전에는
+  // "첫 계산 1번만" 억제하는 플래그(suppressNextLocalNotif)를 썼는데, 그중 캐시 기반으로 먼저
+  // 끝난 계산이 플래그를 조기 소비해버리고 뒤이은 진짜 최신 계산은 억제가 안 되는 레이스가 있었다
+  // (재홍님 실제 재현 확인). appActivating은 "첫 계산"이 아니라 "이 복귀 사이클에서 도는 작업이
+  // 전부 끝날 때"까지 유지되므로, 그중 어느 경로가 몇 번 updateNotifBadge()를 불러도 전부 안전하게
+  // 기준선만 맞추고 넘어간다 — evaluateLocalNotification_() 참고.
+  beginAppActivating_();
   setTimeout(function () {
-    loadFeed();
-    pollForUpdates(); // 알림 배지 갱신은 pollForUpdates 내부에서 처리. (예전엔 여기서 loadNotifNewPosts를 또 호출해 동시에 두 번 요청이 나가면서, 나중에 도착한 오래된 응답이 배지/푸시를 잘못된 값으로 갱신했다가 몇 초 뒤 저절로 정정되는 레이스가 있었음)
-    if (currentView === 'items') loadItems();
-    if (currentView === 'notif') { loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); }); }
-    if (currentView === 'users') loadUsers();
+    const tasks = [loadFeed(), pollForUpdates()]; // 알림 배지 갱신은 pollForUpdates 내부에서도 처리됨
+    if (currentView === 'items') tasks.push(loadItems());
+    if (currentView === 'notif') { tasks.push(loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); })); }
+    if (currentView === 'users') tasks.push(loadUsers());
+    Promise.all(tasks).finally(endAppActivating_);
   }, 600);
 }
 document.addEventListener('visibilitychange', function () {
@@ -1471,15 +1482,10 @@ if (count > 0) navigator.setAppBadge(count).catch(function () {});
 else navigator.clearAppBadge().catch(function () {});
 }
 
-// [2026-09-01 알림 중복 수정] suppressNextLocalNotif가 서 있으면(포그라운드 복귀 직후 첫
-// 계산) 알림은 건너뛰고 기준값(lastNotifCount)만 조용히 맞춘다 — 아래 주석/선언부 참고.
-if (suppressNextLocalNotif) {
-suppressNextLocalNotif = false;
-} else if (lastNotifCount !== null && count > lastNotifCount && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-const diff = count - lastNotifCount;
-showLocalNotification('MRO 자재 시황', '새 알림이 ' + diff + '건 있어요.');
-}
-lastNotifCount = count;
+// [2026-09-01 알림 구조 개선 3차] 알림을 띄울지 판단하는 로직은 더 이상 여기 인라인으로 두지
+// 않는다 — evaluateLocalNotification_() 한 곳으로 모아서, updateNotifBadge()를 부르는 10여
+// 군데 어디서 호출되든 항상 같은 규칙(appActivating이면 기준선만 조용히 갱신)을 따르게 한다.
+evaluateLocalNotification_(count);
 }
 
 // 6-5: 검색 기능 (현재 로드된 피드 안에서 클라이언트 사이드 필터링)
@@ -2353,16 +2359,56 @@ localStorage.setItem('mro_last_activity', String(now));
 let threadSeenMap = {};
 let threadSeenMapLoaded = false;
 let notifNewPostsCache = { loaded: false, items: [] };
-let lastNotifCount = null;
 // notifFetchSeq 선언은 위쪽(init() 실행 전)으로 옮겼다 — 이유는 그쪽 주석 참고.
-// [2026-09-01 알림 중복 수정] 앱이 백그라운드에서 살아있다가 포그라운드로 복귀할 때
-// (예: FCM 알림을 눌러 기존 창을 focus()만 한 경우) refreshOnResume()의 "복귀 후 첫 갱신"은
-// lastNotifCount가 백그라운드 진입 전의 낡은 값이라, 그 사이 도착한 FCM 푸시와 같은 사건을
-// 또 한 번 인앱 알림(showLocalNotification)으로 띄우는 문제가 있었다. 복귀 직후 첫 번째
-// updateNotifBadge() 계산 한 번만 "기준값(lastNotifCount)만 조용히 맞추고 알림은 건너뛰기"
-// 하도록 이 플래그를 둔다 — 그 이후 실제로 화면을 보는 도중 카운트가 오르는 경우는 지금처럼
-// 그대로 알림이 뜬다.
-let suppressNextLocalNotif = false;
+// [2026-09-01 알림 구조 개선 3차 — be8d6fa/2d142b6/f214df0 세 차례 수정을 근본적으로 통합]
+// 그동안 고친 인앱 알림 중복은 매번 "경로 하나만 막는" 땜질이라 다른 경로에서 같은 문제가
+// 재발했다(2d142b6은 복귀 시 첫 계산만 억제 → 그 사이 콜드 스타트 경로에서 재발(f214df0) →
+// 이번엔 복귀 시 여러 경로가 동시에 도는 레이스로 다시 재발). 근본 원인 세 가지를 한 번에 잡는다:
+//  1) lastNotifCount가 메모리 변수뿐이라 새로고침/콜드 스타트마다 기준선이 불안정했다
+//     → localStorage(getLastNotifCount_/setLastNotifCount_)에 로그인 이메일별로 영구 저장한다.
+//  2) "알림을 띄울지" 판단이 updateNotifBadge()를 부르는 10여 군데에 각자 흩어져 있었다
+//     → evaluateLocalNotification_() 한 곳으로 모은다. updateNotifBadge()는 배지 숫자 계산/표시만
+//        맡고, 실제 알림 여부 판단은 전부 이 함수를 거친다.
+//  3) "이미 사용자에게 알렸는가"를 클라이언트가 첫 계산 1번만 기준으로 판단해서 부정확했다
+//     → appActivating 플래그로 명확히 구분한다. 로그인 직후(proceedAfterAuth)와 백그라운드
+//        복귀 직후(refreshOnResume) 동안은 beginAppActivating_()으로 켜두고, 그로 인해 도는
+//        관련 비동기 작업이 Promise.all로 전부 끝난 뒤에만 endAppActivating_()으로 끈다 — 그
+//        사이 어떤 경로가 몇 번 계산하든 전부 안전하게 기준선만 맞추고 알림은 안 띄운다.
+//        사용자가 실제로 화면을 보고 있는 동안(appActivating === false)에만, 그리고 정말 count가
+//        늘었을 때만 알림이 뜬다.
+function notifCountStorageKey_() {
+  return 'mro_last_notif_count::' + (session && session.email ? String(session.email).toLowerCase() : 'unknown');
+}
+function getLastNotifCount_() {
+  try {
+    const raw = localStorage.getItem(notifCountStorageKey_());
+    return raw === null ? null : parseInt(raw, 10);
+  } catch (e) { return null; }
+}
+function setLastNotifCount_(count) {
+  lastNotifCount = count;
+  try { localStorage.setItem(notifCountStorageKey_(), String(count)); } catch (e) {}
+}
+let lastNotifCount = null; // proceedAfterAuth()에서 로그인 이메일을 알게 된 뒤 getLastNotifCount_()로 채운다
+// 로그인 직후 초기 로딩 중이거나 백그라운드 복귀 후 재동기화 중이면 true — evaluateLocalNotification_()가
+// 이 플래그를 보고 무조건 기준선만 조용히 맞춘다. 기본값 true: 아직 로그인 전(콜드 스타트 최초 진입)에도
+// 안전하도록.
+let appActivating = true;
+function beginAppActivating_() { appActivating = true; }
+function endAppActivating_() { appActivating = false; }
+
+// updateNotifBadge()를 부르는 모든 곳이 통과하는 유일한 알림 여부 판단 지점.
+function evaluateLocalNotification_(count) {
+  if (appActivating) {
+    setLastNotifCount_(count);
+    return;
+  }
+  if (lastNotifCount !== null && count > lastNotifCount && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const diff = count - lastNotifCount;
+    showLocalNotification('MRO 자재 시황', '새 알림이 ' + diff + '건 있어요.');
+  }
+  setLastNotifCount_(count);
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(function () {});
