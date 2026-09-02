@@ -1275,6 +1275,10 @@ Utilities.sleep(BATCH_DELAY_MS);
 }
 
 Logger.log('뉴스 수집 완료: 원자재 ' + materials.length + '개, 요청 ' + requests.length + '건' + (collectionBatchFailed ? ' (일부 배치 실패로 건너뜀 있었음)' : ''));
+// 2026-09-02: 재발 방지용 진행 단계 체크포인트. 6분 타임아웃으로 강제 종료되면 이후 코드는 전혀
+// 실행되지 않으므로(catch 불가능), 다음 실행 시작 시 "지난번에 어디까지 갔었는지"를 바로 확인할 수
+// 있도록 각 단계 완료 시점마다 스크립트 속성에 기록해둔다. (사후 진단용 - 로직에는 영향 없음)
+props.setProperty('CMN_LAST_STAGE', '수집완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초');
 
 // 2단계: 원자재별 중복 제거 후 AI 판단 대상 후보 생성 (원자재 간 교차 중복도 방지)
 const runningLinks = new Set(existingLinks);
@@ -1362,11 +1366,20 @@ candidates.splice(0, candidates.length, ...newCandidates);
 
 // 3단계: AI 판단 요청을 전부 생성한 뒤 배치로 병렬 호출 (뉴스 수집과 동일한 fetchAll 배치 패턴)
 const prompts = candidates.map(c => buildSummarizePrompt_(c.korean, c.title, c.description, c.possibleDuplicateOf));
-const AI_TIME_BUDGET_MS = 4.5 * 60 * 1000; // 전체 실행 6분 제한 대비 안전 마진
-const aiDeadline = scriptStartTime_ + AI_TIME_BUDGET_MS;
+// 2026-09-02: 기존에는 aiDeadline이 "스크립트 시작 시각 + 고정 4.5분"이라, 네이버 수집(1단계)이
+// 예상보다 오래 걸린 날(예: 9/2, 191초)에도 AI 구간에 쓸 수 있는 시간이 그대로였다. 그 결과
+// 수집+AI를 마친 뒤 남는 시간(원래 의도한 안전마진 1.5분)이 실제로는 부족해, 뒤쪽 수집로그
+// 기록/게시 단계까지 가지 못하고 6분 하드리밋에 걸려 강제 종료된 사고가 있었다(2026-09-02).
+// 이제는 "실행 한도(6분) - 후처리 예약시간"을 절대 기준선으로 두고, 그 안에서만 AI 호출을
+// 진행하도록 한다 - 수집이 오래 걸린 만큼 AI 구간이 자동으로 줄어들어, 어떤 경우에도 후처리에
+// 쓸 최소 시간이 보장된다.
+const HARD_TIME_LIMIT_MS = 6 * 60 * 1000; // Apps Script 실행 시간 한도
+const POST_AI_RESERVE_MS = 60 * 1000; // 수집로그 배치 기록 + 게시 + 정리에 최소 확보할 시간
+const aiDeadline = scriptStartTime_ + HARD_TIME_LIMIT_MS - POST_AI_RESERVE_MS;
 const aiResult = callAIBatch_(prompts, aiDeadline);
 const aiTexts = aiResult.texts;
 const processedCount = aiResult.processedCount;
+props.setProperty('CMN_LAST_STAGE', 'AI판단완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/처리' + processedCount + '건');
 
 let posted = 0;
 const postedSummariesThisRun_ = []; // {code, summary} - AI 요약본 중복 체크용 (같은 배치 내)
@@ -1374,6 +1387,12 @@ const postedSummariesThisRun_ = []; // {code, summary} - AI 요약본 중복 체
 // AI가 relevant:true로 판단한 후보를 여기서는 즉시 게시하지 않고 원자재코드별로 모아둔다.
 // relevantByCode[code] = [{c, result}, ...] (이 실행에서 candidates 처리 순서대로 쌓임)
 const relevantByCode = {};
+// 2026-09-02: 수집로그 기록을 건별 appendRow에서 배치(setValues) 기록으로 전환. 기존에는 이 루프
+// 안에서 후보마다 appendRow를 1회씩 호출해, 2026-09-02 사고 당시 120건 처리 중 73초 동안 겨우
+// 일부(RM017까지)만 기록하고 6분 하드리밋에 걸려 죽었다(즉 이 루프 안에서 남은 시간이 소진됨).
+// 이제는 판단/분류(순수 메모리 연산)만 루프에서 수행하고, 실제 시트 기록은 루프가 끝난 뒤
+// 배열을 한 번에 setValues로 기록한다 - 후보 수가 몇 백 건으로 늘어도 API 호출은 1회뿐이다.
+const logRowsToAppend_ = [];
 candidates.slice(0, processedCount).forEach((c, idx) => {
 const result = parseSummarizeResult_(aiTexts[idx], c.title);
 
@@ -1381,7 +1400,7 @@ if (result.aiFailed) {
 if (c.isRetry) {
 // 재시도(3시간 후)까지 실패 -> 포기하고 수집로그에 영구 기록, 대기열에서 제거
 Logger.log('재시도 후에도 AI 실패, 포기: ' + c.title);
-logSheet.appendRow([c.code, c.link, new Date()]);
+logRowsToAppend_.push([c.code, c.link, new Date()]);
 removeFromAIRetryQueue_(retryQueueSheet, c.link);
 } else {
 // 최초 실패 -> 재시도 대기열에 등록 (수집로그에는 기록하지 않아 3시간 후 재시도됨)
@@ -1403,8 +1422,15 @@ postedSummariesThisRun_.push({ code: c.code, summary: result.summary });
 }
 }
 // 수집로그는 게시 여부(N건 제한 통과 여부)와 무관하게 항상 기록한다 - 기존 중복 방지 로직 그대로 유지.
-logSheet.appendRow([c.code, c.link, new Date()]);
+// (실제 시트 기록은 루프 종료 후 배치로 처리 - 바로 위 주석 참고)
+logRowsToAppend_.push([c.code, c.link, new Date()]);
 });
+// 배치 기록 실행 (건별 appendRow 대신 setValues 1회 호출)
+if (logRowsToAppend_.length > 0) {
+const logLastRow_ = logSheet.getLastRow();
+logSheet.getRange(logLastRow_ + 1, 1, logRowsToAppend_.length, 3).setValues(logRowsToAppend_);
+}
+props.setProperty('CMN_LAST_STAGE', '수집로그기록완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/기록' + logRowsToAppend_.length + '건');
 
 // 원자재(code)별로 "AI가 판단한 시황 중요도(relevanceScore)" 높은 순으로 정렬 후, 설정 시트의
 // '원자재별시황게시물출력건수'(기본 1)만큼만 게시. relevanceScore가 없는 경우(AI가 점수를 주지
@@ -1432,6 +1458,7 @@ postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summ
 posted++;
 });
 });
+props.setProperty('CMN_LAST_STAGE', '게시완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/게시' + posted + '건');
 
 const skipped = candidates.length - processedCount;
 if (skipped > 0) {
@@ -1456,8 +1483,20 @@ const newTrigger = ScriptApp.newTrigger('collectMarketNews')
 ss_props.setProperty('CATCHUP_TRIGGER_ID', newTrigger.getUniqueId());
 Logger.log('안전마진 도달 또는 수집 배치 실패로 1시간 후 재실행 예약됨 (남은 후보 ' + skipped + '건, 수집 배치 실패: ' + collectionBatchFailed + ')');
 }
+// 2026-09-02: 게시(위)까지는 이미 끝난 뒤이므로, 정리(purge)는 남은 시간이 빠듯하면 이번 실행은
+// 건너뛰고 다음 실행에 맡긴다. 정리를 하루 미뤄도 데이터 유실은 없지만(보관기한 기준 배치
+// 삭제라 다음 실행에서 마저 처리됨), 게시 직후 시간이 얼마 없는데 정리까지 욕심내다 6분
+// 하드리밋에 걸리는 것보다 안전하다.
+const elapsedBeforePurge_ = new Date().getTime() - scriptStartTime_;
+const PURGE_MIN_REMAINING_MS = 15 * 1000; // 정리 실행에 최소 필요하다고 보는 여유시간
+if (HARD_TIME_LIMIT_MS - elapsedBeforePurge_ < PURGE_MIN_REMAINING_MS) {
+Logger.log('실행 시간이 얼마 남지 않아 이번 실행에서는 정리(purgeOldRecords_)를 건너뜀 (경과 ' + Math.round(elapsedBeforePurge_ / 1000) + '초)');
+props.setProperty('CMN_LAST_STAGE', '정리건너뜀@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round(elapsedBeforePurge_ / 1000) + '초');
+return;
+}
 // ⭐ 오래된 시황게시물/수집로그 자동 정리 (설정 시트 값 기준, 기본 60일/30일)
 purgeOldRecords_();
+props.setProperty('CMN_LAST_STAGE', '정리완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초');
 }
 /**
 * 시황게시물/수집로그의 오래된 행을 '설정' 시트 값 기준으로 자동 삭제.
