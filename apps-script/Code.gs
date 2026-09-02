@@ -1137,7 +1137,21 @@ const maxPostsPerMaterial = Math.max(1, Number(map['원자재별시황게시물�
 // 2026-09-01: [2]번 유사 게시물 비게시 기능의 비교 기간. 기사최대경과일(사전 필터, 원문 기사 단위)과는
 // 별개의 설정이다 - 이 값은 AI가 최종 선정한 대표 후보를 "실제 게시된" 시황게시물과 다시 한번
 // 비교하는 후처리 단계에서만 쓰인다. 설정 시트에 값이 없거나 0/음수/숫자가 아니면 기본값 3(일)로 동작.
-const similarPostCompareDays = Number(map['유사게시물비교기간']) || 3;
+// 2026-09-02: 값이 정상인지 여부를 재홍님이 실행 로그에서 바로 확인할 수 있도록, 기본값으로
+// 대체되는 경우에만 경고를 남긴다(정상일 때는 로그 없음 - 매 실행마다 조용히 지나감).
+// 참고로 기존 "Number(x) || 기본값" 방식은 음수(예: -2)가 JS에서 truthy라 실제로는 걸러지지
+// 않는 허점이 있었는데, 이번에 아래 similarPostCompareDaysValid 조건으로 함께 바로잡았다
+// (다른 설정값들의 동일한 허점은 이번 변경 범위 밖이라 그대로 두었다).
+const similarPostCompareDaysRaw = map['유사게시물비교기간'];
+const similarPostCompareDaysParsed = Number(similarPostCompareDaysRaw);
+const similarPostCompareDaysValid = similarPostCompareDaysRaw !== undefined && similarPostCompareDaysRaw !== '' &&
+!isNaN(similarPostCompareDaysParsed) && similarPostCompareDaysParsed > 0;
+if (!similarPostCompareDaysValid) {
+Logger.log('getSettings_: 설정 시트의 "유사게시물비교기간" 값이 올바르지 않아(현재 값: ' +
+JSON.stringify(similarPostCompareDaysRaw === undefined ? '(행 없음)' : similarPostCompareDaysRaw) +
+') 기본값 3일을 사용합니다. 설정 시트에 1 이상의 숫자를 입력해주세요.');
+}
+const similarPostCompareDays = similarPostCompareDaysValid ? similarPostCompareDaysParsed : 3;
 return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays };
 }
 // 네이버 뉴스검색 API가 &quot; 등 HTML 엔티티로 이스케이프한 title/description을 원래 문자로 되돌리는 유틸
