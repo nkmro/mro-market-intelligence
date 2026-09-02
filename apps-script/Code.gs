@@ -1134,7 +1134,11 @@ const maxArticleAgeDays = Number(map['기사최대경과일']) || 7;
 // 이 건수만 시황게시물로 게시한다(점수가 없으면 발행일 최신순으로 폴백). 값이 없거나 0/음수/숫자가
 // 아니면 기본값 1(원자재당 대표 1건)로 동작한다.
 const maxPostsPerMaterial = Math.max(1, Number(map['원자재별시황게시물출력건수']) || 1);
-return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial };
+// 2026-09-01: [2]번 유사 게시물 비게시 기능의 비교 기간. 기사최대경과일(사전 필터, 원문 기사 단위)과는
+// 별개의 설정이다 - 이 값은 AI가 최종 선정한 대표 후보를 "실제 게시된" 시황게시물과 다시 한번
+// 비교하는 후처리 단계에서만 쓰인다. 설정 시트에 값이 없거나 0/음수/숫자가 아니면 기본값 3(일)로 동작.
+const similarPostCompareDays = Number(map['유사게시물비교기간']) || 3;
+return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays };
 }
 // 네이버 뉴스검색 API가 &quot; 등 HTML 엔티티로 이스케이프한 title/description을 원래 문자로 되돌리는 유틸
 function decodeHtmlEntities_(str) { return String(str).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
@@ -1450,10 +1454,23 @@ if (aScore !== null) return -1;
 if (bScore !== null) return 1;
 return new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime();
 }
+// [2]번 유사 게시물 비게시 (2026-09-01): 위에서 이미 읽어둔 postDataForDedup(시황게시물)을
+// 다시 읽지 않고, 비교 기간(설정 시트 '유사게시물비교기간', 기본 3일)만 다르게 적용해 필터링한다.
+const similarPostCutoff = scriptStartTime_ - settings.similarPostCompareDays * 24 * 60 * 60 * 1000;
+const recentPostsForSimilarityCheck = postDataForDedup.slice(1)
+.filter(r => r[0] && r[7] && new Date(r[7]).getTime() >= similarPostCutoff)
+.map(r => ({ code: r[1], title: r[3], summary: r[4] }));
+
 Object.keys(relevantByCode).forEach(code => {
 const group = relevantByCode[code];
 group.sort(compareByRelevanceThenDate_);
 group.slice(0, maxPostsPerMaterial).forEach(({ c, result }) => {
+const similarPost = isSimilarToRecentPost_(recentPostsForSimilarityCheck, c.code, c.title, result.summary);
+if (similarPost) {
+Logger.log('[유사게시물스킵] ' + c.code + ' "' + c.title + '" - 최근 ' + settings.similarPostCompareDays + '일 내 게시물과 유사해 게시하지 않음 (유사 게시물: "' + similarPost.title + '")');
+// TODO([1]번 구현 시): 탈락뉴스 시트에 사유='유사게시물스킵'으로 기록
+return;
+}
 postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
 posted++;
 });
@@ -1784,6 +1801,48 @@ if (setA.size === 0 || setB.size === 0) return 0;
 let common = 0;
 setA.forEach(t => { if (setB.has(t)) common++; });
 return common / Math.min(setA.size, setB.size);
+}
+
+/**
+* [2]번 유사 게시물 비게시 (2026-09-01).
+* AI가 최종 선정한 대표 후보(제목+AI요약)가, 최근 `유사게시물비교기간`일 이내 실제 게시된
+* 시황게시물과 겹치면 그 게시물을 반환(겹치지 않으면 null).
+* - 사전 필터(titleOverlap_ 직접 호출부, candidates 단계)는 "원문 기사 제목/설명" 대 "게시물 제목/요약"을
+*   비교한다 - 언론사마다 문구가 달라 겹침이 낮게 나와 놓치는 경우가 있다.
+* - 이 함수는 AI가 이미 한 번 정제한 "대표 후보의 제목+AI요약" 대 "게시물의 제목+요약"을 비교해,
+*   문구가 정규화된 뒤에도 여전히 겹치는지 다시 한번 확인하는 후처리 단계다.
+* - recentPosts는 호출부에서 이미 읽어둔 시황게시물 데이터를 기간으로만 다시 필터링해 넘긴다
+*   (시트를 다시 읽지 않음 - 성능 영향 없음).
+* - 임계값은 기존 사전 필터와 동일하게 0.5(제목 또는 요약 중 하나라도 넘으면 중복)를 재사용한다.
+*/
+function isSimilarToRecentPost_(recentPosts, code, title, summary) {
+for (const p of recentPosts) {
+if (p.code !== code) continue;
+if (titleOverlap_(title, p.title) >= 0.5) return p;
+if (titleOverlap_(summary, p.summary) >= 0.5) return p;
+}
+return null;
+}
+
+/**
+* isSimilarToRecentPost_()의 동작을 가상 데이터로 확인하는 테스트 함수 (2026-09-01).
+* 시트를 읽거나 쓰지 않음 - Apps Script 편집기에서 이 함수만 선택해 실행하고 로그를 보면 된다.
+* 실제 3일 이내 중복 사례가 나오길 기다리지 않고도 로직을 바로 검증할 수 있다.
+*/
+function testSimilarPostSkipLogic() {
+const recentPosts = [
+{ code: 'PVC', title: '유럽산 PVC 페이스트 수지에 반덤핑관세...5년간 최대 31.55%', summary: '유럽산 PVC 페이스트 수지에 5년간 최대 31.55% 반덤핑 관세가 부과됐다.' },
+{ code: 'PVC', title: '국제 유가 상승세, 정제마진도 개선', summary: '국제 유가가 최근 상승세를 보이며 정제마진도 함께 개선되고 있다.' }
+];
+const cases = [
+{ label: '같은 사건, 표현만 다름 (스킵 기대)', code: 'PVC', title: '정부, 유럽산 PVC 페이스트 수지에 덤핑방지관세 부과', summary: '정부가 유럽산 PVC 페이스트 수지에 최대 31.55%의 반덤핑 관세를 부과하기로 했다.' },
+{ label: '제목은 겹치지만 원자재코드가 다름 (게시 기대)', code: 'HDPE', title: '유럽산 PVC 페이스트 수지에 반덤핑관세', summary: '요약 문구는 임의로 다르게 작성.' },
+{ label: '같은 코드지만 전혀 다른 사안 (게시 기대)', code: 'PVC', title: '나프타값 보전, 공급가 인하 동참', summary: '나프타 가격 보전으로 공급가 인하에 동참하는 업체가 늘고 있다.' }
+];
+cases.forEach(tc => {
+const dup = isSimilarToRecentPost_(recentPosts, tc.code, tc.title, tc.summary);
+Logger.log('[' + tc.label + '] ' + (dup ? '스킵됨 (유사 게시물: "' + dup.title + '")' : '게시 진행'));
+});
 }
 
 function buildSummarizePrompt_(materialName, title, description, possibleDuplicateOf) {
