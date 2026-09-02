@@ -1152,7 +1152,11 @@ JSON.stringify(similarPostCompareDaysRaw === undefined ? '(행 없음)' : simila
 ') 기본값 3일을 사용합니다. 설정 시트에 1 이상의 숫자를 입력해주세요.');
 }
 const similarPostCompareDays = similarPostCompareDaysValid ? similarPostCompareDaysParsed : 3;
-return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays };
+// 2026-09-02: [1]번 탈락뉴스 보관/조회 기능의 보관 기간. 다른 보관기간 설정(postRetentionDays,
+// logRetentionDays)과 동일한 패턴(값이 없거나 0/음수/숫자가 아니면 기본값)으로 통일했다 -
+// 유사게시물비교기간에 적용한 경고 로그는 이번 변경 범위 밖이라 넣지 않았다.
+const rejectedNewsRetentionDays = Number(map['탈락뉴스보관기간']) || 30;
+return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays };
 }
 // 네이버 뉴스검색 API가 &quot; 등 HTML 엔티티로 이스케이프한 title/description을 원래 문자로 되돌리는 유틸
 function decodeHtmlEntities_(str) { return String(str).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
@@ -1173,6 +1177,28 @@ let sheet = ss.getSheetByName('AI실패대기');
 if (!sheet) {
 sheet = ss.insertSheet('AI실패대기');
 sheet.appendRow(['link', 'code', 'korean', 'title', 'description', 'pubDate', 'firstFailedAt']);
+}
+return sheet;
+}
+
+/**
+* [1]번 탈락뉴스 보관/조회 (2026-09-02): AI가 relevant:true로 판단했지만 실제로는 게시되지 않은
+* "그룹B" 후보(같은 원자재 내 순위 경쟁에서 밀렸거나, [2]번 유사 게시물 스킵으로 걸러진 경우)를
+* 별도 시트('탈락뉴스')에 보관해, "AI가 관련 있다고 봤는데 왜 안 올라갔지?"를 시트에서 바로 확인할
+* 수 있게 한다. 본문 전체가 아니라 AI 요약(summary)만 저장하고, 원문 링크는 아래 상수로 저장 여부를
+* 제어한다(그룹B는 실제 게시되는 기사보다 소량이라 기본값 true로 링크까지 저장해도 안전하다고 판단).
+*/
+const REJECTED_NEWS_STORE_LINK = true;
+
+/**
+* '탈락뉴스' 시트를 가져오거나 없으면 생성.
+* 컬럼: 수집일 / 원자재코드 / 원자재명 / 제목 / AI요약 / relevanceScore / 링크 / 탈락사유
+*/
+function getRejectedNewsSheet_(ss) {
+let sheet = ss.getSheetByName('탈락뉴스');
+if (!sheet) {
+sheet = ss.insertSheet('탈락뉴스');
+sheet.appendRow(['수집일', '원자재코드', '원자재명', '제목', 'AI요약', 'relevanceScore', '링크', '탈락사유']);
 }
 return sheet;
 }
@@ -1475,27 +1501,42 @@ const recentPostsForSimilarityCheck = postDataForDedup.slice(1)
 .filter(r => r[0] && r[7] && new Date(r[7]).getTime() >= similarPostCutoff)
 .map(r => ({ code: r[1], title: r[3], summary: r[4] }));
 
+// [1]번 탈락뉴스 보관 (2026-09-02): relevant:true였지만 실제로는 게시되지 않은 후보를 모아뒀다가
+// 루프 종료 후 배치(setValues)로 한 번에 기록한다 - 수집로그와 동일하게 건별 appendRow를 피해
+// 후보 수가 늘어도 API 호출은 1회뿐이도록 한다. 시각은 이 실행 전체에서 하나로 통일(rejectedAt_).
+const rejectedNewsRows_ = [];
+const rejectedAt_ = new Date();
 Object.keys(relevantByCode).forEach(code => {
 const group = relevantByCode[code];
 group.sort(compareByRelevanceThenDate_);
-group.slice(0, maxPostsPerMaterial).forEach(({ c, result }) => {
+const toPost = group.slice(0, maxPostsPerMaterial);
+const rankedOut = group.slice(maxPostsPerMaterial); // 그룹B: 원자재별 출력 건수 제한에 밀려 게시되지 않음
+rankedOut.forEach(({ c, result }) => {
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '순위밀림']);
+});
+toPost.forEach(({ c, result }) => {
 const similarPost = isSimilarToRecentPost_(recentPostsForSimilarityCheck, c.code, c.title, result.summary);
 if (similarPost) {
 Logger.log('[유사게시물스킵] ' + c.code + ' "' + c.title + '" - 최근 ' + settings.similarPostCompareDays + '일 내 게시물과 유사해 게시하지 않음 (유사 게시물: "' + similarPost.title + '")');
-// TODO([1]번 구현 시): 탈락뉴스 시트에 사유='유사게시물스킵'으로 기록
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '유사게시물스킵']);
 return;
 }
 postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
 posted++;
 });
 });
-props.setProperty('CMN_LAST_STAGE', '게시완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/게시' + posted + '건');
+if (rejectedNewsRows_.length > 0) {
+const rejectedSheet_ = getRejectedNewsSheet_(ss);
+const rejectedLastRow_ = rejectedSheet_.getLastRow();
+rejectedSheet_.getRange(rejectedLastRow_ + 1, 1, rejectedNewsRows_.length, 8).setValues(rejectedNewsRows_);
+}
+props.setProperty('CMN_LAST_STAGE', '게시완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/게시' + posted + '건/탈락' + rejectedNewsRows_.length + '건');
 
 const skipped = candidates.length - processedCount;
 if (skipped > 0) {
 Logger.log('시간 제한으로 이번 실행에서 처리하지 못한 후보: ' + skipped + '건 (로그에 남기지 않아 다음 수집 때 재시도됨)');
 }
-Logger.log('신규 게시된 기사 수: ' + posted);
+Logger.log('신규 게시된 기사 수: ' + posted + ' / 탈락뉴스 기록: ' + rejectedNewsRows_.length);
 
 // 안전마진 도달 시 1시간 뒤 자동 재실행 예약 (상대시간 기반, v14)
 const ss_props = PropertiesService.getScriptProperties();
@@ -1545,6 +1586,15 @@ const logCutoff = new Date(now.getTime() - settings.logRetentionDays * 24 * 60 *
 const postResult = purgeSheetOlderThan_(ss, '시황게시물', 8, postCutoff); // H열=게시일
 const logResult = purgeSheetOlderThan_(ss, '수집로그', 3, logCutoff); // C열=수집일시
 
+// [1]번 탈락뉴스 보관 (2026-09-02): 아직 한 번도 기록된 적이 없으면 시트 자체가 없을 수 있으므로
+// (getRejectedNewsSheet_는 collectMarketNews에서 기록할 때만 생성) 존재할 때만 정리한다.
+// 기존 purgeSheetOlderThan_ 헬퍼를 그대로 재사용(A열=수집일).
+let rejectedNewsResult = { count: 0, deletedIds: [] };
+if (ss.getSheetByName('탈락뉴스')) {
+const rejectedNewsCutoff = new Date(now.getTime() - settings.rejectedNewsRetentionDays * 24 * 60 * 60 * 1000);
+rejectedNewsResult = purgeSheetOlderThan_(ss, '탈락뉴스', 1, rejectedNewsCutoff); // A열=수집일
+}
+
 // 5-7: 게시물이 삭제되면 연결된 댓글이 고아 데이터로 남으므로 함께 정리
 let orphanCommentsDeleted = 0;
 if (postResult.deletedIds.length > 0) {
@@ -1552,9 +1602,11 @@ orphanCommentsDeleted = purgeCommentsByPostIds_(ss, postResult.deletedIds);
 }
 
 // 5-7: 삭제 이력을 시트에 남긴다(Logger.log는 시간 지나면 사라져 감사 불가능하므로)
+// 탈락뉴스 삭제건수는 이번 변경 범위를 최소화하기 위해 '삭제이력' 시트 컬럼 구조는 그대로 두고
+// (기존 열 순서/기존 행과의 호환을 깨지 않기 위함) 아래 Logger.log에만 남긴다.
 logPurgeHistory_(ss, postResult.count, logResult.count, orphanCommentsDeleted, postResult.deletedIds);
 
-Logger.log('purgeOldRecords_: 시황게시물 ' + postResult.count + '건 삭제(기준 ' + settings.postRetentionDays + '일), 수집로그 ' + logResult.count + '건 삭제(기준 ' + settings.logRetentionDays + '일), 고아댓글 ' + orphanCommentsDeleted + '건 정리');
+Logger.log('purgeOldRecords_: 시황게시물 ' + postResult.count + '건 삭제(기준 ' + settings.postRetentionDays + '일), 수집로그 ' + logResult.count + '건 삭제(기준 ' + settings.logRetentionDays + '일), 탈락뉴스 ' + rejectedNewsResult.count + '건 삭제(기준 ' + settings.rejectedNewsRetentionDays + '일), 고아댓글 ' + orphanCommentsDeleted + '건 정리');
 }
 
 /**
