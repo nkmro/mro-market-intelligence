@@ -1187,18 +1187,20 @@ return sheet;
 * 별도 시트('탈락뉴스')에 보관해, "AI가 관련 있다고 봤는데 왜 안 올라갔지?"를 시트에서 바로 확인할
 * 수 있게 한다. 본문 전체가 아니라 AI 요약(summary)만 저장하고, 원문 링크는 아래 상수로 저장 여부를
 * 제어한다(그룹B는 실제 게시되는 기사보다 소량이라 기본값 true로 링크까지 저장해도 안전하다고 판단).
+* [3]번 관련게시물ID (2026-09-03): 탈락사유별로 "이 뉴스 대신/유사하게 게시된 게시물"의 시황게시물
+* ID(A열)를 함께 남겨, 시일이 지난 뒤에도 두 시트를 수동 대조하지 않고 바로 비교할 수 있게 한다.
 */
 const REJECTED_NEWS_STORE_LINK = true;
 
 /**
 * '탈락뉴스' 시트를 가져오거나 없으면 생성.
-* 컬럼: 수집일 / 원자재코드 / 원자재명 / 제목 / AI요약 / relevanceScore / 링크 / 탈락사유
+* 컬럼: 수집일 / 원자재코드 / 원자재명 / 제목 / AI요약 / relevanceScore / 링크 / 탈락사유 / 관련게시물ID
 */
 function getRejectedNewsSheet_(ss) {
 let sheet = ss.getSheetByName('탈락뉴스');
 if (!sheet) {
 sheet = ss.insertSheet('탈락뉴스');
-sheet.appendRow(['수집일', '원자재코드', '원자재명', '제목', 'AI요약', 'relevanceScore', '링크', '탈락사유']);
+sheet.appendRow(['수집일', '원자재코드', '원자재명', '제목', 'AI요약', 'relevanceScore', '링크', '탈락사유', '관련게시물ID']);
 }
 return sheet;
 }
@@ -1499,11 +1501,15 @@ return new Date(b.c.pubDate).getTime() - new Date(a.c.pubDate).getTime();
 const similarPostCutoff = scriptStartTime_ - settings.similarPostCompareDays * 24 * 60 * 60 * 1000;
 const recentPostsForSimilarityCheck = postDataForDedup.slice(1)
 .filter(r => r[0] && r[7] && new Date(r[7]).getTime() >= similarPostCutoff)
-.map(r => ({ code: r[1], title: r[3], summary: r[4] }));
+.map(r => ({ id: r[0], code: r[1], title: r[3], summary: r[4] }));
 
 // [1]번 탈락뉴스 보관 (2026-09-02): relevant:true였지만 실제로는 게시되지 않은 후보를 모아뒀다가
 // 루프 종료 후 배치(setValues)로 한 번에 기록한다 - 수집로그와 동일하게 건별 appendRow를 피해
 // 후보 수가 늘어도 API 호출은 1회뿐이도록 한다. 시각은 이 실행 전체에서 하나로 통일(rejectedAt_).
+// [3]번 관련게시물ID (2026-09-03): 순위밀림은 "같은 실행에서 그 원자재로 실제 게시된 게시물"의
+// ID가 필요해서, 원래 순위밀림 → 게시 순서였던 것을 게시 → 순위밀림으로 바꿔 게시 처리를 먼저
+// 끝낸다(대표 후보마저 유사게시물로 스킵되면 이번 실행엔 게시된 게 없어 공백일 수 있음).
+// 유사게시물스킵은 스킵 원인이 된 기존 게시물(similarPost)의 ID를 그대로 쓴다.
 const rejectedNewsRows_ = [];
 const rejectedAt_ = new Date();
 Object.keys(relevantByCode).forEach(code => {
@@ -1511,24 +1517,27 @@ const group = relevantByCode[code];
 group.sort(compareByRelevanceThenDate_);
 const toPost = group.slice(0, maxPostsPerMaterial);
 const rankedOut = group.slice(maxPostsPerMaterial); // 그룹B: 원자재별 출력 건수 제한에 밀려 게시되지 않음
-rankedOut.forEach(({ c, result }) => {
-rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '순위밀림']);
-});
+const postedIdsForCode_ = [];
 toPost.forEach(({ c, result }) => {
 const similarPost = isSimilarToRecentPost_(recentPostsForSimilarityCheck, c.code, c.title, result.summary);
 if (similarPost) {
 Logger.log('[유사게시물스킵] ' + c.code + ' "' + c.title + '" - 최근 ' + settings.similarPostCompareDays + '일 내 게시물과 유사해 게시하지 않음 (유사 게시물: "' + similarPost.title + '")');
-rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '유사게시물스킵']);
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '유사게시물스킵', similarPost.id]);
 return;
 }
-postSheet.appendRow([Utilities.getUuid(), c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
+const newPostId_ = Utilities.getUuid();
+postSheet.appendRow([newPostId_, c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
+postedIdsForCode_.push(newPostId_);
 posted++;
+});
+rankedOut.forEach(({ c, result }) => {
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '순위밀림', postedIdsForCode_.join(', ')]);
 });
 });
 if (rejectedNewsRows_.length > 0) {
 const rejectedSheet_ = getRejectedNewsSheet_(ss);
 const rejectedLastRow_ = rejectedSheet_.getLastRow();
-rejectedSheet_.getRange(rejectedLastRow_ + 1, 1, rejectedNewsRows_.length, 8).setValues(rejectedNewsRows_);
+rejectedSheet_.getRange(rejectedLastRow_ + 1, 1, rejectedNewsRows_.length, 9).setValues(rejectedNewsRows_);
 }
 props.setProperty('CMN_LAST_STAGE', '게시완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/게시' + posted + '건/탈락' + rejectedNewsRows_.length + '건');
 
