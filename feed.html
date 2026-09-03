@@ -3331,8 +3331,10 @@ async function getCustomersRemote_() {
 
 // getUsers Cloud Run 배선(Track B) — getItems/getCustomers와 동일한 읽기 전용 폴백 패턴(20초
 // 타임아웃, ok:true일 때만 채택, 그 외(예외/타임아웃/ok:false 전부)는 조용히 기존 Apps Script로
-// 폴백). 사용자 현황 화면(loadUsers())에서만 사용한다 — 품목 등록 폼의 담당자 드롭다운을 채우는
-// loadItems() 내부의 별도 callApi('getUsers', {}) 호출은 이번 배선 대상이 아니라 그대로 둔다.
+// 폴백). 사용자 현황 화면(loadUsers())뿐 아니라, 품목 등록 폼의 담당자 드롭다운을 채우는
+// loadItems() 내부 호출에도 동일하게 사용한다(2026-09-03) — 예전에는 loadItems() 쪽만 이 배선에서
+// 제외되어 Apps Script로 직행했는데, 품목 관리 탭 진입 시 이 호출 하나 때문에 "서버 연결 지연"
+// 알림이 자주 뜨는 원인으로 확인되어 동일하게 Cloud Run 우선 시도로 통일했다.
 async function getUsersRemote_() {
   if (CLOUD_RUN_GET_USERS_URL) {
     try {
@@ -3372,7 +3374,7 @@ root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불
 const settled = await Promise.allSettled([
 getItemsRemote_(),
 getCustomersRemote_(),
-callApi('getUsers', {})
+getUsersRemote_()
 ]);
 const itemsRes = settled[0].status === 'fulfilled' ? settled[0].value : { ok: false, error: 'NETWORK_ERROR' };
 const customersRes = settled[1].status === 'fulfilled' ? settled[1].value : { ok: false };
