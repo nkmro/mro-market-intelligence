@@ -63,6 +63,23 @@
 - 필드: `email`(string), `createdAt`(Timestamp), `expiresAt`(Timestamp — 6시간 후 만료)
 - Apps Script가 로그인 시 이 컬렉션에 세션을 기록하고(`sessionSyncTest` 경유), Cloud Run 함수들은 요청받은 `sessionToken`으로 이 컬렉션을 조회해 로그인 여부/만료 여부를 확인합니다.
 
+### `loginLocks` — 로그인 동시성 잠금 (`loginTest` 전용)
+
+- 문서 ID = `email`
+- `acquireLoginLock_`/`releaseLoginLock_`(`index.js`)이 사용. 같은 이메일로 로그인 요청이 동시에 들어오는 경우를 막기 위한 잠금으로, `writeLocks`와는 별개의 컬렉션입니다.
+- 잠금 유효 시간 10초(오래된 잠금은 stale로 간주해 무시), 잠금 획득 대기 최대 3초.
+
+### `writeLocks` — 쓰기 동시성 잠금 (`lib/writeLock.js`, 여러 함수가 공유)
+
+- 문서 ID = `lockName`(예: `upsertItemAndCustomer` — `upsertItemTest`/`upsertCustomerTest`가 같은 잠금 이름을 공유)
+- `acquireLock`/`releaseLock`으로 구성된 범용 모듈. `loginLocks`처럼 특정 함수 전용이 아니라, 여러 쓰기 API가 이름만 다르게 지정해 재사용하는 공통 잠금 장치입니다.
+
+### `writeIdempotency` — 쓰기 API 중복 실행 방지 (`lib/writeIdempotency.js`, `withIdempotency()`)
+
+- 문서 ID = `idempotencyKey`(클라이언트가 요청마다 생성해 전달)
+- TTL 6시간. Apps Script의 `withIdempotency_`와 동일한 목적(네트워크 재시도로 같은 쓰기가 두 번 실행되는 것을 방지)을 Cloud Run 쪽에서 구현한 것.
+- 적용된 엔드포인트 10개: `markThreadSeenTest`, `postCommentTest`, `loginTest`, `updateCommentTest`, `deleteCommentTest`, `upsertItemTest`, `upsertCustomerTest`, `updateUserTest`, `changePasswordTest`, `updateSettingsTest`
+
 ### `pushSubscriptions` — FCM 푸시 구독 (`registerPushSubscriptionTest`가 upsert)
 
 - 문서 ID = `{email}_{deviceId}` (예: `jhjoo@nkmro.com_28831576-8ee7-44e1-...`) — 기기 하나당 문서 하나. 같은 기기로 재등록해도 upsert라 새 문서가 쌓이지 않음
