@@ -200,6 +200,7 @@ case 'deleteComment': __result = withIdempotency_(body.idempotencyKey, function 
 case 'getNotifications': __result = handleGetNotifications_(user, body); break;
 case 'clientDebugLog': __result = handleClientDebugLog_(user, body); break;
 case 'getPostById': __result = handleGetPostById_(user, body); break;
+case 'generateReportPrompt': __result = handleGenerateReportPrompt_(user, body); break;
 case 'markChecked': __result = withIdempotency_(body.idempotencyKey, function () { return handleMarkChecked_(user, body); }); break;
 case 'upsertItem': __result = withIdempotency_(body.idempotencyKey, function () { return handleUpsertItem_(user, body); }); break;
 case 'suggestMaterials': __result = handleSuggestMaterials_(user, body); break;
@@ -3312,6 +3313,68 @@ needsAttention: entry.needsAttention,
 items: entry.items
 }
 });
+}
+
+/**
+* action: 'generateReportPrompt' — 시황게시물 1건을 바탕으로, 외부 AI(Claude/Gemini 등)에
+* 그대로 붙여넣어 고급 리서치 보고서를 작성하게 만드는 "프롬프트 자체"를 생성한다(2026-09-04).
+* AI 뉴스 요약을 다시 만들거나 원문을 재분석하지 않고, 이미 저장된 시황게시물의
+* 원자재명/제목/AI요약/링크(C~F열, getAllPosts_ 반환값 기준)만 입력값으로 쓴다.
+* AI 호출은 여기서 "보고서 작성용 프롬프트 생성" 한 번만 발생한다.
+*
+* 메타 프롬프트 템플릿은 코드가 아니라 '설정' 시트('보고서프롬프트템플릿' 키)에서 읽는다 —
+* 재홍님이 시트에서 직접 문구를 수정하면 코드 재배포 없이 모든 게시물에 바로 반영된다.
+* 템플릿 안의 {원자재명}/{제목}/{AI요약}/{링크} 플레이스홀더를 실제 값으로 치환해 호출한다.
+*
+* 열람 권한은 handleGetPostById_와 동일한 방식(buildFeedEntry_)으로 확인한다 — 이 게시물이
+* 피드에서 안 보이는 사용자는 프롬프트도 생성할 수 없다.
+*
+* 이 액션은 hedge/재시도 대상(RETRYABLE_API_ACTIONS)에 절대 넣지 않는다(프론트 원칙) — AI 호출은
+* 조회보다 오래 걸려서, hedge를 적용하면 suggestMaterials와 같은 중복 호출 문제가 재발한다.
+*/
+function handleGenerateReportPrompt_(user, body) {
+const postId = body.postId;
+if (!postId) return jsonResponse_({ ok: false, error: 'MISSING_POST_ID' });
+
+const allPosts = getAllPosts_();
+const post = allPosts.find(function (p) { return p.id === postId; });
+if (!post) return jsonResponse_({ ok: false, error: 'NOT_FOUND' });
+
+const allItems = getAllItems_();
+const allComments = getAllComments_();
+const commentsByPost = {};
+allComments.forEach(function (c) {
+const key = String(c.postId);
+if (!commentsByPost[key]) commentsByPost[key] = [];
+commentsByPost[key].push(c);
+});
+const teamByEmail = {};
+allComments.forEach(function (c) {
+const email = String(c.authorEmail || '');
+if (email && !(email in teamByEmail)) teamByEmail[email] = getUserTeam_(email);
+});
+const entry = buildFeedEntry_(user, post, allItems, commentsByPost, teamByEmail);
+if (!entry) return jsonResponse_({ ok: false, error: 'FORBIDDEN' });
+
+const template = getSetting_('보고서프롬프트템플릿');
+if (!template) {
+console.error('handleGenerateReportPrompt_: 설정 시트에 "보고서프롬프트템플릿" 값이 없음');
+return jsonResponse_({ ok: false, error: 'TEMPLATE_NOT_CONFIGURED' });
+}
+
+const metaPrompt = template
+.replace(/\{원자재명\}/g, post.materialName || '')
+.replace(/\{제목\}/g, post.title || '')
+.replace(/\{AI요약\}/g, post.summary || '')
+.replace(/\{링크\}/g, post.link || '');
+
+const generatedPrompt = callAI_(metaPrompt);
+if (!generatedPrompt) {
+console.error('handleGenerateReportPrompt_: callAI_ 실패 (postId=' + postId + ')');
+return jsonResponse_({ ok: false, error: 'AI_GENERATE_FAILED' });
+}
+
+return jsonResponse_({ ok: true, prompt: generatedPrompt.trim() });
 }
 
 /**
