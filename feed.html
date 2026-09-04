@@ -344,6 +344,20 @@ font-size: 13px; padding: 2px 4px; display: none;
 .material-tag-remove { cursor: pointer; color: var(--text-muted); font-weight: 700; }
 .ai-suggest-btn { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.report-prompt-btn { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; margin: 2px 0 8px; font-family: inherit; color: var(--text); }
+.report-prompt-btn:disabled { cursor: default; }
+.report-prompt-btn.is-loading { display: inline-flex; align-items: center; gap: 6px; border-color: #c9d9f7; background: var(--blue-soft); color: var(--blue); }
+.report-prompt-btn.is-failed { border-color: #eccac6; background: #fbeceb; color: var(--danger); }
+.mro-spinner-sm { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #c9d9f7; border-top-color: var(--blue); animation: mroSpin .8s linear infinite; flex-shrink: 0; }
+.report-prompt-panel { margin: 0 0 8px; }
+.report-prompt-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.report-prompt-panel-title { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.report-prompt-hint { font-size: 11px; color: var(--text-muted); }
+.report-prompt-textarea { width: 100%; min-height: 160px; font-size: 12px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; resize: vertical; font-family: inherit; }
+.report-prompt-actions { margin-top: 8px; }
+.report-prompt-copy-btn { border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 6px; padding: 6px 13px; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 600; }
+.report-prompt-nextstep { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+.report-prompt-nextstep b { color: var(--accent-dark); font-weight: 600; }
 .item-code-hint { font-weight: 400; color: var(--text-muted); }
 .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .btn-secondary { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 9px 18px; font-size: 13px; cursor: pointer; }
@@ -1866,6 +1880,8 @@ return `
 <span class="post-time">${escapeHtml(fmtTime(post.createdAt))}</span>
 </div>
 <div class="post-title">${escapeHtml(post.summary || '')}</div>
+<button type="button" class="report-prompt-btn" id="report-prompt-btn-${post.id}" data-default="📝 AI 보고서 프롬프트 생성" onclick="generateReportPrompt('${post.id}')">📝 AI 보고서 프롬프트 생성</button>
+<div class="report-prompt-panel" id="report-prompt-panel-${post.id}" style="display:none;"></div>
 <div class="post-summary">${escapeHtml(post.title || '')}</div>
 ${post.link ? `<a class="article-link" href="${escapeHtml(post.link)}" target="_blank" rel="noopener">🔗 기사 원문 보기</a>` : ''}
 <div class="items-box">
@@ -1874,6 +1890,82 @@ ${itemsHtml}
 </div>
 </div>
 `;
+}
+
+// 2026-09-04: [AI 보고서 프롬프트 생성] 게시물별로 생성된 프롬프트를 메모리에 캐싱해,
+// 같은 게시물을 다시 열어봐도(또는 다른 사람이 이미 만들어놨어도 이 세션 안에서는) 불필요한
+// AI 재호출을 하지 않는다. 새로고침하면 비워지는 세션 한정 캐시이며, 서버 쪽 캐싱은 아니다.
+const reportPromptCache_ = {};
+
+async function generateReportPrompt(postId) {
+const btn = document.getElementById('report-prompt-btn-' + postId);
+const panel = document.getElementById('report-prompt-panel-' + postId);
+if (!btn || !panel) return;
+
+if (reportPromptCache_[postId]) {
+renderReportPromptPanel_(postId, reportPromptCache_[postId]);
+panel.style.display = 'block';
+return;
+}
+
+btn.disabled = true;
+btn.classList.remove('is-failed');
+btn.classList.add('is-loading');
+btn.innerHTML = '<span class="mro-spinner-sm"></span>프롬프트 생성 중...';
+try {
+// 주의: generateReportPrompt는 RETRYABLE_API_ACTIONS에 절대 넣지 않는다 — AI 호출은
+// 조회보다 오래 걸려서, hedge를 적용하면 suggestMaterials와 같은 중복 호출 문제가 재발한다.
+const res = await callApi('generateReportPrompt', { postId: postId });
+if (res.ok && res.prompt) {
+reportPromptCache_[postId] = res.prompt;
+renderReportPromptPanel_(postId, res.prompt);
+panel.style.display = 'block';
+btn.disabled = false;
+btn.classList.remove('is-loading', 'is-failed');
+btn.textContent = btn.dataset.default;
+} else {
+btn.disabled = false;
+btn.classList.remove('is-loading');
+btn.classList.add('is-failed');
+btn.textContent = '⚠️ 생성 실패 - 다시 시도';
+}
+} catch (e) {
+btn.disabled = false;
+btn.classList.remove('is-loading');
+btn.classList.add('is-failed');
+btn.textContent = '⚠️ 생성 실패 - 다시 시도';
+}
+}
+
+function renderReportPromptPanel_(postId, promptText) {
+const panel = document.getElementById('report-prompt-panel-' + postId);
+if (!panel) return;
+panel.innerHTML = `
+<div class="report-prompt-panel-head">
+<span class="report-prompt-panel-title">생성된 보고서 작성용 프롬프트</span>
+<span class="report-prompt-hint">Gemini Canvas에 붙여넣기 권장</span>
+</div>
+<textarea class="report-prompt-textarea" id="report-prompt-textarea-${postId}" readonly>${escapeHtml(promptText)}</textarea>
+<div class="report-prompt-actions">
+<button type="button" class="report-prompt-copy-btn" onclick="copyReportPrompt('${postId}')">📋 복사</button>
+</div>
+<div class="report-prompt-nextstep">💡 Canvas에서 보고서가 완성되면 우측 상단 <b>공유 및 내보내기 → Docs로 내보내기</b>(또는 전체 선택 후 복사)로 이어가세요.</div>
+`;
+}
+
+function copyReportPrompt(postId) {
+const textarea = document.getElementById('report-prompt-textarea-' + postId);
+if (!textarea) return;
+navigator.clipboard.writeText(textarea.value).then(function () {
+const copyBtn = document.querySelector('#report-prompt-panel-' + postId + ' .report-prompt-copy-btn');
+if (copyBtn) {
+const orig = copyBtn.textContent;
+copyBtn.textContent = '✅ 복사됨';
+setTimeout(function () { copyBtn.textContent = orig; }, 1500);
+}
+}).catch(function () {
+alert('복사에 실패했어요. 프롬프트 내용을 직접 선택해서 복사해주세요.');
+});
 }
 
 function renderItemRow(post, item) {
@@ -3545,7 +3637,7 @@ overlay.innerHTML = `
 <div class="form-group">
 <label class="form-label">주요 원자재 (한글)</label>
 <div id="material-tags" class="material-tags"></div>
-${canEdit ? '<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button><div class="form-hint">품목명을 바꾸면 자동으로 다시 추천됩니다</div>' : ''}
+${canEdit ? '<button type="button" id="ai-suggest-btn" class="ai-suggest-btn" data-default="✨ AI 추천 다시 받기" onclick="suggestMaterialsForForm()">✨ AI 추천 다시 받기</button><div class="form-hint">품목명을 바꾸면 자동으로 다시 추천됩니다</div>' : ''}
 </div>
 <div class="form-group">
 <label class="form-label">상태</label>
@@ -3617,14 +3709,16 @@ if (!nameInput) return;
 const itemName = nameInput.value.trim();
 if (!itemName) return;
 const btn = document.getElementById('ai-suggest-btn');
-const btnOrigText = btn ? btn.textContent : null;
 if (btn) { btn.disabled = true; btn.textContent = '⏳ 추천 받는 중...'; }
 try {
 const res = await callApi('suggestMaterials', { itemName: itemName });
 if (res.ok && res.materials) {
 itemsState.selectedMaterials = res.materials;
 renderMaterialTags();
-if (btn) { btn.disabled = false; btn.textContent = btnOrigText; }
+// 2026-09-04: 실패 후 재시도 시 btn.textContent를 그대로 재사용하면 "⚠️ 추천 실패 - 다시
+// 시도" 문구가 성공 후에도 남는 버그가 있어(직전 상태를 caption으로 캡처했기 때문),
+// 렌더링 시 고정해둔 data-default를 원래 문구의 단일 출처로 사용하도록 고쳤다.
+if (btn) { btn.disabled = false; btn.textContent = btn.dataset.default; }
 } else {
 // 2026-09-04: hedge/재시도 제거로 자동 복구가 없어졌으니, 서버가 명시적으로 실패를
 // 반환한 경우(예: AI_SUGGEST_FAILED) 조용히 넘어가지 않고 버튼으로 재시도를 유도한다.
