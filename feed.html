@@ -1362,7 +1362,7 @@ renderThread(postId, itemId);
 }
 });
 }
-if (feedNeedsRerender && !hasOpenComposer()) renderFeed();
+if (feedNeedsRerender && !hasOpenComposer() && !hasGeneratingReportPrompt_()) renderFeed();
 } catch (e) {
 // 조용히 실패, 다음 주기에 재시도
 }
@@ -1623,6 +1623,7 @@ const hasMore = !query && feedState.nextCursor !== null && feedState.nextCursor 
 root.innerHTML = list.map(renderPost).join('') +
 (hasMore ? `<button id="feed-load-more" class="feed-load-more-btn" onclick="loadMoreFeed()">더보기</button>` : '');
 restoreOpenThreads();
+restoreOpenReportPrompts_();
 }
 
 function restoreOpenThreads() {
@@ -1905,17 +1906,31 @@ ${itemsHtml}
 // AI 재호출을 하지 않는다. 새로고침하면 비워지는 세션 한정 캐시이며, 서버 쪽 캐싱은 아니다.
 const reportPromptCache_ = {};
 
+// 2026-09-04: [패널 열림/닫힘 버그 수정] renderFeed()는 폴링(pollForUpdates, 30초 주기)으로 댓글 수 등이
+// 바뀌면 피드 전체를 처음부터 다시 그리는데, 그러면 report-prompt-panel도 기본(닫힘) 상태로 리셋된다.
+// generateReportPrompt 타임아웃을 60초로 늘리면서 패널이 열려 있는 시간이 길어져 30초 폴링과 겹치는
+// 일이 잦아졌고, "패널이 열리자마자 닫히는" 버그로 나타났다. 기존 threadState/hasOpenComposer()와
+// 동일한 패턴으로 두 가지를 추적한다: 지금 생성 중인 postId(생성 중엔 재렌더링 자체를 건너뜀),
+// 이미 패널이 열려있는 postId(재렌더링 후 restoreOpenThreads()처럼 다시 열어 복원).
+const generatingReportPromptFor_ = new Set();
+const reportPromptOpenPostIds_ = new Set();
+function hasGeneratingReportPrompt_() {
+return generatingReportPromptFor_.size > 0;
+}
+
 async function generateReportPrompt(postId) {
 const btn = document.getElementById('report-prompt-btn-' + postId);
 const panel = document.getElementById('report-prompt-panel-' + postId);
 if (!btn || !panel) return;
 
 if (reportPromptCache_[postId]) {
+reportPromptOpenPostIds_.add(postId);
 renderReportPromptPanel_(postId, reportPromptCache_[postId]);
 panel.style.display = 'block';
 return;
 }
 
+generatingReportPromptFor_.add(postId);
 btn.disabled = true;
 btn.classList.remove('is-failed');
 btn.classList.add('is-loading');
@@ -1926,6 +1941,7 @@ try {
 const res = await callApi('generateReportPrompt', { postId: postId });
 if (res.ok && res.prompt) {
 reportPromptCache_[postId] = res.prompt;
+reportPromptOpenPostIds_.add(postId);
 renderReportPromptPanel_(postId, res.prompt);
 panel.style.display = 'block';
 btn.disabled = false;
@@ -1942,7 +1958,21 @@ btn.disabled = false;
 btn.classList.remove('is-loading');
 btn.classList.add('is-failed');
 btn.textContent = '⚠️ 생성 실패 - 다시 시도';
+} finally {
+generatingReportPromptFor_.delete(postId);
 }
+}
+
+// renderFeed()가 피드 전체를 다시 그린 뒤, 이미 열려 있던 report-prompt-panel들을 캐시된 내용으로
+// 복원한다(threadState 기반 restoreOpenThreads()와 동일한 목적).
+function restoreOpenReportPrompts_() {
+reportPromptOpenPostIds_.forEach(function (postId) {
+const cached = reportPromptCache_[postId];
+const panel = document.getElementById('report-prompt-panel-' + postId);
+if (!cached || !panel) return;
+renderReportPromptPanel_(postId, cached);
+panel.style.display = 'block';
+});
 }
 
 function renderReportPromptPanel_(postId, promptText) {
