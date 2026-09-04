@@ -675,7 +675,9 @@ function getSession() {
 // 서버가 이미 처리했는데 응답만 유실된 경우 재시도하면 중복 실행될 위험이 있어 제외한다.
 const RETRYABLE_API_ACTIONS = new Set([
   'getFeed', 'getNotifications', 'getThreadSeen', 'getComments', 'getCustomers',
-  'getItems', 'getPostById', 'getSettings', 'getUsers', 'suggestMaterials',
+  'getItems', 'getPostById', 'getSettings', 'getUsers',
+  // suggestMaterials는 AI 생성 + 원자재마스터 쓰기(부작용)가 있는 액션이라 여기서 제외한다.
+  // hedge/재시도가 걸리면 DeepSeek 중복 호출 + 잠재적 유사-중복 행 생성 위험이 있음(2026-09-04).
   'pollSignal'
 ]);
 
@@ -3622,10 +3624,15 @@ const res = await callApi('suggestMaterials', { itemName: itemName });
 if (res.ok && res.materials) {
 itemsState.selectedMaterials = res.materials;
 renderMaterialTags();
+if (btn) { btn.disabled = false; btn.textContent = btnOrigText; }
+} else {
+// 2026-09-04: hedge/재시도 제거로 자동 복구가 없어졌으니, 서버가 명시적으로 실패를
+// 반환한 경우(예: AI_SUGGEST_FAILED) 조용히 넘어가지 않고 버튼으로 재시도를 유도한다.
+if (btn) { btn.disabled = false; btn.textContent = '⚠️ 추천 실패 - 다시 시도'; }
 }
 } catch (e) {
-} finally {
-if (btn) { btn.disabled = false; btn.textContent = btnOrigText; }
+// 네트워크 오류/타임아웃 등 요청 자체가 실패한 경우도 동일하게 안내.
+if (btn) { btn.disabled = false; btn.textContent = '⚠️ 추천 실패 - 다시 시도'; }
 }
 }
 
