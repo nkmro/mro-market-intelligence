@@ -707,7 +707,12 @@ const IDEMPOTENT_WRITE_ACTIONS = new Set([
   'upsertCustomer', 'changePassword'
 ]);
 
-const API_REQUEST_TIMEOUT_MS = 20000;
+const DEFAULT_API_REQUEST_TIMEOUT_MS = 20000;
+// generateReportPrompt는 DeepSeek에게 "보고서 작성용 프롬프트 전체 텍스트"를 생성하게 하는 요청이라,
+// 다른 조회/AI 액션보다 훨씬 오래 걸린다(실측 26~40초, 2026-09-04 실행 로그 기준). 기본 20초 타임아웃을
+// 그대로 쓰면 서버(Apps Script/DeepSeek)는 정상적으로 완료됐는데 클라이언트가 먼저 요청을 중단해버려
+// "생성 실패"로 잘못 표시되는 문제가 있었다. 이 액션만 타임아웃을 넉넉하게 늘린다.
+const API_REQUEST_TIMEOUT_MS_BY_ACTION = { generateReportPrompt: 60000 };
 const API_HEDGE_DELAY_MS = 2500;                  // 1차 요청이 이 시간 안에 안 끝나면 2차(중복) 요청을 추가로 보낸다.
 const API_ROUND_BACKOFF_MS = [1500, 3000, 6000]; // 라운드(=hedge 세트 또는 단일 시도) 사이 대기. 기존 800/1600ms에서 상향.
 
@@ -723,7 +728,10 @@ function apiFetchOnce_(action, body) {
   const controller = new AbortController();
   // 응답이 아예 안 오고 멈추는 경우(콜드 스타트/네트워크 지연/GAS 응답 유실 등)를 대비해 일정
   // 시간 후 강제로 요청을 중단시킨다. abort되면 fetch가 예외를 던져 재시도 루프로 이어진다.
-  const timeoutId = setTimeout(function () { controller.abort(); }, API_REQUEST_TIMEOUT_MS);
+  // 액션별로 다른 타임아웃이 필요하면(예: generateReportPrompt) API_REQUEST_TIMEOUT_MS_BY_ACTION에서
+  // 찾고, 없으면 기본값을 쓴다.
+  const timeoutMs = API_REQUEST_TIMEOUT_MS_BY_ACTION[action] || DEFAULT_API_REQUEST_TIMEOUT_MS;
+  const timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
   return fetch(GAS_URL, {
     method: 'POST',
     body: JSON.stringify(Object.assign({ action, sessionToken: session ? session.sessionToken : null }, body)),
@@ -1911,7 +1919,7 @@ return;
 btn.disabled = true;
 btn.classList.remove('is-failed');
 btn.classList.add('is-loading');
-btn.innerHTML = '<span class="mro-spinner-sm"></span>프롬프트 생성 중...';
+btn.innerHTML = '<span class="mro-spinner-sm"></span>프롬프트 생성 중... (최대 1분 정도 걸릴 수 있어요)';
 try {
 // 주의: generateReportPrompt는 RETRYABLE_API_ACTIONS에 절대 넣지 않는다 — AI 호출은
 // 조회보다 오래 걸려서, hedge를 적용하면 suggestMaterials와 같은 중복 호출 문제가 재발한다.
