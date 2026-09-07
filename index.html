@@ -248,6 +248,10 @@ const CLOUD_RUN_GET_TEAMS_URL = 'https://asia-northeast3-mro-market-intelligence
 // 알아보도록 세션 저장소 비대칭을 먼저 해소한 뒤(커밋 331bf28) 다시 켠다.
 // 빈 문자열로 바꾸면 즉시 기존 Apps Script login 경로로만 동작한다(다른 CLOUD_RUN_*_URL과 동일한 롤백 스위치).
    const CLOUD_RUN_LOGIN_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/loginTest';
+// 2026-09-07: registerPushSubscriptionTest(feed.html에서 등록)와 대칭되는 로그아웃용
+// 엔드포인트. 로그아웃 후에도 FCM 푸시가 계속 오던 문제(재홍님 발견) 수정 — index.html도
+// 자체 doLogout()/무활동 로그아웃 경로가 있어서 feed.html과 별개로 같은 상수를 둔다.
+const CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unregisterPushSubscriptionTest';
 
 // 로그인진단로그에 접속 기기 종류(iOS/Android/Windows/Mac 등)를 남기기 위한 판별 함수.
 // navigator.userAgentData(최신 표준)는 사파리/파이어폭스가 지원을 안 해서 iOS 전체가 빠지므로
@@ -690,7 +694,42 @@ async function showSuccess(res) {
   window.location.href = 'feed.html';
 }
 
-function doLogout() {
+// 2026-09-07: [로그아웃 후에도 FCM 알림이 오는 문제 수정] feed.html의 unregisterPushOnLogout_와
+// 같은 목적 — 이 기기의 푸시 구독을 서버에서 비활성화한다. index.html은 firebase SDK를 로드하지
+// 않으므로 브라우저 쪽 토큰 폐기(firebase.messaging().deleteToken())는 항상 조용히 건너뛰지만,
+// 서버 쪽 비활성화(가장 중요한 부분)는 fetch만으로 동작한다. sessionToken은 반드시
+// localStorage.mro_session을 지우기 "전에" 넘겨받아야 서버가 인증할 수 있다. 실패해도 로그아웃
+// 자체를 절대 막지 않는다(best-effort).
+async function unregisterPushOnLogout_(sessionToken) {
+  try {
+    const deviceId = localStorage.getItem('mro_device_id');
+    if (sessionToken && deviceId && CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+      await fetch(CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: sessionToken, deviceId: deviceId }),
+        signal: controller.signal
+      }).catch(function () {});
+      clearTimeout(timeoutId);
+    }
+  } catch (e) {}
+  try {
+    if (typeof firebase !== 'undefined' && firebase.messaging) {
+      await firebase.messaging().deleteToken();
+    }
+  } catch (e) {}
+  localStorage.removeItem('mro_fcm_token');
+}
+
+async function doLogout() {
+  let sessionToken = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem('mro_session') || 'null');
+    sessionToken = saved && saved.sessionToken;
+  } catch (e) {}
+  await unregisterPushOnLogout_(sessionToken);
   localStorage.removeItem('mro_session');
   localStorage.removeItem('mro_last_activity');
   document.getElementById('auth-area').style.display = 'block';
@@ -727,7 +766,7 @@ function showLoginCard() {
   if (card) card.style.display = 'block';
 }
 
-(function init() {
+(async function init() {
   const saved = localStorage.getItem('mro_session');
   if (!saved) { showLoginCard(); return; }
   try {
@@ -736,6 +775,9 @@ function showLoginCard() {
     // 무활동 시간을 이미 초과했다면 feed.html로 넘기지 않고, 여기서 곧바로 세션을 정리해
     // 로그인 화면을 그대로 보여준다 (수집 애니메이션 등 어떤 화면도 거치지 않음).
     if (isIdleTimedOut()) {
+      // 2026-09-07: 이 경로는 doLogout()을 거치지 않으므로 푸시 구독 비활성화도 여기서 직접
+      // 호출해야 한다(안 그러면 이 경로로 로그아웃된 기기는 계속 알림을 받는 문제가 남는다).
+      await unregisterPushOnLogout_(session && session.sessionToken);
       localStorage.removeItem('mro_session');
       localStorage.removeItem('mro_last_activity');
       // 무활동 로그아웃 경로도 feed.html의 doLogout()과 동일하게 OS 앱 아이콘 뱃지를 초기화한다.

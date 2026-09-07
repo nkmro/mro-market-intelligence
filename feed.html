@@ -648,6 +648,9 @@ const CLOUD_RUN_UPDATE_SETTINGS_URL = 'https://asia-northeast3-mro-market-intell
 // 우선 + Cloud Run 있으면 그쪽으로 대체하는 기존 패턴)를 쓰지 않고 이 URL로 직접 호출한다.
 // 다른 CLOUD_RUN_*_URL 상수는 전혀 건드리지 않았다.
 const CLOUD_RUN_REGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/registerPushSubscriptionTest';
+// 2026-09-07: registerPushSubscriptionTest와 대칭되는 로그아웃용 엔드포인트. 로그아웃 후에도
+// FCM 푸시가 계속 오던 문제(재홍님 발견) 수정 — doLogout()/무활동 로그아웃 경로에서 호출한다.
+const CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unregisterPushSubscriptionTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -1041,6 +1044,9 @@ return;
 // 애니메이션이나 화면을 보여주기 전에 먼저 무활동 시간 초과 여부를 판정한다.
 // 초과했다면 어떤 화면도 잠깐이라도 보여주지 않고 곧바로 로그인 화면으로 이동한다.
 if (isIdleTimedOut()) {
+// 2026-09-07: 이 경로는 doLogout()을 거치지 않으므로 푸시 구독 비활성화도 여기서 직접
+// 호출해야 한다(안 그러면 이 경로로 로그아웃된 기기는 계속 알림을 받는 문제가 남는다).
+await unregisterPushOnLogout_(session.sessionToken);
 localStorage.removeItem('mro_session');
 clearIdleTracking();
 // 무활동 로그아웃(백그라운드 복귀 시 이미 시간 초과 발견) 경로도 doLogout()과 동일하게
@@ -3899,7 +3905,40 @@ if (btn) { btn.disabled = false; btn.textContent = '저장'; }
   }
 }
 
-function doLogout() {
+// 2026-09-07: [로그아웃 후에도 FCM 알림이 오는 문제 수정] 로그아웃(무활동 로그아웃 포함) 시
+// 이 기기의 푸시 구독을 서버(Firestore pushSubscriptions)에서 비활성화하고, 브라우저 쪽 FCM
+// 토큰도 정리한다. 세션이 이미 만료됐을 수 있는 경로(무활동 로그아웃)에서도 호출되므로,
+// 실패해도 절대 로그아웃 자체를 막지 않는다 — 전부 best-effort이며 에러는 조용히 무시한다.
+// sessionToken은 반드시 localStorage.mro_session을 지우기 "전에" 넘겨받아야 서버가 인증할 수
+// 있다(호출부에서 지우기 전에 이 함수부터 호출).
+async function unregisterPushOnLogout_(sessionToken) {
+  try {
+    const deviceId = localStorage.getItem('mro_device_id');
+    if (sessionToken && deviceId && CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+      await fetch(CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: sessionToken, deviceId: deviceId }),
+        signal: controller.signal
+      }).catch(function () {});
+      clearTimeout(timeoutId);
+    }
+  } catch (e) {}
+  // 브라우저에 남아있는 FCM 토큰 자체도 폐기한다 — 서버 쪽 구독 비활성화와 별개로, 다음 로그인 때
+  // initPushOnLogin_()/syncPushTokenIfNeeded()가 깨끗하게 새 토큰을 발급받아 재등록하게 된다.
+  try {
+    if (typeof firebase !== 'undefined' && firebase.messaging) {
+      await firebase.messaging().deleteToken();
+    }
+  } catch (e) {}
+  localStorage.removeItem('mro_fcm_token');
+}
+
+async function doLogout() {
+  const sessionToken = session && session.sessionToken;
+  await unregisterPushOnLogout_(sessionToken);
   localStorage.removeItem('mro_session');
   clearIdleTracking();
   // 로그아웃 후에도 OS 앱 아이콘 뱃지 숫자가 남아있던 문제 수정. setAppBadge를 지원하지
