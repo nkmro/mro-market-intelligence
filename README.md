@@ -25,6 +25,8 @@ mro-market-intelligence/
 > **2026-09-02 업데이트**: `collectMarketNews()`(뉴스 수집·게시 파이프라인) 관련 대규모 개선을 진행했습니다 — ① 6분 실행 시간 하드리밋으로 그날 게시물이 0건이 되는 사고가 있었던 것을 동적 AI 시간예산·수집로그 배치 기록·진행 체크포인트로 재발 방지(커밋 `ef27a93`), ② "AI가 관련 있다고 판단했지만 최근 게시된 시황게시물과 유사한 경우" 재게시하지 않는 유사 게시물 비게시 기능 추가(커밋 `31e3b84`/`d110a9c`), ③ 그렇게 게시되지 않은 후보(순위밀림/유사게시물스킵)를 `탈락뉴스` 시트에 보관해 나중에 조회할 수 있게 하는 기능 추가(커밋 `51820e8`/`43b92db`), ④ 모바일에서 사이드바를 열기 전에도 안 읽은 알림을 알 수 있도록 햄버거 버튼에 배지 추가(커밋 `38277a2`). 이 문서도 새 AI/개발자가 저장소만 보고 전체 시스템(Sheets/Firestore 데이터 저장 위치 구분, 뉴스 수집·게시 파이프라인, Firestore 컬렉션 전체 목록, 설정 시트 주요 키, 배포/롤백 방법)을 파악할 수 있도록 이번에 구조를 정리·보강했습니다.
 >
 > **2026-09-03 업데이트**: 품목 관리 탭에서 유독 자주 뜨던 "서버 연결이 지연되고 있어요" 알림의 원인을 확인해 수정했습니다(커밋 `1f40350`) — `getItems`/`getCustomers`는 이미 Cloud Run 우선 배선이었지만, 같은 화면이 담당자 드롭다운용으로 추가로 부르는 `getUsers` 호출 하나만 배선에서 빠져 있던 것을 확인, "사용자 현황" 화면에서 쓰던 `getUsersRemote_()`를 재사용하도록 통일했습니다. 자세한 내용은 아래 "알려진 주요 버그 수정 이력" 절 참고. 이 작업 중 `loginLocks`/`writeLocks`/`writeIdempotency` 3개 Firestore 컬렉션이 그동안 어느 문서에도 기록되어 있지 않았던 것도 함께 발견해 이번에 처음 문서화했습니다(아래 "Firestore 컬렉션 전체 목록" 절).
+>
+> **2026-09-04~07 업데이트**: 시황게시물에서 외부 AI(Claude/Gemini 등)에 그대로 붙여넣을 리서치 보고서 작성 프롬프트를 생성해주는 "📝 AI 보고서 프롬프트 생성" 버튼을 추가했습니다(Apps Script 신규 액션 `generateReportPrompt`, 커밋 `1e87cb0`) — 자세한 내용은 아래 API 매핑표 참고. 이 액션의 실측 응답 시간(26~40초)이 기존 공용 20초 타임아웃보다 길어 서버는 정상 완료됐는데 클라이언트가 먼저 끊어 "생성 실패"로 잘못 표시되던 문제를 액션별 60초 타임아웃으로 수정했고(커밋 `eb311eb`), 그 여파로 패널이 열려 있는 시간이 30초 폴링 재렌더링과 겹치면서 "열리자마자 닫히는" 버그가 생긴 것도 함께 수정했습니다(커밋 `cbbb227`). 또한 로그아웃(수동/무활동 자동 모두) 시 그 기기의 FCM 푸시 구독을 비활성화하도록 해, 로그아웃 후에도 알림이 계속 오던 문제를 해결했습니다(신규 Cloud Run 함수 `unregisterPushSubscriptionTest`, 커밋 `d347f85`/`ec663ed`) — 자세한 내용은 아래 "Web Push / FCM 알림 구조" 절 참고. 이 외에 `suggestMaterials`(품목 등록 시 AI 원자재 추천)의 hedge/재시도 로직이 DeepSeek 중복 호출을 유발하던 문제도 함께 수정했습니다(커밋 `46f6180`) — 아래 "알려진 주요 버그 수정 이력" 절 참고.
 
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
@@ -92,6 +94,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | 사용자 관리·비밀번호 변경·설정 저장 (`feed.html` 관리자 화면) | `updateUser`, `changePassword`, `updateSettings` | ✅ 3개 전부 전환됨 (`CLOUD_RUN_UPDATE_USER_URL`/`CLOUD_RUN_CHANGE_PASSWORD_URL`/`CLOUD_RUN_UPDATE_SETTINGS_URL`) **(2026-09-01 갱신: 이전에는 "미착수" 그룹에 포함되어 있었으나 실제로는 전환·연동 완료 상태였음)** | `handleUpdateUser_`, `handleChangePassword_`, `handleUpdateSettings_` | `updateUser`/`updateSettings`는 관리자 전용(`ADMIN_EMAIL`), `changePassword`는 본인 전용 — 서버가 그대로 판정. 3단 폴백 정책. `USERMGMT_CLOUDRUN_DESIGN.md` 참고 |
 | 품목 등록/수정 (신규 고객사 포함) (`feed.html` 품목 관리 화면) | `upsertItem`, `upsertCustomer` | `upsertItem`: ✅ 전환됨 (`CLOUD_RUN_UPSERT_ITEM_URL`) / `upsertCustomer`: ⏸ Cloud Run에 `upsertCustomerTest`는 배포·검증되어 있으나 프론트에서 단독으로 부르는 곳이 없음(신규 고객사는 `upsertItem` 호출에 함께 실려 감) **(2026-09-01 갱신: 이전에는 둘 다 "미착수"로 표시되어 있었으나 `upsertItem`은 실제로 전환·연동 완료 상태였음)** | `handleUpsertItem_`, `handleUpsertCustomer_` | 3단 폴백 정책. `UPSERTITEM_UPSERTCUSTOMER_CLOUDRUN_DESIGN.md` 참고 |
 | 새 게시물/댓글 필요/답변 요청 통합 푸시, 담당자 댓글 마감 리마인더 푸시 (Code.gs에는 없는 신규 기능) | (Cloud Run 전용 신규 API, action 이름 없음) | ✅ 전부 배포·연동 완료 — FCM 토큰 등록(`registerPushSubscriptionTest`, 로그인 시 자동 호출), 5분 주기 통합 푸시(`pushBatchTest`, Cloud Scheduler `push-batch-5min`), 매시 정각 리마인더(`reminderBatchTest`, Cloud Scheduler `reminder-batch-hourly`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | `registerPushSubscriptionTest`는 코드가 8/28에 커밋된 뒤 Cloud Run 배포가 누락된 채 방치되어 있다가 **2026-09-01에 배포 완료**됨(그 전까지는 로그인해도 어떤 기기도 실제로 푸시를 등록하지 못하는 상태였음). `PUSH_NOTIFICATION_STAGE3~STAGE6_DESIGN.md` 참고. 전체 구조·Firestore 스키마·Cloud Scheduler 설정·버그 수정 이력(`be8d6fa`, `2d142b6`, `f214df0`, `f8ad0da`, `abc64bf`)은 아래 "Web Push / FCM 알림 구조" 절 참고 |
+| 시황게시물별 AI 보고서 작성용 프롬프트 생성 (`feed.html` "📝 AI 보고서 프롬프트 생성" 버튼) | `generateReportPrompt` | — (Cloud Run 전환 대상 아님, Apps Script 전용 신규 기능) | `handleGenerateReportPrompt_` | 2026-09-04 신규(커밋 `1e87cb0`). 게시물의 원자재명/제목/AI요약/링크를 '설정' 시트 `보고서프롬프트템플릿` 키의 메타 프롬프트에 채워 DeepSeek을 1회 호출해 "프롬프트 텍스트"만 생성(뉴스 재분석 아님). hedge/재시도(`RETRYABLE_API_ACTIONS`) 대상에서 제외되고, 실측 응답 26~40초에 맞춰 클라이언트 타임아웃도 이 액션만 60초로 별도 설정(다른 액션은 20초, 커밋 `eb311eb`) |
 | 그 외 나머지 action (`markChecked`, `suggestMaterials`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
 
 > 이 표는 2026-09-01 기준입니다(실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
@@ -112,6 +115,12 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 1. `feed.html`이 로그인 성공마다 `initPushOnLogin_()`을 호출 — 브라우저 알림 권한이 `default`면 요청하고, 이미 `granted`면 토큰만 재확인(`syncPushTokenIfNeeded()`), `denied`면 아무 것도 하지 않음(사이드바 "🔔 알림 켜기" 버튼이 재활성화 통로).
 2. 기기 식별자는 `getOrCreateDeviceId()`가 기기당 한 번만 랜덤 생성해 `localStorage`(`mro_device_id`)에 저장·재사용.
 3. `firebase.messaging().getToken()`으로 FCM 토큰을 받아, 이전 값(`localStorage`의 `mro_fcm_token`)과 다를 때만 `registerPushSubscriptionTest`를 호출해 Firestore `pushSubscriptions/{email}_{deviceId}`에 upsert.
+
+**해제 흐름** (로그아웃 시, 2026-09-04~07 신규)
+1. 로그아웃할 때(사이드바 🚪 로그아웃 버튼과, `doLogout()`을 거치지 않는 무활동 자동 로그아웃 경로 양쪽 모두, `feed.html`/`index.html` 둘 다) `mro_session`을 지우기 전에 신규 Cloud Run 함수 `unregisterPushSubscriptionTest`를 호출해 그 기기(`deviceId`)의 `pushSubscriptions/{email}_{deviceId}` 문서만 `active:false`로 비활성화합니다 — `registerPushSubscriptionTest`와 대칭 구조로 세션 인증(`authenticateSession`)을 그대로 재사용하며, 같은 계정의 다른 기기/브라우저 구독은 건드리지 않습니다.
+2. 브라우저 쪽 FCM 토큰(`firebase.messaging().deleteToken()`)과 `localStorage`의 `mro_fcm_token`도 함께 정리합니다.
+3. 이 API 호출이 실패해도(세션이 이미 만료된 경우 등) 로그아웃 자체는 항상 정상 진행되도록 방어적으로 처리했습니다 — 실패가 로그아웃을 막아서는 안 되기 때문입니다.
+4. 이전에는 로그아웃(특히 무활동 자동 로그아웃) 후에도 구독이 살아있어 알림이 계속 오던 문제가 있었는데, 이번 수정으로 해결되었습니다.
 
 **발송 흐름** (사람이 호출하지 않음, Cloud Scheduler가 트리거)
 - `push-batch-5min`(5분마다) → `pushBatchTest`: `role !== '일반'`인 사용자 전원의 새 게시물/댓글 필요/답변 요청 건수를 집계해 통합 푸시 1건으로 발송. Firestore `pushNotifyState/{email}`에 저장한 이전 집계값(signature)과 같으면 재발송하지 않음.
@@ -195,11 +204,12 @@ cron 표현식, 복수 시각(`13,17`) 처리 방식 등 상세는 [`cloud-run/R
 
 ## 알려진 주요 버그 수정 이력
 
-Web Push/알림 관련 버그 4건(중복 표시 3건 + 구조 재설계 1건)은 위 "Web Push / FCM 알림 구조" 절에 커밋별로 상세히 정리되어 있습니다(`be8d6fa`, `2d142b6`, `f214df0`, `abc64bf`). 여기서는 그 외 알려진 주요 사고 2건을 정리합니다.
+Web Push/알림 관련 버그 4건(중복 표시 3건 + 구조 재설계 1건)은 위 "Web Push / FCM 알림 구조" 절에 커밋별로 상세히 정리되어 있습니다(`be8d6fa`, `2d142b6`, `f214df0`, `abc64bf`). 여기서는 그 외 알려진 주요 사고 4건을 정리합니다.
 
 - **뉴스 수집 6분 실행 타임아웃** (2026-09-02 사고, 커밋 `ef27a93`): `collectMarketNews()`의 네이버 수집 단계가 평소보다 오래 걸린 날, 뒤이은 AI 판단 단계가 고정된 시간예산(4.5분)을 그대로 쓰면서 수집+AI를 마친 시점에 후처리(수집로그 기록·게시·정리)에 쓸 시간이 실제로는 부족해져 Apps Script 6분 하드리밋에 걸려 강제 종료 — 그날 게시물이 0건이 됐습니다. Executions 로그·Cloud 로그로 정확한 타임스탬프를 직접 확인해 원인을 특정했습니다. 동적 AI 시간예산(`6분 − 60초 후처리 예약`) + 수집로그 배치 기록(건별 `appendRow` → `setValues` 1회) + 진행 체크포인트(`CMN_LAST_STAGE`) + 정리(purge) 건너뛰기 가드로 재발 방지. 자세한 내용은 위 "뉴스 수집·게시 파이프라인" 절 참고.
 - **로그인 TDZ(Temporal Dead Zone) 오류로 인한 전체 로그인 장애** (2026-09-01, 커밋 `ef37c4a`): 알림 중복 방지 구조 재설계(`abc64bf`)가 `proceedAfterAuth()`/`refreshOnResume()`에서 `appActivating`/`lastNotifCount` 변수를 참조하도록 바뀌었는데, 그 두 변수의 `let` 선언이 참조 지점보다 아래(파일 뒤쪽, `init()` 실행 이후)에 그대로 남아 있어 "Cannot access 'appActivating' before initialization" 오류가 발생 — **Apps Script든 Cloud Run이든 경로와 무관하게, 이 커밋이 배포된 직후 모든 신규 로그인/세션 복귀가 무한로딩에 빠지는 전체 장애**였습니다. `notifFetchSeq`와 동일한 방식으로 두 변수의 선언 위치만 `init()` 호출 전으로 옮겨 당일 수정, 로직 변경은 없음.
 - **품목 관리 탭의 "서버 연결이 지연되고 있어요" 알림이 유독 잦았던 원인** (2026-09-03, 커밋 `1f40350`): `getItems`/`getCustomers`는 이미 Cloud Run 우선 시도(실패 시 Apps Script 폴백)로 배선되어 있었지만, 같은 화면(`loadItems()`)이 담당자 드롭다운을 채우려고 내부적으로 추가로 부르는 `getUsers` 호출 하나만 배선에서 제외되어 처음부터 Apps Script로 직행하고 있었습니다(코드 주석에 "이번 배선 대상이 아니라 그대로 둔다"고 의도적으로 남겨져 있었음). `loadItems()`가 3개 API를 `Promise.allSettled`로 동시에 부르는 구조라, 이 하나만 늦어져도 화면 하단에 지연 알림이 떴던 것 — "사용자 현황" 화면(`loadUsers()`)에서 이미 쓰고 있던 `getUsersRemote_()`(Cloud Run 우선 + Apps Script 폴백)를 `loadItems()`에도 그대로 재사용하도록 호출부 1줄만 교체해 해결. 버그가 아니라 예전 마이그레이션 작업에서 이 호출 하나만 배선 대상에서 빠뜨린 누락이었습니다.
+- **`suggestMaterials`(품목 등록 시 AI 원자재 추천) hedge/재시도로 인한 DeepSeek 중복 호출** (2026-09-04, 커밋 `46f6180`): 조회성 액션과 함께 hedge/재시도 대상(`RETRYABLE_API_ACTIONS`)에 들어있던 `suggestMaterials`가 실제로는 AI 생성 + 원자재마스터 쓰기라는 부작용이 있는 액션이라, hedge가 걸리면 DeepSeek이 중복 호출되고 유사·중복 원자재 행이 생길 위험이 있었습니다. `suggestMaterials`를 `RETRYABLE_API_ACTIONS`에서 제외하고, 자동 재시도가 없어진 만큼 서버 실패·네트워크 오류 시 버튼에 "⚠️ 추천 실패 - 다시 시도"를 명시적으로 표시하도록 수정.
 
 ## 배포/롤백 방법
 
