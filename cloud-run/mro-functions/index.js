@@ -2560,6 +2560,65 @@ async function registerPushSubscriptionAction_(email, fcmToken, deviceId) {
 }
 
 // ---------------------------------------------------------------------------
+// POST /unregisterPushSubscriptionTest (2026-09-07, registerPushSubscriptionTest와 대칭)
+//
+// 배경: 로그아웃(무활동 로그아웃 포함) 후에도 FCM 푸시가 계속 오는 문제가 있었다 —
+// pushSubscriptions 문서가 email_deviceId로만 저장되고 로그인 세션과 무관하게 살아있기
+// 때문(재홍님 발견, 2026-09-07). 로그아웃 시 이 기기의 구독만 비활성화해서 해결한다.
+//
+// 세션 인증은 registerPushSubscriptionTest와 동일하게 authenticateSession을 그대로
+// 재사용한다. 세션에서 얻은 email + 요청의 deviceId로 문서 ID를 만들어 active:false로
+// 표시한다(완전 삭제하지 않고 registerPushSubscriptionAction_/invalidToken 처리와 동일하게
+// merge — 나중에 같은 기기로 재로그인하면 registerPushSubscriptionTest가 다시 active:true로
+// 덮어쓴다). 같은 계정의 다른 기기(다른 deviceId) 문서는 전혀 건드리지 않는다.
+exports.unregisterPushSubscriptionTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, deviceId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!deviceId) {
+      const serverMs = Date.now() - t0;
+      res.status(400).json({ ok: false, serverMs, timings, error: 'MISSING_DEVICE_ID' });
+      return;
+    }
+
+    const u0 = Date.now();
+    await unregisterPushSubscriptionAction_(email, deviceId);
+    timings.firestoreMs = Date.now() - u0;
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// 문서가 아예 없어도(등록된 적 없는 기기에서 로그아웃하는 경우 등) 에러 없이 조용히 끝난다 —
+// 로그아웃 흐름을 막으면 안 되므로 "지울 게 없으면 그냥 넘어간다"는 방어적 방식을 택했다.
+async function unregisterPushSubscriptionAction_(email, deviceId) {
+  const docId = email + '_' + deviceId;
+  const ref = firestore.collection('pushSubscriptions').doc(docId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  await ref.set({
+    active: false,
+    deactivatedAt: FieldValue.serverTimestamp(),
+    deactivatedReason: 'user_logout'
+  }, { merge: true });
+}
+
+// ---------------------------------------------------------------------------
 // GET/POST /pushBatchTest (push 6단계 — 코드 구현만, 아직 미배포/Cloud Scheduler 미연결)
 // 승인 경로: PUSH_NOTIFICATION_STAGE6_DESIGN.md(2절, 재홍님 승인 — 5분 주기). Cloud
 // Scheduler가 5분마다 호출하는 배치 전용 함수라 세션 인증이 없다(사람이 직접 호출하는
