@@ -3959,6 +3959,8 @@ const BACKUP_CLOUD_RUN_FILES = [
 'lib/writeIdempotency.js',
 'lib/writeLock.js'
 ];
+// Firestore 백업 대상 GCP 프로젝트 (2026-09-07 추가, pushSubscriptions 주 1회 스냅샷용)
+const GCP_PROJECT_ID = 'mro-market-intelligence';
 
 function dailyBackupCheck_() {
 try {
@@ -4023,7 +4025,16 @@ Logger.log('Cloud Run 백업 실패(' + fname + '): ' + e);
 }
 });
 
-// 5) 회전 — BACKUP_RETENTION_DAYS일보다 오래된 날짜 폴더 삭제
+// 5) Firestore pushSubscriptions 스냅샷 — 주 1회(일요일)만 실행
+if (new Date().getDay() === 0) {
+try {
+backupFirestorePushSubscriptions_(dateFolder, todayStr);
+} catch (e) {
+Logger.log('Firestore 백업 실패: ' + e);
+}
+}
+
+// 6) 회전 — BACKUP_RETENTION_DAYS일보다 오래된 날짜 폴더 삭제
 const cutoff = new Date(Date.now() - BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 const folders = backupRoot.getFolders();
 while (folders.hasNext()) {
@@ -4036,6 +4047,65 @@ f.setTrashed(true);
 }
 }
 }
+}
+
+// ===== Firestore pushSubscriptions 백업 (2026-09-07 추가) =====
+// Firestore REST API를 UrlFetchApp + ScriptApp.getOAuthToken()으로 직접 호출한다.
+// (Firestore는 Apps Script 내장 서비스가 아니라 raw REST 호출 방식)
+function backupFirestorePushSubscriptions_(dateFolder, todayStr) {
+const baseUrl = 'https://firestore.googleapis.com/v1/projects/' + GCP_PROJECT_ID + '/databases/(default)/documents/pushSubscriptions';
+const token = ScriptApp.getOAuthToken();
+const allDocs = [];
+let pageToken = '';
+do {
+const url = baseUrl + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+const res = UrlFetchApp.fetch(url, {
+headers: { Authorization: 'Bearer ' + token },
+muteHttpExceptions: true
+});
+if (res.getResponseCode() !== 200) {
+throw new Error('Firestore API 오류(' + res.getResponseCode() + '): ' + res.getContentText());
+}
+const json = JSON.parse(res.getContentText());
+(json.documents || []).forEach(function (doc) {
+const idParts = doc.name.split('/');
+const docId = idParts[idParts.length - 1];
+allDocs.push({ id: docId, data: firestoreFieldsToPlain_(doc.fields || {}) });
+});
+pageToken = json.nextPageToken || '';
+} while (pageToken);
+
+dateFolder.createFile(
+'firestore_pushSubscriptions_' + todayStr + '.json',
+JSON.stringify(allDocs, null, 2),
+MimeType.PLAIN_TEXT
+);
+Logger.log('Firestore 백업 완료: pushSubscriptions ' + allDocs.length + '건');
+}
+
+// Firestore의 타입 래핑 형식({"stringValue":"..."} 등)을 평문 JSON으로 변환
+function firestoreValueToPlain_(value) {
+if (value === undefined || value === null) return null;
+if ('stringValue' in value) return value.stringValue;
+if ('integerValue' in value) return Number(value.integerValue);
+if ('doubleValue' in value) return value.doubleValue;
+if ('booleanValue' in value) return value.booleanValue;
+if ('timestampValue' in value) return value.timestampValue;
+if ('nullValue' in value) return null;
+if ('mapValue' in value) return firestoreFieldsToPlain_(value.mapValue.fields || {});
+if ('arrayValue' in value) return (value.arrayValue.values || []).map(firestoreValueToPlain_);
+if ('referenceValue' in value) return value.referenceValue;
+if ('geoPointValue' in value) return value.geoPointValue;
+if ('bytesValue' in value) return value.bytesValue;
+return null;
+}
+
+function firestoreFieldsToPlain_(fields) {
+const out = {};
+Object.keys(fields).forEach(function (k) {
+out[k] = firestoreValueToPlain_(fields[k]);
+});
+return out;
 }
 
 function getOrCreateChildFolder_(parent, name) {
