@@ -3937,6 +3937,7 @@ GmailApp.sendEmail(ADMIN_EMAIL, '[MRO 시황] 권한 재승인 테스트', '이 
 * 현재 시각이 일치하고, 오늘 아직 백업을 안 했으면 실제 백업을 수행한다.
 * - DB(스프레드시트) 사본
 * - 백엔드(이 Apps Script 프로젝트) 사본
+* - 백엔드 소스(Cloud Run 함수, GitHub raw index.js / package.json / lib/*.js) 텍스트 저장 (2026-09-07 추가)
 * - 프론트(GitHub raw index.html / feed.html / manifest.json / sw.js) 텍스트 저장
 * 저장 위치: "MRO자재시황관리시스템" 폴더(고정 ID) 안의 "MRO_백업" 폴더 > 오늘 날짜 하위 폴더.
 * 15일보다 오래된 날짜 폴더는 자동 삭제(회전).
@@ -3945,6 +3946,19 @@ const BACKUP_PARENT_FOLDER_ID = '1ZMSkoQtg5AFS0urC1529QpvXA2vpCKxk';
 const BACKUP_RETENTION_DAYS = 15;
 const BACKUP_FRONTEND_FILES = ['index.html', 'feed.html', 'manifest.json', 'sw.js'];
 const BACKUP_GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/nkmro/mro-market-intelligence/main/';
+// Cloud Run 함수 소스 (실제 파일 구조 기준 — main.py/Dockerfile 아님, Node.js 프로젝트)
+const BACKUP_CLOUD_RUN_PATH = 'cloud-run/mro-functions/';
+const BACKUP_CLOUD_RUN_FILES = [
+'index.js',
+'package.json',
+'lib/auth.js',
+'lib/feedEngine.js',
+'lib/feedResponses.js',
+'lib/pushSender.js',
+'lib/sheetsClient.js',
+'lib/writeIdempotency.js',
+'lib/writeLock.js'
+];
 
 function dailyBackupCheck_() {
 try {
@@ -3996,7 +4010,20 @@ Logger.log('프론트 백업 실패(' + fname + '): ' + e);
 }
 });
 
-// 4) 회전 — BACKUP_RETENTION_DAYS일보다 오래된 날짜 폴더 삭제
+// 4) 백엔드 소스(Cloud Run 함수, GitHub raw 파일) 텍스트로 저장
+BACKUP_CLOUD_RUN_FILES.forEach(function (fname) {
+try {
+const res = UrlFetchApp.fetch(BACKUP_GITHUB_RAW_BASE + BACKUP_CLOUD_RUN_PATH + fname, { muteHttpExceptions: true });
+if (res.getResponseCode() === 200) {
+const saveName = 'cloudrun_' + fname.replace(/\//g, '_');
+dateFolder.createFile(saveName, res.getContentText(), MimeType.PLAIN_TEXT);
+}
+} catch (e) {
+Logger.log('Cloud Run 백업 실패(' + fname + '): ' + e);
+}
+});
+
+// 5) 회전 — BACKUP_RETENTION_DAYS일보다 오래된 날짜 폴더 삭제
 const cutoff = new Date(Date.now() - BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 const folders = backupRoot.getFolders();
 while (folders.hasNext()) {
