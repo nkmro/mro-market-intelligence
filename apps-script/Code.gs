@@ -31,7 +31,6 @@ const SHEET_POST = '시황게시물';
 const SHEET_ITEM = '품목마스터';
 const SIGNUP_DOMAIN = 'nkmro.com';
 const ADMIN_EMAIL = 'jhjoo@nkmro.com'; // 설정 페이지 전용 — 역할 시스템과 무관
-const LOGIN_DIAG_QUEUE_KEY = 'loginDiagQueue_v1';
 
 function buildBrandedEmailHtml_(greetLine, descLine, code, footerLine) {
 return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Malgun Gothic,Arial,sans-serif;max-width:560px;margin:0 auto;">' +
@@ -59,13 +58,11 @@ return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Malgun
 */
 let _ssCache_ = null;
 let _sheetDataCache_ = {};
-let _loginDiag_ = null;
 let _materialItemsCache_ = {};
 
 function resetRequestCache_() {
 _ssCache_ = null;
 _sheetDataCache_ = {};
-_loginDiag_ = null;
 _materialItemsCache_ = {};
 }
 
@@ -142,32 +139,8 @@ let __loginResult;
 try {
 __loginResult = withIdempotency_(body.idempotencyKey, function () { return handleLogin_(body); });
 } catch (loginErr) {
-try {
-if (_loginDiag_) {
-_loginDiag_.ms.total = Date.now() - __t0;
-_loginDiag_.ok = false;
-_loginDiag_.error = 'EXCEPTION: ' + String(loginErr);
-_loginDiag_.isRetry = !!body.isRetry;
-writeLoginDiagLog_(String(body.email || '(no-email)'), _loginDiag_);
-}
-} catch (diagErr) {}
 return jsonResponse_({ ok: false, error: 'SERVER_ERROR', detail: String(loginErr) });
 }
-try {
-if (_loginDiag_) {
-_loginDiag_.ms.total = Date.now() - __t0;
-// __loginResult는 jsonResponse_()가 반환한 ContentService 객체라 .ok/.error 프로퍼티가
-// 없다(항상 undefined) - 실제 값을 보려면 안에 든 JSON 문자열을 파싱해야 한다. 이 버그
-// 때문에 로그인진단로그에는 성공/실패 상관없이 항상 ok:false, error 없음으로 잘못
-// 기록되고 있었다(2026-08-07 발견, 실제 클라이언트 응답 자체는 정상이었음).
-let __loginResultObj = null;
-try { __loginResultObj = JSON.parse(__loginResult.getContent()); } catch (parseErr) {}
-_loginDiag_.ok = !!(__loginResultObj && __loginResultObj.ok);
-if (__loginResultObj && !__loginResultObj.ok) _loginDiag_.error = __loginResultObj.error;
-_loginDiag_.isRetry = !!body.isRetry;
-writeLoginDiagLog_(String(body.email || '(no-email)'), _loginDiag_);
-}
-} catch (diagErr) {}
 return __loginResult;
 }
 
@@ -237,15 +210,7 @@ if (!email || !password) {
 return jsonResponse_({ ok: false, error: 'MISSING_FIELDS' });
 }
 
-// [TEMP-DIAG 2026-08-05] 로그인 지연 원인(콜드스타트/네트워크/시트I/O) 진단용. 확인 후 제거 예정.
-_loginDiag_ = { ms: {}, platform: String(body.platform || 'unknown') };
-try {
-_loginDiag_.userSheetCacheHit = !!CacheService.getScriptCache().get('sheetv_' + SHEET_USER);
-} catch (diagE) {}
-
-const __tFindUser = Date.now();
 const user = findUser_(email);
-_loginDiag_.ms.findUser = Date.now() - __tFindUser;
 
 if (!user) {
 return jsonResponse_({ ok: false, error: 'USER_NOT_FOUND' });
@@ -256,19 +221,13 @@ return jsonResponse_({ ok: false, error: 'USER_INACTIVE' });
 if (user.failCount >= 5) {
 return jsonResponse_({ ok: false, error: 'ACCOUNT_LOCKED' });
 }
-const __tHash = Date.now();
 const __computedHash = hashPassword_(password, email);
-_loginDiag_.ms.hash = Date.now() - __tHash;
 if (!user.passwordHash || user.passwordHash !== __computedHash) {
-const __tWrite = Date.now();
 incrementLoginFailCount_(email, user.failCount);
-_loginDiag_.ms.write = Date.now() - __tWrite;
 return jsonResponse_({ ok: false, error: 'WRONG_PASSWORD' });
 }
 
-const __tWrite2 = Date.now();
 resetLoginFailCount_(email);
-_loginDiag_.ms.write = Date.now() - __tWrite2;
 
 const sessionToken = Utilities.getUuid();
 CacheService.getScriptCache().put('session_' + sessionToken, email, 21600); // 6시간(CacheService 최대 TTL)
@@ -1611,12 +1570,23 @@ if (postResult.deletedIds.length > 0) {
 orphanCommentsDeleted = purgeCommentsByPostIds_(ss, postResult.deletedIds);
 }
 
+// 5-8 (2026-09-09): 댓글과 동일한 이유로, 확인이력(댓글확인이력)도 게시물과 함께 정리한다.
+// 댓글확인이력은 upsert 구조라 같은 스레드를 반복 확인해도 행이 늘진 않지만, 게시물이
+// purgeSheetOlderThan_으로 삭제된 뒤에도 그 게시물에 대한 확인이력 행은 별도 정리 로직이
+// 없어 계속 남아있었다(시트 데이터 보관 정책 점검, THREADSEEN_LOGINDIAG_CLEANUP_DESIGN.md A안).
+let orphanThreadSeenDeleted = 0;
+if (postResult.deletedIds.length > 0) {
+orphanThreadSeenDeleted = purgeOrphanThreadSeen_(ss, postResult.deletedIds);
+}
+
 // 5-7: 삭제 이력을 시트에 남긴다(Logger.log는 시간 지나면 사라져 감사 불가능하므로)
 // 탈락뉴스 삭제건수는 이번 변경 범위를 최소화하기 위해 '삭제이력' 시트 컬럼 구조는 그대로 두고
 // (기존 열 순서/기존 행과의 호환을 깨지 않기 위함) 아래 Logger.log에만 남긴다.
+// 고아 확인이력 삭제건수도 같은 이유(컬럼 구조 호환 유지)로 Logger.log에만 남긴다.
 logPurgeHistory_(ss, postResult.count, logResult.count, orphanCommentsDeleted, postResult.deletedIds);
 
 Logger.log('purgeOldRecords_: 시황게시물 ' + postResult.count + '건 삭제(기준 ' + settings.postRetentionDays + '일), 수집로그 ' + logResult.count + '건 삭제(기준 ' + settings.logRetentionDays + '일), 탈락뉴스 ' + rejectedNewsResult.count + '건 삭제(기준 ' + settings.rejectedNewsRetentionDays + '일), 고아댓글 ' + orphanCommentsDeleted + '건 정리');
+Logger.log('purgeOldRecords_: 고아 확인이력 ' + orphanThreadSeenDeleted + '건 정리');
 }
 
 /**
@@ -1684,6 +1654,45 @@ if (deletedCount > 0) {
 sheet.getRange(1, 1, kept.length, header.length).setValues(kept);
 sheet.getRange(kept.length + 1, 1, lastRow - kept.length, lastCol).clearContent();
 invalidateSheetCache_(SHEET_COMMENT);
+}
+return deletedCount;
+}
+
+/**
+* 5-8 (2026-09-09): 삭제된 게시물 ID들과 연결된 확인이력을 댓글확인이력 시트에서 함께
+* 제거(고아 데이터 방지) — purgeCommentsByPostIds_와 정확히 같은 패턴. 댓글확인이력 시트
+* 컬럼: 이메일, postId, itemId, 확인시각(setupThreadSeenSheet_ 참고).
+* 시간 기반 보관기간을 따로 두지 않은 이유: postId 존재 여부만으로 판정하므로 "아직 살아있는
+* 게시물의 확인이력"이 실수로 지워질 위험이 구조적으로 없다(댓글과 동일한 안전장치).
+*/
+function purgeOrphanThreadSeen_(ss, postIds) {
+const sheet = ss.getSheetByName(SHEET_THREAD_SEEN);
+if (!sheet) return 0; // setupThreadSeenSheet_ 실행 전이면 시트가 없을 수 있음
+const lastRow = sheet.getLastRow();
+const lastCol = sheet.getLastColumn();
+if (lastRow < 2) return 0;
+
+const idSet = {};
+postIds.forEach(function (id) { idSet[String(id)] = true; });
+
+const data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+const header = data[0];
+const kept = [header];
+let deletedCount = 0;
+
+for (let i = 1; i < data.length; i++) {
+const postId = String(data[i][1]); // B열
+if (idSet[postId]) {
+deletedCount++;
+} else {
+kept.push(data[i]);
+}
+}
+
+if (deletedCount > 0) {
+sheet.getRange(1, 1, kept.length, header.length).setValues(kept);
+sheet.getRange(kept.length + 1, 1, lastRow - kept.length, lastCol).clearContent();
+invalidateSheetCache_(SHEET_THREAD_SEEN); // getThreadSeenMap_이 getSheetValues_(캐시)를 쓰므로 필수
 }
 return deletedCount;
 }
@@ -3077,75 +3086,24 @@ sheet.deleteRows(2, lastRow - 3001);
 }
 
 /**
-* [TEMP-DIAG 2026-08-05] 로그인 지연 원인(콜드스타트/네트워크/시트I/O) 진단 전용 로그.
-* 알림배지 등 다른 클라이언트 디버그 로그와 트래픽이 섞이지 않도록 별도 시트에 기록한다.
-* 원인 확인 후 이 함수와 호출부, 그리고 '로그인진단로그' 시트를 함께 제거할 것.
-*
-* [2026-08-06 변경] 로그인 응답 경로에서 시트에 직접 appendRow하면 그 자체가 로그인 응답을
-* 0.5~2초 늦추고, 이 지연은 우리 자체 측정(ms.total)에도 안 잡히는 사각지대였다. 그래서
-* 여기서는 CacheService에 큐로 쌓아두기만 하고(락 없이 - 드문 동시 로그인 충돌로 항목
-* 하나 누락돼도 진단용이라 무해함), 실제 시트 기록은 flushLoginDiagQueue_()가 별도
-* 시간 트리거(installLoginDiagFlushTrigger로 설치, 5분 주기)에서 배치로 처리한다.
+* [2026-09-09] 로그인 지연 원인 진단이 끝나 TEMP-DIAG 기능(writeLoginDiagLog_/
+* flushLoginDiagQueue_/installLoginDiagFlushTrigger, 2026-08-05 추가)을 제거했다.
+* 이 함수는 그 정리 작업의 마지막 단계로 딱 1회만 수동 실행하면 된다 — 코드에서
+* flushLoginDiagQueue_ 함수 자체를 지워도 이미 설치된 시간 트리거(5분 주기)는 자동으로
+* 없어지지 않으므로, Apps Script 편집기에서 이 함수를 실행해 그 트리거를 명시적으로
+* 지워야 한다. 이미 지워진 뒤 다시 실행해도(트리거가 없으면 그냥 아무 일도 안 함) 안전하다.
+* '로그인진단로그' 시트는 코드로 지우지 않는다 — 그동안의 진단 기록이라 필요 없어지면
+* 직접 시트를 삭제하거나 이름을 바꿔 보관할지 재홍님이 결정한다.
 */
-function writeLoginDiagLog_(email, diag) {
-try {
-const entry = { t: new Date().toISOString(), email: email, diag: diag };
-const cache = CacheService.getScriptCache();
-const raw = cache.get(LOGIN_DIAG_QUEUE_KEY);
-const queue = raw ? JSON.parse(raw) : [];
-queue.push(entry);
-cache.put(LOGIN_DIAG_QUEUE_KEY, JSON.stringify(queue), 21600);
-} catch (e) {}
-}
-/**
-* writeLoginDiagLog_가 CacheService에 쌓아둔 로그인 진단 큐를 '로그인진단로그' 시트에
-* 배치로 기록한다. installLoginDiagFlushTrigger()로 설치한 시간 트리거가 주기적으로 호출한다.
-* (여기는 사용자 요청 경로가 아니라 트리거 실행이므로 락 대기 시간이 로그인 응답에 영향 없음.)
-*/
-function flushLoginDiagQueue_() {
-const lock = LockService.getScriptLock();
-if (!lock.tryLock(5000)) return;
-let queue;
-try {
-const cache = CacheService.getScriptCache();
-const raw = cache.get(LOGIN_DIAG_QUEUE_KEY);
-if (!raw) return;
-queue = JSON.parse(raw);
-cache.remove(LOGIN_DIAG_QUEUE_KEY);
-} finally {
-lock.releaseLock();
-}
-if (!queue || !queue.length) return;
-try {
-const ss = SpreadsheetApp.openById(SHEET_ID);
-let sheet = ss.getSheetByName('로그인진단로그');
-if (!sheet) {
-sheet = ss.insertSheet('로그인진단로그');
-sheet.appendRow(['시각', '이메일', '내용']);
-}
-const rows = queue.map(function (e) {
-return [new Date(e.t), e.email, JSON.stringify(e.diag)];
-});
-sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 3).setValues(rows);
-const lastRow = sheet.getLastRow();
-if (lastRow > 1001) {
-sheet.deleteRows(2, lastRow - 1001);
-}
-} catch (e) {}
-}
-/**
-* flushLoginDiagQueue_ 시간 트리거를 설치한다(5분 주기). 딱 한 번만 수동 실행하면 됨
-* (이미 설치된 동일 트리거는 먼저 삭제하므로 여러 번 실행해도 중복 생성되지 않음).
-*/
-function installLoginDiagFlushTrigger() {
+function removeLoginDiagFlushTrigger_() {
+let removed = 0;
 ScriptApp.getProjectTriggers().forEach(function (t) {
-if (t.getHandlerFunction() === 'flushLoginDiagQueue_') ScriptApp.deleteTrigger(t);
+if (t.getHandlerFunction() === 'flushLoginDiagQueue_') {
+ScriptApp.deleteTrigger(t);
+removed++;
+}
 });
-ScriptApp.newTrigger('flushLoginDiagQueue_')
-.timeBased()
-.everyMinutes(5)
-.create();
-Logger.log('로그인진단로그 큐 flush 트리거(5분 주기) 설치 완료');
+Logger.log('removeLoginDiagFlushTrigger_: 트리거 ' + removed + '개 제거 완료');
 }
 
 function doGet(e) {
