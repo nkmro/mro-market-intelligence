@@ -302,8 +302,27 @@ font-size: 13px; padding: 2px 4px; display: none;
 .notif-tab-count { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
 .notif-tab.active .notif-tab-count { background: var(--accent); color: #fff; }
 .notif-tab-content { display: flex; flex-direction: column; gap: 10px; }
-.notif-clear-toolbar { display: flex; justify-content: flex-end; padding: 0 16px 10px; }
-.notif-clear-btn { border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.notif-clear-toolbar {
+  display: flex; align-items: center; gap: 14px; padding: 0 16px 10px; flex-wrap: wrap;
+}
+.notif-selectall-wrap { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.notif-selectall-wrap span { font-size: 12px; font-weight: 600; color: var(--text); }
+.notif-selected-count { font-size: 12px; color: var(--text-muted); }
+.notif-clear-btn {
+  border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 8px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  margin-left: auto;
+}
+.notif-clear-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* 체크박스 터치 영역을 44px로 확보 - 실제 체크박스 자체는 작게 두고 label 래퍼로 감싼다.
+   음수 margin으로 영역만 키우면 촘촘한 목록에서 위아래 행과 터치 영역이 겹칠 수 있어,
+   대신 .notif-reply-row가 이 높이만큼 자연스럽게 늘어나도록 뒀다(행이 조금 더 여유
+   있어 보이는 효과는 감수). */
+.notif-check-wrap {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; min-height: 44px; flex-shrink: 0; cursor: pointer;
+}
+.notif-check-wrap input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
 .notif-group-title { font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 14px 4px 6px; }
 .notif-post-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .notif-post-card:last-child { border-bottom: none; }
@@ -311,10 +330,12 @@ font-size: 13px; padding: 2px 4px; display: none;
   .notif-post-card .headline { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
   .notif-reply-list { display: flex; flex-direction: column; gap: 6px; }
   .notif-reply-row {
+    display: flex; align-items: center; gap: 4px;
     padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
-    cursor: pointer; background: var(--bg);
+    background: var(--bg);
   }
   .notif-reply-row:hover { background: var(--accent-soft); }
+  .notif-reply-row-body { flex: 1; min-width: 0; cursor: pointer; }
   .notif-reply-row .top-line { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
   .notif-reply-prev { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
   .notif-reply-curr { font-size: 12px; color: var(--text); font-weight: 500; }
@@ -1676,6 +1697,11 @@ renderThread(post.id, item.itemId);
 }
 
 let notifActiveTab = '새 게시물';
+// [2026-09-09 알림 선택 삭제/읽음 처리] '댓글 필요'/'답변 요청' 탭 전용 체크박스 선택 상태.
+// 탭별로 별도 Set을 두어 탭을 오가도 서로의 선택이 유지되게 한다(요청사항 "복수 탭 독립성").
+// 페이지를 새로고침하면 초기화된다 — 서버에 저장하는 값이 아니라 순전히 이번 화면 조작 중의
+// 임시 선택 상태이기 때문에 그럴 필요가 없다.
+let notifSelection = { '댓글 필요': new Set(), '답변 요청': new Set() };
 
 function renderNotif() {
 const root = document.getElementById('notif-view');
@@ -1725,8 +1751,32 @@ contentHtml = renderNotifReplyEntries(replyEntries, false);
 contentHtml = renderNotifReplyEntries(awaitingEntries, true);
 }
 
+// [2026-09-09 알림 선택 삭제/읽음 처리] 예전엔 이 자리에서 "알림 전체 지우기" 버튼 하나만
+// 노출했다(clearAllNotifInActiveTab, 2026-09-01). 팀장/임원이 실제로 운영해보니 전체 일괄
+// 삭제보다 확인 끝난 것만 골라 지우는 게 더 필요하다는 의견이 있어, 체크박스 기반 선택
+// 삭제/읽음 처리로 대체했다 - '전체 선택' 체크 후 버튼을 누르면 예전과 동일하게 전체 일괄
+// 처리도 그대로 되므로 기능 손실은 없다.
 const showClearBtn = (notifActiveTab === '댓글 필요' || notifActiveTab === '답변 요청') && (session.role === '팀장' || session.role === '임원');
-const clearToolbarHtml = showClearBtn ? `<div class="notif-clear-toolbar"><button class="notif-clear-btn" onclick="clearAllNotifInActiveTab()">알림 전체 지우기</button></div>` : '';
+let clearToolbarHtml = '';
+if (showClearBtn) {
+const sel = notifSelection[notifActiveTab];
+const visibleKeys = (notifActiveTab === '답변 요청' ? awaitingEntries : replyEntries)
+.reduce(function (keys, e) { return keys.concat(e.items.map(function (it) { return notifPairKey_(e.post.id, it.itemId); })); }, []);
+// 화면에서 이미 사라진(다른 경로로 방금 확인 처리된) 항목의 선택은 지운다 - 안 그러면
+// "N개 선택됨" 숫자가 실제 화면과 안 맞을 수 있다.
+Array.from(sel).forEach(function (k) { if (visibleKeys.indexOf(k) === -1) sel.delete(k); });
+const selectedCount = sel.size;
+const allSelected = visibleKeys.length > 0 && selectedCount === visibleKeys.length;
+clearToolbarHtml = `
+<div class="notif-clear-toolbar">
+<label class="notif-selectall-wrap">
+<input type="checkbox" ${allSelected ? 'checked' : ''} onchange="toggleNotifSelectAll_('${notifActiveTab}', this.checked)">
+<span>전체 선택</span>
+</label>
+${selectedCount > 0 ? `<span class="notif-selected-count">${selectedCount}개 선택됨</span>` : ''}
+<button class="notif-clear-btn" ${selectedCount === 0 ? 'disabled' : ''} onclick="confirmMarkSelectedNotifSeen_()">선택한 알림 확인 처리</button>
+</div>`;
+}
 
 root.innerHTML = `
 <div class="notif-panel">
@@ -1743,18 +1793,22 @@ notifActiveTab = key;
 renderNotif();
 }
 
-// [2026-09-01 알림 전체 지우기] "댓글 필요"/"답변 요청" 탭 전용, 팀장·임원 역할에서만 노출되는 일괄
-// 삭제. renderNotif()의 replyEntries/awaitingEntries는 그 함수 안의 지역 변수라 여기서 재사용할 수
-// 없으므로, notifNewPostsCache.items를 hasUnreadReply/hasAwaitingReply로 다시 걸러 지금 이 순간
-// 기준으로 새로 계산한다. 실제 삭제(=읽음 처리)는 스레드를 열 때 쓰는 것과 동일한 markThreadSeenLocal()
-// 을 스레드마다 한 번씩 호출해서 수행한다 — threadSeenMap 갱신(클라이언트) + markThreadSeenRemote_()
-// (Cloud Run 우선, 실패 시 Apps Script 폴백, 호출마다 idempotencyKey를 새로 발급)를 그대로 재사용하므로
-// 서버측 "댓글확인이력" 반영도 기존 경로와 동일하게 보장된다.
-function clearAllNotifInActiveTab() {
-if (notifActiveTab !== '댓글 필요' && notifActiveTab !== '답변 요청') return;
-if (session.role !== '팀장' && session.role !== '임원') return;
+// [2026-09-09 알림 선택 삭제/읽음 처리] 아래 4개 함수가 예전 clearAllNotifInActiveTab()
+// (2026-09-01, "알림 전체 지우기" 일괄 삭제)을 대체한다. 이 시스템의 "알림"은 별도로 저장되는
+// 레코드가 아니라 threadSeenMap의 확인 시각과 최신 댓글 시각을 매번 비교해 계산되는 값이라
+// (hasUnreadReply/hasAwaitingReply 참고), "삭제"와 "읽음 처리"가 서버 입장에서 완전히 같은
+// 동작이다 — 그래서 버튼을 "삭제"/"읽음 처리" 둘로 나누지 않고 하나로 통합했다(재홍님 질문
+// 2·3에 대한 답과 동일한 근거). 실제 처리는 예전과 동일하게 스레드마다 markThreadSeenLocal()을
+// 호출한다 — threadSeenMap 갱신(클라이언트) + markThreadSeenRemote_()(Cloud Run 우선, 실패 시
+// Apps Script 폴백)를 그대로 재사용하므로 서버측 "댓글확인이력" 반영도 기존 경로와 동일하게
+// 보장된다. 새 API는 필요 없었다.
 
-const isAwaiting = notifActiveTab === '답변 요청';
+// '댓글 필요'/'답변 요청' 탭에 지금 이 순간 표시되는 항목을 (postId, itemId) 목록으로 계산한다.
+// renderNotif()의 replyEntries/awaitingEntries는 그 함수의 지역 변수라 여기서 재사용할 수
+// 없으므로, notifNewPostsCache.items를 hasUnreadReply/hasAwaitingReply로 다시 걸러 새로
+// 계산한다 - 예전 clearAllNotifInActiveTab()과 같은 방식.
+function computeNotifPairsForTab_(tab) {
+const isAwaiting = tab === '답변 요청';
 const pairs = [];
 notifNewPostsCache.items.forEach(function (p) {
 (p.items || []).forEach(function (it) {
@@ -1762,11 +1816,41 @@ const matches = isAwaiting ? hasAwaitingReply(p.id, it) : hasUnreadReply(p.id, i
 if (matches) pairs.push({ postId: p.id, itemId: it.itemId });
 });
 });
-if (!pairs.length) return;
+return pairs;
+}
+function notifPairKey_(postId, itemId) { return postId + '-' + itemId; }
 
-if (!confirm(`'${notifActiveTab}' 탭의 알림 ${pairs.length}건을 모두 지울까요? 되돌릴 수 없어요.`)) return;
+function toggleNotifCheckbox_(tab, key, checked) {
+const sel = notifSelection[tab];
+if (!sel) return;
+if (checked) sel.add(key); else sel.delete(key);
+renderNotif();
+}
 
-pairs.forEach(function (pair) { markThreadSeenLocal(pair.postId, pair.itemId); });
+function toggleNotifSelectAll_(tab, checked) {
+const sel = notifSelection[tab];
+if (!sel) return;
+if (checked) {
+computeNotifPairsForTab_(tab).forEach(function (pair) { sel.add(notifPairKey_(pair.postId, pair.itemId)); });
+} else {
+sel.clear();
+}
+renderNotif();
+}
+
+function confirmMarkSelectedNotifSeen_() {
+const tab = notifActiveTab;
+if (tab !== '댓글 필요' && tab !== '답변 요청') return;
+if (session.role !== '팀장' && session.role !== '임원') return;
+
+const sel = notifSelection[tab];
+const selectedPairs = computeNotifPairsForTab_(tab).filter(function (pair) { return sel.has(notifPairKey_(pair.postId, pair.itemId)); });
+if (!selectedPairs.length) return; // 버튼이 disabled라 보통 여기 오지 않지만 방어적으로 한 번 더 확인
+
+if (!confirm(`'${tab}' 탭에서 선택한 알림 ${selectedPairs.length}건을 확인 처리할까요? 되돌릴 수 없어요.`)) return;
+
+selectedPairs.forEach(function (pair) { markThreadSeenLocal(pair.postId, pair.itemId); });
+sel.clear();
 renderNotif();
 }
 
@@ -1793,17 +1877,30 @@ return `
 
 function renderNotifReplyEntries(entries, isAwaiting) {
 if (!entries.length) return '';
+// 체크박스/선택 삭제는 위 renderNotif()의 toolbar와 같은 기준(팀장/임원 전용)으로만 보여준다.
+// 다른 역할은 예전처럼 목록만 보고 항목 클릭으로 이동한다.
+const showCheckboxes = session.role === '팀장' || session.role === '임원';
+const tabKey = isAwaiting ? '답변 요청' : '댓글 필요';
+const sel = notifSelection[tabKey];
 return entries.map(function (entry) {
 const p = entry.post;
 const rowsHtml = entry.items.map(function (it) {
 const comments = (it.comments || []).slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
 const prev = comments.length >= 2 ? comments[comments.length - 2] : null;
 const curr = comments.length >= 1 ? comments[comments.length - 1] : null;
+const key = notifPairKey_(p.id, it.itemId);
+const checkboxHtml = showCheckboxes ? `
+<label class="notif-check-wrap" onclick="event.stopPropagation()">
+<input type="checkbox" ${sel.has(key) ? 'checked' : ''} onchange="toggleNotifCheckbox_('${tabKey}', '${key}', this.checked)">
+</label>` : '';
 return `
-<div class="notif-reply-row" onclick="goToItem('${p.id}', '${it.itemId}')">
+<div class="notif-reply-row">
+${checkboxHtml}
+<div class="notif-reply-row-body" onclick="goToItem('${p.id}', '${it.itemId}')">
 <div class="top-line">${escapeHtml(it.customer || '')} · ${escapeHtml(it.itemName || '')} · ${escapeHtml(it.manager || '')}</div>
 ${prev ? `<div class="notif-reply-prev">이전 답글: ${escapeHtml(truncate(prev.content || '', 30))}</div>` : ''}
 ${curr ? `<div class="notif-reply-curr">${isAwaiting ? '내 답글' : '현재 답글'}: ${escapeHtml(truncate(curr.content || '', 30))}</div>` : ''}
+</div>
 </div>
 `;
 }).join('');
