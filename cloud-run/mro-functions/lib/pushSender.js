@@ -202,11 +202,27 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
 // [신규, push 7~8단계] 담당자 댓글 리마인더 전용 발송. sendConsolidatedPushForUser와 달리
 // counts 기반 문구 생성이나 pushNotifyState 중복방지를 쓰지 않는다 — 리마인더는 호출부
 // (reminderBatchTest)가 Firestore의 reminderDeliveries(date_hour_email)로 이미 중복 발송을
-// 막고 있고, "앱이 열려 있으면 억제"하는 로직(sendConsolidatedPushForUser 전용)도 마감시각
-// 알림에는 적용하지 않는다 — 마감이 있는 알림은 앱이 열려 있어도 그대로 보내는 게 맞다고
-// 판단했다(성격이 다른 알림이라 5단계의 pushNotifyState 서명 비교 로직을 그대로 재사용하지
-// 않고, 5단계에서 이미 만든 getActiveSubscriptions_/sendFcmMessage_만 재사용한다).
+// 막고 있고, "앱이 열려 있으면 억제"하는 로직(sendConsolidatedPushForUser 전용의
+// recentlyActive 분기)은 마감시각 알림에는 적용하지 않는다 — 마감이 있는 알림은 앱이 열려
+// 있어도 그대로 보내는 게 맞다고 판단했다(성격이 다른 알림이라 5단계의 pushNotifyState 서명
+// 비교 로직을 그대로 재사용하지 않고, 5단계에서 이미 만든
+// getActiveSubscriptions_/sendFcmMessage_만 재사용한다).
+//
+// [2026-09-09 보완, 리마인더 버그 수정] 다만 "로그아웃/무활동으로 세션이 완전히 끊겼는지"
+// (anyLive)는 recentlyActive와 별개 문제라 여기도 그대로 적용한다 — sendConsolidatedPushForUser
+// 에서 고친 것과 같은 이유(getSessionActivity_ 주석 참고)로, 살아있는 세션이 하나도 없는
+// 계정에까지 마감 리마인더가 나가고 있었다(재홍님 확인, 2026-09-09). recentlyActive 쪽만
+// 무시하고 anyLive 체크는 그대로 가져온다.
 async function sendReminderPushForUser(firestore, authClient, fcmProjectId, email, message) {
+  const activity = await getSessionActivity_(firestore, email);
+  if (!activity.anyLive) {
+    // 살아있는 세션이 하나도 없다 — 로그아웃/무활동 자연 만료로 확인됨. sendConsolidatedPushForUser
+    // 의 NO_LIVE_SESSION 분기와 동일하게 발송을 막고 구독을 전부 비활성화한다. reminderDeliveries
+    // 문서는 호출부(reminderBatchTest)가 기록하므로 여기서는 건드리지 않는다.
+    await deactivateAllSubscriptions_(firestore, email, 'NO_LIVE_SESSION');
+    return { sent: false, reason: 'NO_LIVE_SESSION' };
+  }
+
   const subscriptions = await getActiveSubscriptions_(firestore, email);
   let sentCount = 0;
   let deactivatedCount = 0;
