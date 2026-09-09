@@ -52,17 +52,43 @@ function buildStateSignature_(counts) {
 // expiresAt = now + 6시간으로 갱신하는 것, lib/auth.js)을 거꾸로 이용한다: expiresAt - 6시간이
 // 곧 "마지막으로 서버에 요청을 보낸 시각"이다. 여러 기기에서 로그인해 있으면 세션 문서가
 // 여러 개일 수 있다 — 그중 하나라도 최근 2분 이내에 활동했으면 "앱 열려 있음"으로 간주한다.
-async function isSessionRecentlyActive_(firestore, email) {
+//
+// [2026-09-09 보완, 알림 버그 수정] 같은 조회 결과로 "이 이메일의 세션이 하나라도 아직
+// 살아있는지"(anyLive)도 함께 판단하도록 확장했다 — expiresAt가 아직 지나지 않은 세션
+// 문서가 하나라도 있으면 true. 클라이언트의 무활동 로그아웃(설정값, 기본 600분)과 서버
+// 세션 TTL(6시간 고정, 위 SESSION_TTL_MS)이 서로 다른 값이라, 클라이언트가 아직 로그아웃을
+// 인지하지 못한 상태에서도(앱을 다시 열지 않아 클라이언트 쪽 무활동 판정이 실행될 기회가
+// 없었던 상태) 서버 세션은 이미 만료돼 있을 수 있다 — 기존 로직은 이 경우를
+// "recentlyActive=false"로만 보고 그냥 푸시를 보냈다(실제 로그아웃 상태인지는 구분하지
+// 않았음). 그 틈에 이미 로그아웃된 계정으로 푸시가 발송되던 문제를 여기서 막는다.
+async function getSessionActivity_(firestore, email) {
   const snap = await firestore.collection('sessions').where('email', '==', email).get();
   const now = Date.now();
   let recentlyActive = false;
+  let anyLive = false;
   snap.forEach(function (doc) {
     const expiresAtRaw = doc.data().expiresAt;
     const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate().getTime() : new Date(expiresAtRaw).getTime();
+    if (expiresAt > now) anyLive = true;
     const lastTouchedAt = expiresAt - SESSION_TTL_MS; // 위에서 require('./auth')로 가져온 바로 그 상수
     if (now - lastTouchedAt < SESSION_ACTIVE_WINDOW_MS) recentlyActive = true;
   });
-  return recentlyActive;
+  return { recentlyActive, anyLive };
+}
+
+// 살아있는 세션이 하나도 없는 것으로 확인된 계정의 푸시 구독을 전부 비활성화한다. 클라이언트가
+// 로그아웃/무활동 감지 시 스스로 호출하는 unregisterPushOnLogout_와 같은 효과를, 클라이언트가
+// 그 기회를 아직 갖지 못한 계정에 대해 서버가 대신 수행하는 것 — deactivatedReason에 별도
+// 값을 남겨 다른 비활성화 사유(FCM의 UNREGISTERED/INVALID_ARGUMENT)와 구분한다.
+async function deactivateAllSubscriptions_(firestore, email, reason) {
+  const snap = await firestore.collection('pushSubscriptions')
+    .where('email', '==', email)
+    .where('active', '==', true)
+    .get();
+  await Promise.all(snap.docs.map(function (doc) {
+    return doc.ref.set({ active: false, deactivatedAt: FieldValue.serverTimestamp(), deactivatedReason: reason }, { merge: true });
+  }));
+  return snap.docs.length;
 }
 
 // email + active 복합 조건 쿼리라 Firestore 콘솔에서 복합 색인을 한 번 만들어야 할 수 있다
@@ -129,7 +155,19 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
     return { sent: false, reason: 'UNCHANGED_STATE' };
   }
 
-  if (await isSessionRecentlyActive_(firestore, email)) {
+  const activity = await getSessionActivity_(firestore, email);
+
+  if (!activity.anyLive) {
+    // 살아있는 세션이 하나도 없다 — 로그아웃 상태로 확인됨. 푸시를 보내지 않고, 이 계정의
+    // 구독도 전부 비활성화해 다음 배치부터는 이 이메일에 대해 다시 조회할 필요조차 없게
+    // 만든다. lastSignature는 남기지 않는다 — 아래 APP_OPEN 분기와 달리 "이미 화면으로
+    // 봤다"가 아니라 "아무도 못 봤다"는 뜻이라, 다시 로그인했을 때 그 사이 바뀐 내용을
+    // 놓치지 않기 위해 상태를 확정하지 않는다.
+    await deactivateAllSubscriptions_(firestore, email, 'NO_LIVE_SESSION');
+    return { sent: false, reason: 'NO_LIVE_SESSION' };
+  }
+
+  if (activity.recentlyActive) {
     // 앱이 지금 열려 있으면 이미 화면에서 실시간으로 보고 있다 — 푸시는 안 보내지만, "이 상태를
     // 봤다"는 사실은 기록해서 앱을 닫는 순간 같은 내용으로 또 푸시가 나가지 않게 한다(설계
     // 문서 0절의 역할 경계: pushNotifyState는 발송 중복 방지 전용, 인앱 표시와 무관).
