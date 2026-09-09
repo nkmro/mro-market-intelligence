@@ -4292,3 +4292,10 @@ recent.push({ ts: Utilities.formatDate(ts, Session.getScriptTimeZone(), 'MM-dd H
 }
 Logger.log(JSON.stringify({ total, outcomeCounts, actionCounts, recent }, null, 2));
 }
+
+// [2026-09-09] removeLoginDiagFlushTrigger_() 는 밑줄로 끝나서 Apps Script 편집기의
+// "실행할 함수" 드롭다운에 뜨지 않는다 - 1회성으로 수동 실행하기 위한 공개 wrapper.
+// 트리거 삭제는 이미 완료됐고(재실행해도 트리거 없으면 안전), 이후 정리 차원에서 남겨둠.
+function runRemoveLoginDiagFlushTriggerOnce() {
+  removeLoginDiagFlushTrigger_();
+}
