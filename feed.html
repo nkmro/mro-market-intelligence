@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MRO 자재 시황 관리 시스템 - 피드</title>
 <link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#1a6b52">
+<meta name="theme-color" content="#3a2f6e">
 <style>
   :root {
-    --accent: #1a6b52;
-    --accent-dark: #0f4a38;
-    --accent-soft: #eaf3ef;
+    --accent: #3a2f6e;
+    --accent-dark: #241c4a;
+    --accent-soft: #f2eaf6;
+    --sidebar-bg-end: #4d3f8f;
+    --sidebar-lower: #bfb8d6;
+    --header-end: #7c5aa8;
     --blue: #2f5fd0;
     --blue-dark: #1f3f96;
     --blue-soft: #e8eefc;
@@ -34,9 +37,7 @@
 
   .sidebar {
     width: 220px; flex-shrink: 0;
-    background: var(--card);
-    border-right: 1px solid var(--border);
-    padding: 20px 12px;
+    background: var(--sidebar-lower);
     position: sticky;
     top: 0;
     height: 100vh;
@@ -45,27 +46,31 @@
     flex-direction: column;
     z-index: 40;
   }
-  .sidebar-title { font-size: 15px; font-weight: 700; margin: 4px 12px 18px; }
+  .sidebar-nav-zone {
+    background: linear-gradient(180deg, var(--accent), var(--sidebar-bg-end));
+    padding: 20px 12px 16px;
+  }
+  .sidebar-title { font-size: 12px; font-weight: 400; margin: 4px 12px 18px; color: rgba(255,255,255,.7); letter-spacing: .3px; }
   .nav-item {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 12px; border-radius: 8px;
-    font-size: 14px; color: var(--text-muted);
+    font-size: 14px; color: rgba(255,255,255,.68);
     cursor: pointer; margin-bottom: 2px;
   }
-  .nav-item .ic { font-size: 15px; }
-  .nav-item.active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 600; }
-  .nav-item:hover:not(.active) { background: var(--bg); }
+  .nav-item .ic { font-size: 15px; display: inline-flex; }
+  .nav-item.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 600; }
+  .nav-item:hover:not(.active) { background: rgba(255,255,255,.08); }
   .nav-badge {
     margin-left: auto; background: #e24b4a; color: #fff;
     font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px;
   }
-  .sidebar-bottom { margin-top: auto; border-top: 1px solid var(--border); padding-top: 10px; }
+  .sidebar-bottom { margin-top: auto; border-top: 1px solid rgba(0,0,0,.08); padding: 10px 12px 16px; }
   .sidebar-me { font-size: 12px; color: var(--text-muted); padding: 6px 12px; }
   .sidebar-logout {
     font-size: 13px; color: var(--danger); cursor: pointer;
     padding: 8px 12px; border-radius: 8px;
   }
-  .sidebar-logout:hover { background: var(--bg); }
+  .sidebar-logout:hover { background: rgba(0,0,0,.05); }
 
   .drawer-overlay {
     display: none;
@@ -92,6 +97,13 @@
 
   .content { flex: 1; min-width: 0; }
 
+  .brand-header {
+display: flex; align-items: baseline; gap: 10px;
+padding: 13px 24px;
+background: linear-gradient(90deg, var(--accent), var(--header-end));
+}
+  .brand-header .bh-title { color: #fff; font-weight: 800; font-size: 16px; letter-spacing: .2px; }
+  .brand-header .bh-sub { color: rgba(255,255,255,.7); font-size: 12px; letter-spacing: .3px; }
   .topbar {
 display: flex; align-items: center; gap: 10px; justify-content: space-between;
 padding: 16px 24px;
@@ -143,10 +155,11 @@ font-size: 13px; padding: 2px 4px; display: none;
   }
   .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .bot-icon {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     background: var(--bg); display: flex; align-items: center; justify-content: center;
-    font-size: 12px; flex-shrink: 0;
+    overflow: hidden; flex-shrink: 0;
   }
+  .bot-icon img { width: 100%; height: 100%; object-fit: cover; }
   .bot-name { font-size: 11px; font-weight: 500; color: var(--text-muted); }
   .material-badge {
     font-size: 16px; font-weight: 700; color: var(--blue);
@@ -406,13 +419,13 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
     color: #fff;
     display: flex; align-items: center; justify-content: center;
     font-size: 15px; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap;
-    box-shadow: 0 0 0 8px rgba(26,107,82,0.10), 0 6px 18px rgba(26,107,82,0.25);
+    box-shadow: 0 0 0 8px rgba(58,47,110,0.10), 0 6px 18px rgba(58,47,110,0.25);
     z-index: 5;
     animation: authLoadingPulse 1.8s ease-in-out infinite;
   }
   @keyframes authLoadingPulse {
-    0%, 100% { box-shadow: 0 0 0 8px rgba(26,107,82,0.10), 0 6px 18px rgba(26,107,82,0.25); }
-    50% { box-shadow: 0 0 0 14px rgba(26,107,82,0.06), 0 6px 18px rgba(26,107,82,0.25); }
+    0%, 100% { box-shadow: 0 0 0 8px rgba(58,47,110,0.10), 0 6px 18px rgba(58,47,110,0.25); }
+    50% { box-shadow: 0 0 0 14px rgba(58,47,110,0.06), 0 6px 18px rgba(58,47,110,0.25); }
   }
   .auth-caption {
     position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%);
@@ -505,13 +518,15 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 
 <div class="shell" id="app-shell" style="display:none;">
   <div class="sidebar" id="sidebar">
-    <div class="sidebar-title-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px;"><div class="sidebar-title">MRO 시황</div><button id="notif-perm-btn" style="display:none; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:13px; color:var(--accent); padding:2px 4px; white-space:nowrap;" onclick="requestNotifPermission()"><span style="font-size:15px;">🔔</span>알림 켜기</button></div>
-    <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic">🏠</span> 피드</div>
-    <div class="nav-item" id="nav-notif" data-view="notif" onclick="switchView('notif')" style="display:none;"><span class="ic">🔔</span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
-    <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic">📦</span> 품목 관리</div>
-    <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic">👥</span> 사용자 현황</div>
-    <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic">⚙️</span> 설정</div>
-    <div class="nav-item" id="nav-gas-admin" onclick="openGasAdmin()" style="display:none;"><span class="ic">🔧</span> Gmail 재인증</div>
+    <div class="sidebar-nav-zone">
+      <div class="sidebar-title-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px;"><div class="sidebar-title">MENU</div><button id="notif-perm-btn" style="display:none; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:13px; color:#fff; padding:2px 4px; white-space:nowrap;" onclick="requestNotifPermission()"><span style="font-size:15px;">🔔</span>알림 켜기</button></div>
+      <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span> 시황 뉴스</div>
+      <div class="nav-item" id="nav-notif" data-view="notif" onclick="switchView('notif')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
+      <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span> 품목 관리</div>
+      <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 사용자 현황</div>
+      <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 설정</div>
+      <div class="nav-item" id="nav-gas-admin" onclick="openGasAdmin()" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></span> Gmail 재인증</div>
+    </div>
     <div class="sidebar-bottom">
       <div class="sidebar-me" id="sidebar-me"></div>
       <div class="sidebar-logout" onclick="doLogout()">🚪 로그아웃</div>
@@ -519,6 +534,10 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
   </div>
 
   <div class="content">
+    <div class="brand-header" id="brand-header">
+      <span class="bh-title">MRO 자재 시황 관리 시스템</span>
+      <span class="bh-sub">MARKET INTELLIGENCE</span>
+    </div>
     <div class="topbar">
       <button class="hamburger" onclick="toggleDrawer(true)">☰<span class="hamburger-badge" id="hamburger-badge" style="display:none;">0</span></button>
       <div class="search-box"><span>🔍</span><input type="text" id="search-input" placeholder="품목, 원자재, 뉴스 검색" oninput="handleSearchInput()"><button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()">✕</button></div>
@@ -886,8 +905,10 @@ document.getElementById('items-view').style.display = view === 'items' ? 'block'
 document.getElementById('settings-view').style.display = view === 'settings' ? 'block' : 'none';
 const searchBoxEl = document.querySelector('.search-box');
 const teamLabelEl = document.getElementById('team-label');
+const brandHeaderEl = document.getElementById('brand-header');
 if (searchBoxEl) searchBoxEl.style.display = view === 'feed' ? '' : 'none';
 if (teamLabelEl) teamLabelEl.style.display = view === 'feed' ? '' : 'none';
+if (brandHeaderEl) brandHeaderEl.style.display = view === 'feed' ? '' : 'none';
 if (view === 'notif') {
 renderNotif();
 callApi('markChecked', {}).catch(() => {});
@@ -1889,7 +1910,7 @@ const allConfirmed = items.length > 0 && items.every(function (item) { return it
 return `
 <div class="post-card${allConfirmed ? ' all-confirmed' : ''}" id="post-${post.id}">
 <div class="post-head">
-<div class="bot-icon">✨</div>
+<div class="bot-icon"><img src="bot-icon.png" alt=""></div>
 <span class="material-badge">${escapeHtml(post.materialName || '')}</span>
 <div class="bot-name">AI 시황봇</div>
 <span class="post-time">${escapeHtml(fmtTime(post.createdAt))}</span>

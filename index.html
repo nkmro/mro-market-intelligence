@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MRO 자재 시황 관리 시스템 - 로그인</title>
 <link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#1a6b52">
+<meta name="theme-color" content="#3a2f6e">
 <style>
   :root {
-    --accent: #1a6b52;
-    --accent-dark: #0f4a38;
+    --accent: #3a2f6e;
+    --accent-dark: #241c4a;
+    --sidebar-lower: #bfb8d6;
     --bg: #f6f5f2;
     --card: #ffffff;
     --border: #e2e0da;
@@ -58,7 +59,7 @@
     cursor: pointer;
     color: var(--text-muted);
   }
-  .tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
+  .tab.active { background: var(--sidebar-lower); color: var(--accent); font-weight: 600; }
   label { display: block; font-size: 13px; color: var(--text-muted); margin: 10px 0 4px; }
   input, select {
     width: 100%;
@@ -106,7 +107,7 @@
   button.loading .btn-load-fill { display: flex; }
   .btn-load-base { background: #7c88a3; color: rgba(255,255,255,.5); }
   .btn-load-fill {
-    background: #26418f;
+    background: var(--accent);
     color: #fff;
     clip-path: inset(0 100% 0 0);
   }
