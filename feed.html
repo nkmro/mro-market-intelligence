@@ -1095,7 +1095,11 @@ return;
 if (isIdleTimedOut()) {
 // 2026-09-07: 이 경로는 doLogout()을 거치지 않으므로 푸시 구독 비활성화도 여기서 직접
 // 호출해야 한다(안 그러면 이 경로로 로그아웃된 기기는 계속 알림을 받는 문제가 남는다).
-await unregisterPushOnLogout_(session.sessionToken);
+// [2026-09-10 로그아웃 지연/멈춤 버그 수정] 이 함수는 서버 fetch(최대 5초 타임아웃) +
+// firebase.messaging().deleteToken()을 순서대로 기다리는 best-effort 정리 작업이라, 화면
+// 전환(로그인 화면 이동)까지 이걸 기다리게 하면 안 된다(실측 확인: doLogout()과 동일한
+// 원인으로 여기서도 화면 전환이 최대 몇 초씩 지연될 수 있었다). await 없이 흘려보낸다.
+unregisterPushOnLogout_(session.sessionToken).catch(function () {});
 localStorage.removeItem('mro_session');
 clearIdleTracking();
 // 무활동 로그아웃(백그라운드 복귀 시 이미 시간 초과 발견) 경로도 doLogout()과 동일하게
@@ -4061,9 +4065,16 @@ async function unregisterPushOnLogout_(sessionToken) {
   localStorage.removeItem('mro_fcm_token');
 }
 
-async function doLogout() {
+function doLogout() {
   const sessionToken = session && session.sessionToken;
-  await unregisterPushOnLogout_(sessionToken);
+  // [2026-09-10 로그아웃 지연/멈춤 버그 수정] 2026-09-07(ec663ed)에서 doLogout()이
+  // async로 바뀌면서 이 호출을 await하게 됐는데, unregisterPushOnLogout_ 자체가 "실패해도
+  // 로그아웃을 절대 막지 않는다"는 best-effort 설계(위 함수 주석 참고)였던 걸 실수로
+  // blocking으로 만들어버린 것 — 서버 fetch(최대 5초 타임아웃) + deleteToken()을 다 기다린
+  // 후에야 로그인 화면으로 넘어가서, 로그아웃 버튼을 누르면 몇 초씩 멈췄다 갑자기 화면이
+  // 바뀌는 것처럼 보였다(재홍님 실측 확인, 2026-09-09). 원래 의도대로 되돌려 await 없이
+  // 백그라운드로 흘려보내고, 화면 전환은 즉시 진행한다.
+  unregisterPushOnLogout_(sessionToken).catch(function () {});
   localStorage.removeItem('mro_session');
   clearIdleTracking();
   // 로그아웃 후에도 OS 앱 아이콘 뱃지 숫자가 남아있던 문제 수정. setAppBadge를 지원하지
@@ -4077,4 +4088,3 @@ async function doLogout() {
 </script>
 </body>
 </html>
-
