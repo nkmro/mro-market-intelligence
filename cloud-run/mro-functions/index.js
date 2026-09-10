@@ -1173,7 +1173,7 @@ const LOGIN_BATCH_RANGES = [USER_DATA_RANGE, SETTINGS_RANGE];
 // 감싸므로(아래 exports.loginTest 참고), 실패 응답(WRONG_PASSWORD 등)도 그대로 idempotency
 // 캐시에 남는다 — 같은 idempotencyKey로 재시도하면 failCount를 다시 건드리지 않고 캐시된
 // 응답을 그대로 돌려받는다(postComment/markThreadSeen과 동일한 보장).
-async function loginAction_(email, password, userRows, settings) {
+async function loginAction_(email, password, userRows, settings, deviceId) {
   if (!email || !password) {
     return { ok: false, error: 'MISSING_FIELDS' };
   }
@@ -1216,10 +1216,21 @@ async function loginAction_(email, password, userRows, settings) {
   // expiresAt) — 다른 Cloud Run 함수들이 그대로 이 문서를 조회할 수 있어야 한다(2026-08-21
   // 사용자 요청으로 명시 확인됨). sessionSyncTest를 거치는 간접 경로 대신, 이미 Firestore
   // 클라이언트를 갖고 있으므로 직접 쓴다(불필요한 내부 HTTP 호출 한 단계 제거).
+  //
+  // [2026-09-10 추가, anyLive 이메일 단위 버그 수정] deviceId를 추가 필드로 저장한다(기존
+  // email/createdAt/expiresAt 구조는 그대로 유지 — 다른 함수와의 호환성 그대로 보존).
+  // pushSender.js가 "이 이메일의 세션이 하나라도 살아있는가"가 아니라 "이 기기(deviceId)의
+  // 세션이 살아있는가"를 판단할 수 있어야, 같은 계정의 다른 기기가 살아있다는 이유로 이미
+  // 죽은 기기에까지 푸시가 가는 문제(재홍님 실측 확인, 2026-09-09 — Cloud Logging에서 서로
+  // 다른 기기가 서로 다른 시각에 각자 무활동 로그아웃을 감지하는 것을 직접 확인)를 막을 수
+  // 있다. deviceId가 없는 요청(예: 롤백된 Apps Script 로그인 경로)은 null로 저장 —
+  // pushSender.js는 deviceId가 없는/일치하는 세션이 없는 경우 기존 방식(이메일 전체 기준)
+  // 으로 안전하게 대체 동작한다(하위 호환 — lib/pushSender.js의 isDeviceSessionAlive_ 참고).
   await firestore.collection('sessions').doc(sessionToken).set({
     email: email,
     createdAt: new Date(now),
-    expiresAt: new Date(now + SESSION_TTL_MS)
+    expiresAt: new Date(now + SESSION_TTL_MS),
+    deviceId: deviceId || null
   });
 
   // [날짜 처리 주의] passwordChangedAt(I열)이 실제 날짜형 셀이면 UNFORMATTED_VALUE로 시트
@@ -1248,7 +1259,7 @@ exports.loginTest = async (req, res) => {
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
   try {
-    const { email, password, idempotencyKey } = req.body || {};
+    const { email, password, idempotencyKey, deviceId } = req.body || {};
     if (!idempotencyKey) {
       const serverMs = Date.now() - t0;
       res.status(400).json({ ok: false, serverMs, error: 'MISSING_IDEMPOTENCY_KEY' });
@@ -1279,7 +1290,7 @@ exports.loginTest = async (req, res) => {
 
     try {
       const result = await withIdempotency(firestore, idempotencyKey, 'login', async function () {
-        return loginAction_(email, password, userRows, settings);
+        return loginAction_(email, password, userRows, settings, deviceId);
       });
       const serverMs = Date.now() - t0;
       res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, result));
