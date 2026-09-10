@@ -494,6 +494,10 @@ async function loginRemote_(email, password) {
   const idempotencyKey = generateIdempotencyKey_();
   const requestBody = {
     email: email, password: password, platform: detectPlatform(),
+    // [2026-09-10] 세션 문서에 deviceId를 함께 저장하기 위해 추가 — 아래 큰 주석(getOrCreateDeviceId
+    // 정의부) 참고. 로그인 시점엔 feed.html에서 아직 만들어진 적 없는 첫 기기일 수도 있어 여기서
+    // 직접 생성/재사용한다.
+    deviceId: getOrCreateDeviceId(),
     idempotencyKey: idempotencyKey
   };
 
@@ -563,7 +567,10 @@ async function doLogin() {
     // loginRemote_()의 3단 정책을 먼저 시도하고, 비어 있으면(롤백 상태) 기존 Apps Script 경로를
     // 그대로 쓴다 — postComment/markThreadSeen과 동일한 "빈 문자열로 롤백" 스위치 패턴.
     const res = (await loginRemote_(email, password))
-      || await callApi('login', { email, password, platform: detectPlatform() });
+      // [2026-09-10] deviceId도 같이 넘긴다 — 지금은 Apps Script(Code.gs handleLogin_)가 이
+      // 필드를 저장하지 않아 조용히 무시되지만(하위 호환, 해가 없음), 이 폴백 경로가 실제로
+      // 쓰일 경우(CLOUD_RUN_LOGIN_URL 롤백 등)를 대비해 미리 맞춰둔다.
+      || await callApi('login', { email, password, platform: detectPlatform(), deviceId: getOrCreateDeviceId() });
     if (!res.ok) { cancelLoadingFill('btn-login'); showError('login-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-login');
     saveSession(res);
@@ -695,6 +702,21 @@ async function showSuccess(res) {
   window.location.href = 'feed.html';
 }
 
+// [2026-09-10, 세션/푸시 anyLive 이메일 단위 버그 수정] feed.html의 getOrCreateDeviceId()와
+// 완전히 동일한 로직 — 기기 하나당 안정적인 랜덤 ID를 한 번만 만들어 재사용한다. 지금까지는
+// index.html에서 로그인할 때는 이 ID를 만들지 않고(feed.html로 넘어가야 비로소 생성됐음),
+// 로그아웃 때만 "혹시 있으면" 읽어서 썼다. 이제 로그인 시점에도 이 ID가 필요해졌다(세션 문서에
+// deviceId를 함께 저장해야 pushSender.js가 기기 단위로 살아있는지 판단할 수 있음, 재홍님 실측
+// 확인 2026-09-09 — 다른 기기 세션이 살아있으면 이미 로그아웃된 기기에도 푸시가 갔던 문제).
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem('mro_device_id');
+  if (!id) {
+    id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev_' + Date.now() + '_' + Math.random().toString(16).slice(2));
+    localStorage.setItem('mro_device_id', id);
+  }
+  return id;
+}
+
 // 2026-09-07: [로그아웃 후에도 FCM 알림이 오는 문제 수정] feed.html의 unregisterPushOnLogout_와
 // 같은 목적 — 이 기기의 푸시 구독을 서버에서 비활성화한다. index.html은 firebase SDK를 로드하지
 // 않으므로 브라우저 쪽 토큰 폐기(firebase.messaging().deleteToken())는 항상 조용히 건너뛰지만,
@@ -703,7 +725,7 @@ async function showSuccess(res) {
 // 자체를 절대 막지 않는다(best-effort).
 async function unregisterPushOnLogout_(sessionToken) {
   try {
-    const deviceId = localStorage.getItem('mro_device_id');
+    const deviceId = getOrCreateDeviceId();
     if (sessionToken && deviceId && CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL) {
       const controller = new AbortController();
       const timeoutId = setTimeout(function () { controller.abort(); }, 5000);
@@ -724,13 +746,17 @@ async function unregisterPushOnLogout_(sessionToken) {
   localStorage.removeItem('mro_fcm_token');
 }
 
-async function doLogout() {
+function doLogout() {
   let sessionToken = null;
   try {
     const saved = JSON.parse(localStorage.getItem('mro_session') || 'null');
     sessionToken = saved && saved.sessionToken;
   } catch (e) {}
-  await unregisterPushOnLogout_(sessionToken);
+  // [2026-09-10 로그아웃 지연/멈춤 버그 수정] feed.html의 doLogout()과 동일한 원인 —
+  // unregisterPushOnLogout_는 best-effort 정리 작업(서버 fetch 최대 5초 타임아웃)인데
+  // await하는 바람에 화면 전환이 그만큼 지연됐다(재홍님 실측 확인, 2026-09-09). await 없이
+  // 백그라운드로 흘려보낸다.
+  unregisterPushOnLogout_(sessionToken).catch(function () {});
   localStorage.removeItem('mro_session');
   localStorage.removeItem('mro_last_activity');
   document.getElementById('auth-area').style.display = 'block';
@@ -778,7 +804,9 @@ function showLoginCard() {
     if (isIdleTimedOut()) {
       // 2026-09-07: 이 경로는 doLogout()을 거치지 않으므로 푸시 구독 비활성화도 여기서 직접
       // 호출해야 한다(안 그러면 이 경로로 로그아웃된 기기는 계속 알림을 받는 문제가 남는다).
-      await unregisterPushOnLogout_(session && session.sessionToken);
+      // [2026-09-10 로그아웃 지연/멈춤 버그 수정] await하면 화면 전환이 지연되므로(재홍님
+      // 실측 확인) 흘려보내고 즉시 로그인 화면을 보여준다.
+      unregisterPushOnLogout_(session && session.sessionToken).catch(function () {});
       localStorage.removeItem('mro_session');
       localStorage.removeItem('mro_last_activity');
       // 무활동 로그아웃 경로도 feed.html의 doLogout()과 동일하게 OS 앱 아이콘 뱃지를 초기화한다.
