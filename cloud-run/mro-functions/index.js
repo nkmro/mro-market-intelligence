@@ -2607,6 +2607,16 @@ exports.unregisterPushSubscriptionTest = async (req, res) => {
     await unregisterPushSubscriptionAction_(email, deviceId);
     timings.firestoreMs = Date.now() - u0;
 
+    // [2026-09-11 로그아웃 즉시 세션 무효화, 재홍님 승인 — "PUSH 로컬/기기 알림 근본원인"
+    // 논의 3번 결론] 기존에는 로그아웃해도 sessions 문서(auth.ref, 위 authenticateSession이
+    // 이미 조회해둔 바로 그 문서)는 그대로 남아 자연 만료(SESSION_TTL_MS, 6시간) 전까지
+    // "살아있는" 상태였다 — 그 사이 배치가 돌면 isDeviceSessionAlive_/getSessionActivity_가
+    // 이 세션을 여전히 유효하다고 보고 푸시를 계속 보낼 수 있었다(위 구독 비활성화만으로는
+    // 막아지지만, 구독 재등록/다른 경로로 이 세션이 다시 쓰이는 걸 막지는 못함). 여기서 그
+    // 세션 문서의 expiresAt을 즉시 과거로 되돌려 확정적으로 무효화한다. best-effort —
+    // 실패해도 위에서 이미 끝난 푸시 구독 해제(로그아웃의 핵심 흐름)는 막지 않는다.
+    await invalidateSessionOnLogout_(auth.ref);
+
     const serverMs = Date.now() - t0;
     res.status(200).json({ ok: true, serverMs, timings });
   } catch (err) {
@@ -2627,6 +2637,23 @@ async function unregisterPushSubscriptionAction_(email, deviceId) {
     deactivatedAt: FieldValue.serverTimestamp(),
     deactivatedReason: 'user_logout'
   }, { merge: true });
+}
+
+// [2026-09-11 신규] 로그아웃 시 이 기기의 세션 문서를 즉시 만료 처리한다. 문서를 삭제하지
+// 않고 expiresAt만 과거(new Date(0))로 되돌리는 이유: isDeviceSessionAlive_/
+// getSessionActivity_가 "문서가 아예 없음"과 "문서는 있는데 만료됨"을 다르게 취급한다 —
+// 전자는 deviceId 마이그레이션 과도기 안전장치로 "살아있다"로 보수적으로 간주하고, 후자는
+// 정확히 "죽었다"로 판정한다(같은 파일 lib/pushSender.js 96~109행 참고). 문서를 지우면
+// 오히려 전자 쪽(보수적 fallback)에 걸려 반대 결과가 나올 수 있어, 반드시 expiresAt만
+// 과거로 덮어쓴다. best-effort — 실패해도 로그아웃 흐름 자체는 막지 않는다(touchSession_과
+// 동일한 방어 패턴, 이 파일 111~117행).
+async function invalidateSessionOnLogout_(sessionRef) {
+  if (!sessionRef) return;
+  try {
+    await sessionRef.update({ expiresAt: new Date(0) });
+  } catch (e) {
+    console.error('invalidateSessionOnLogout_ 실패(무시): ' + e);
+  }
 }
 
 // ---------------------------------------------------------------------------
