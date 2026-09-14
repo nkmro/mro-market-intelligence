@@ -169,6 +169,10 @@ font-size: 13px; padding: 2px 4px; display: none;
   .spark-2 { animation-delay: .3s; }
   .spark-3 { animation-delay: .6s; }
   .spark-4 { animation-delay: .9s; }
+  /* 재홍님 요청(2026-09-14): 스파크뿐 아니라 핀 아이콘 몸체(종 모양 부분)도 밝아졌다
+     어두워졌다 하도록 — 스파크와는 다른 리듬으로(2s), 서로 겹쳐도 산만하지 않게 한다. */
+  @keyframes pin-body-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .pin-body { animation: pin-body-pulse 2s ease-in-out infinite; }
   #pinned-area { background: var(--accent-soft); }
   .pinned-area-title {
     font-size: 12px; font-weight: 700; color: var(--accent); padding: 10px 24px 0;
@@ -190,7 +194,6 @@ font-size: 13px; padding: 2px 4px; display: none;
     cursor: pointer; flex-shrink: 0; padding: 4px 0;
   }
   .pinned-unpin-btn[disabled] { opacity: 0.5; cursor: default; }
-  .pinned-area-caption { text-align: center; font-size: 11px; color: var(--text-muted); padding: 5px 24px; }
   .comment-pin-divider {
     display: inline-block; width: 1px; height: 12px; background: var(--border);
     margin: 0 2px; vertical-align: middle;
@@ -3877,7 +3880,7 @@ async function unpinCommentRemote_(commentId) {
 // 피드백 없이 조용히 무시됐다).
 function pinErrorMessage_(error) {
   const map = {
-    'PIN_LIMIT_REACHED': '고정은 최대 3개까지만 가능합니다. 다른 댓글을 먼저 해제한 뒤 다시 시도해주세요.',
+    'PIN_LIMIT_REACHED': '최대 3개까지 고정 가능해요! 다른 것을 삭제해주세요!',
     'FORBIDDEN_NOT_LEAD_OR_EXEC': '팀장/임원만 고정할 수 있어요.',
     'COMMENT_NOT_FOUND': '댓글을 찾을 수 없어요.',
     'MISSING_FIELDS': '필수 정보가 누락됐어요.',
@@ -3905,7 +3908,7 @@ async function loadPinnedComments() {
 }
 
 // 목업(Main.dc.html)의 스파크 애니메이션 핀 아이콘 SVG — 그대로 재사용.
-const PIN_SPARK_ICON_SVG = '<svg class="pinned-icon" width="20" height="20" viewBox="-6 -6 36 36" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path><g stroke-width="2.2"><line class="spark spark-1" x1="22" y1="2" x2="26" y2="-2"></line><line class="spark spark-2" x1="22" y1="22" x2="26" y2="26"></line><line class="spark spark-3" x1="2" y1="22" x2="-2" y2="26"></line><line class="spark spark-4" x1="2" y1="2" x2="-2" y2="-2"></line></g></svg>';
+const PIN_SPARK_ICON_SVG = '<svg class="pinned-icon" width="20" height="20" viewBox="-6 -6 36 36" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line class="pin-body" x1="12" y1="17" x2="12" y2="22"></line><path class="pin-body" d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path><g stroke-width="2.2"><line class="spark spark-1" x1="22" y1="2" x2="26" y2="-2"></line><line class="spark spark-2" x1="22" y1="22" x2="26" y2="26"></line><line class="spark spark-3" x1="2" y1="22" x2="-2" y2="26"></line><line class="spark spark-4" x1="2" y1="2" x2="-2" y2="-2"></line></g></svg>';
 
 function renderPinnedArea() {
   const root = document.getElementById('pinned-area');
@@ -3927,11 +3930,11 @@ function renderPinnedArea() {
         </div>
       `;
     }).join('');
-    const full = pinnedState.items.length >= 3;
-    const captionHtml = `<div class="pinned-area-caption">최대 3개까지 고정할 수 있어요 (${pinnedState.items.length}/3)${full ? ' — 더 고정하려면 기존 항목을 먼저 해제하세요' : ''}</div>`;
-    // 재홍님 요청 반영(2026-09-14): 타이틀 "이슈 댓글"로 표시.
+    // 재홍님 요청 반영(2026-09-14): "최대 3개까지 고정할 수 있어요 (n/3)" 상시 안내 문구는
+    // 제거 — 대신 3개 한도에 실제로 걸렸을 때만 pinComment()의 PIN_LIMIT_REACHED 알림으로
+    // 안내한다(아래 pinErrorMessage_ 참고).
     const titleHtml = `<div class="pinned-area-title">📌 이슈 댓글</div>`;
-    root.innerHTML = titleHtml + rowsHtml + captionHtml;
+    root.innerHTML = titleHtml + rowsHtml;
   } catch (e) {
     // 고정 영역 렌더링 실패는 이 영역만 비우고 기존 피드/댓글에는 영향을 주지 않는다.
     root.innerHTML = '';
