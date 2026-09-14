@@ -2846,7 +2846,10 @@ const PINNED_COMMENTS_COLLECTION = 'pinnedComments';
 const PIN_MAX = 3;
 
 // pinnedComments 문서 하나 -> 프론트가 쓰기 좋은 평면 객체 (pinnedAt Timestamp -> ISO 문자열).
-function pinnedDocToJson_(doc) {
+// 2026-09-14: 이슈 댓글 목록에서 "어떤 원자재 이슈인지" 바로 보이도록 materialName을 추가했다.
+// 원본 게시물이 이미 없거나(자가정리 대상) materialName을 못 찾는 예외적인 경우에도 프론트가
+// "(이름 역할) : 내용"으로 자연스럽게 폴백할 수 있도록 null로 내려준다(materialName이 필수는 아님).
+function pinnedDocToJson_(doc, materialName) {
   const d = doc.data();
   const pinnedAtRaw = d.pinnedAt;
   const pinnedAt = (pinnedAtRaw && pinnedAtRaw.toDate) ? pinnedAtRaw.toDate().toISOString() : null;
@@ -2854,6 +2857,7 @@ function pinnedDocToJson_(doc) {
     commentId: doc.id,
     postId: d.postId,
     itemId: d.itemId || null,
+    materialName: materialName || null,
     authorEmail: d.authorEmail,
     authorName: d.authorName,
     authorRole: d.authorRole,
@@ -2899,6 +2903,9 @@ exports.getPinnedCommentsTest = async (req, res) => {
     timings.sheetMs = Date.now() - u0;
 
     const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    // 2026-09-14: 이슈 댓글에 원자재명을 같이 내려주기 위해 게시물 목록도 읽는다(이미 배치 조회에
+    // 포함돼 있던 POLL_POST_RANGE를 이제 실제로 사용). 다른 endpoint들과 동일하게 rowsToPosts 재사용.
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
     const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
     const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
 
@@ -2928,7 +2935,10 @@ exports.getPinnedCommentsTest = async (req, res) => {
         const visible = feedEngine.visibleCommentsForPost(allComments, d.postId, viewer.role, viewer.team, leadScope, teamByEmail);
         const stillVisible = visible.some(function (c) { return c.commentId === doc.id; });
         if (!stillVisible) return; // 이 조회자 팀 스코프에서는 안 보임 -> 이번 응답에서만 제외(문서는 유지)
-        result.push(pinnedDocToJson_(doc));
+        // 2026-09-14: 게시물을 못 찾는 예외적인 경우(이론상 자가정리로 걸러지지만 방어적으로)에도
+        // materialName만 null로 빠질 뿐 고정 댓글 자체는 그대로 내려준다.
+        const post = allPosts.find(function (p) { return p.id === d.postId; });
+        result.push(pinnedDocToJson_(doc, post && post.materialName));
       });
 
     // 자가정리: 원본 댓글이 삭제된 pinnedComments 문서를 지운다. 실패해도 이 요청의 응답
