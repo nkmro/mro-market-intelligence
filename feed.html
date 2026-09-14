@@ -159,33 +159,56 @@ font-size: 13px; padding: 2px 4px; display: none;
     100% { box-shadow: none; }
   }
   /* ===== 댓글 고정(Pin Comment) 신규 기능 CSS — 기존 규칙은 그대로 두고 전부 추가만 함
-     (PIN_COMMENT_CLOUDRUN_DESIGN.md 승인 확정, 2026-09-11) ===== */
+     (PIN_COMMENT_CLOUDRUN_DESIGN.md 승인 확정, 2026-09-11 / 목업 디자인 정합 반영, 2026-09-14)
+     ===== */
   .comment-item.flash { animation: flash-highlight 1.6s ease; }
-  .pinned-area-box {
-    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-    padding: 14px 16px; margin-bottom: 16px;
+  /* 목업(Main.dc.html)의 4방향 스파크 애니메이션 핀 아이콘 — 그대로 재사용 */
+  @keyframes spark-flash { 0%, 100% { opacity: 0; transform: scale(.3); } 50% { opacity: 1; transform: scale(1); } }
+  .spark { transform-origin: center; transform-box: fill-box; opacity: 0; animation: spark-flash 1.2s ease-in-out infinite; }
+  .spark-1 { animation-delay: 0s; }
+  .spark-2 { animation-delay: .3s; }
+  .spark-3 { animation-delay: .6s; }
+  .spark-4 { animation-delay: .9s; }
+  #pinned-area { background: var(--accent-soft); }
+  .pinned-area-title {
+    font-size: 12px; font-weight: 700; color: var(--accent); padding: 10px 24px 0;
   }
-  .pinned-area-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
   .pinned-item {
-    display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer;
-    border-top: 1px solid var(--border);
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 24px;
+    border-top: 1px solid rgba(58,47,110,.1);
   }
-  .pinned-item:first-of-type { border-top: none; }
-  .pinned-author { font-size: 12px; font-weight: 700; color: var(--text); flex-shrink: 0; }
-  .pinned-text {
-    font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; min-width: 0;
+  .pinned-item:first-child { border-top: none; }
+  .pinned-icon { flex-shrink: 0; overflow: visible; margin-top: 1px; }
+  .pinned-text-row {
+    flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; cursor: pointer; color: var(--text);
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   }
+  .pinned-author { font-weight: 700; }
+  .pinned-sep { color: var(--text-muted); }
+  .pinned-unpin-btn {
+    border: none; background: none; color: var(--text-muted); font-size: 12px;
+    cursor: pointer; flex-shrink: 0; padding: 4px 0;
+  }
+  .pinned-unpin-btn[disabled] { opacity: 0.5; cursor: default; }
+  .pinned-area-caption { text-align: center; font-size: 11px; color: var(--text-muted); padding: 5px 24px; }
   .comment-pin-divider {
     display: inline-block; width: 1px; height: 12px; background: var(--border);
     margin: 0 2px; vertical-align: middle;
   }
   .comment-pin-btn {
-    font-size: 11px; background: none; border: none; cursor: pointer; padding: 4px 0;
-    color: var(--blue);
+    display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600;
+    color: var(--accent); background: none; border: none; cursor: pointer; padding: 4px 0;
   }
-  .comment-pin-btn.pinned { color: var(--accent); font-weight: 700; }
-  .comment-pin-btn[disabled] { opacity: 0.5; cursor: default; }
+  .comment-pinned-label {
+    display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700;
+    color: var(--accent);
+  }
+  .comment-unpin-btn {
+    font-size: 11px; color: var(--text-muted); background: none; border: none;
+    cursor: pointer; padding: 4px 0;
+  }
+  .comment-pin-btn[disabled], .comment-unpin-btn[disabled] { opacity: 0.5; cursor: default; }
+  .comment-item.pinned-highlight { background: var(--accent-soft); border-radius: 8px; padding: 6px 8px 8px; }
   .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .bot-icon {
     width: 34px; height: 34px; border-radius: 50%;
@@ -602,11 +625,15 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
         <div class="search-box"><span>🔍</span><input type="text" id="search-input" placeholder="품목, 원자재, 뉴스 검색" oninput="handleSearchInput()"><button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()">✕</button></div>
         <div class="team-select" id="team-label">동부팀 전체</div>
       </div>
+      <!-- 댓글 고정(Pin Comment) 신규 기능 — header-stack(position:sticky) 안에 넣어서
+           스크롤해도 항상 최상단에 보이게 한다(재홍님 지적 반영, 2026-09-14). #feed-view가
+           아니라 여기 있어야 알림/품목 등 다른 탭에서는 안 보이면서도(topbar가 view==='feed'일
+           때만 보이는 것과 동일한 원리) 피드 스크롤과 무관하게 고정 노출된다. -->
+      <div id="pinned-area"></div>
     </div>
 
     <div class="main">
       <div id="feed-view">
-        <div id="pinned-area"></div>
         <div id="feed-root">
           <div class="feed-loading" id="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>
         </div>
@@ -975,6 +1002,18 @@ document.getElementById('items-view').style.display = view === 'items' ? 'block'
 document.getElementById('settings-view').style.display = view === 'settings' ? 'block' : 'none';
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
+// 댓글 고정(Pin Comment) 신규 기능 — #pinned-area를 header-stack(topbar 밖)으로 옮기면서
+// (스크롤해도 항상 보이게 하기 위해) topbar의 view==='feed' 토글 밖으로 나갔으므로, 여기서
+// 똑같이 토글해줘야 한다. 이걸 안 하면 예전에 재홍님이 지적했던 "다른 탭에서도 고정 영역이
+// 계속 보이는" 버그가 그대로 재발한다.
+const pinnedAreaEl = document.getElementById('pinned-area');
+if (pinnedAreaEl) pinnedAreaEl.style.display = view === 'feed' ? '' : 'none';
+if (view === 'feed') {
+  // 댓글 고정(Pin Comment) 신규 기능 — 알림 탭이 매번 들어갈 때마다 새로 불러오는 것과
+  // 동일하게, 시황 뉴스 탭으로 돌아올 때도 고정 목록을 새로 불러온다(재홍님 지적 반영 —
+  // 이전에는 로그인 시 1번만 불러오고 끝이라 다른 탭 갔다 와도 안 새로고침됐음).
+  loadPinnedComments().catch(function () {});
+}
 if (view === 'notif') {
 renderNotif();
 callApi('markChecked', {}).catch(() => {});
@@ -1424,6 +1463,10 @@ return;
 feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
 await loadNotifNewPosts();
 updateNotifBadge();
+// 댓글 고정(Pin Comment) 신규 기능 — 30초 폴링 때마다 같이 새로고침해서, 시황 뉴스 탭에
+// 계속 머물러 있어도 새로 고정된 댓글이 자동으로 뜨게 한다(재홍님 지적 반영). pollSignal
+// 실패 시엔 이 블록에 아예 도달하지 않으므로(위 return), 기존 폴링 흐름에 영향 없다.
+loadPinnedComments().catch(function () {});
 
 const postsToRefresh = new Set();
 (res.signatures || []).forEach(function (sig) {
@@ -2375,6 +2418,10 @@ function roleClass(role) {
 function renderThread(postId, itemId) {
   const key = postId + '-' + itemId;
   const panel = document.getElementById('thread-' + key);
+  // 댓글 고정(Pin Comment) 신규 기능 — 고정 영역의 "해제" 버튼은 해당 스레드를 한 번도 열어보지
+  // 않은 상태에서도 호출될 수 있어(thread-${key} 패널이 아직 DOM에 없을 수 있음), 패널이 없으면
+  // 조용히 아무 것도 하지 않는다(기존에는 이 경우를 부르는 호출부가 없어 방어코드가 없었다).
+  if (!panel) return;
   const item = findItem(postId, itemId);
   const pc = postComments[postId] || { comments: [] };
   const comments = (pc.comments || []).filter(c => String(c.itemId) === String(itemId));
@@ -2417,11 +2464,19 @@ function renderThread(postId, itemId) {
     // 얇은 구분선 뒤에 붙인다(목업 확정 레이아웃과 동일). 본인 댓글 여부와 무관하게 노출된다.
     const pinned = (typeof isPinned_ === 'function') && isPinned_(c.commentId);
     const pinPending = (typeof pinningInFlight !== 'undefined') && pinningInFlight.has(c.commentId);
-    const pinBtn = ((c.pending || c.deleting) || !canPin())
-      ? ''
-      : `<span class="comment-pin-divider"></span><button class="comment-pin-btn${pinned ? ' pinned' : ''}"${pinPending ? ' disabled' : ''} onclick="${pinned ? 'unpinComment' : 'pinComment'}('${postId}', '${itemId}', '${c.commentId}')">${pinPending ? '처리 중...' : (pinned ? '고정됨' : '고정')}</button>`;
+    // 목업(Main.dc.html)과 동일한 아이콘: 미고정 버튼은 윤곽선 핀, 고정됨 라벨은 채워진 핀.
+    const PIN_ICON_OUTLINE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path></svg>';
+    const PIN_ICON_FILLED = '<svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="1"><line x1="12" y1="17" x2="12" y2="22" stroke-width="2.4" stroke-linecap="round"></line><path d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path></svg>';
+    let pinBtn = '';
+    if (!(c.pending || c.deleting) && canPin()) {
+      if (pinned) {
+        pinBtn = `<span class="comment-pin-divider"></span><span class="comment-pinned-label">${PIN_ICON_FILLED}고정됨</span><button class="comment-unpin-btn"${pinPending ? ' disabled' : ''} onclick="unpinComment('${postId}', '${itemId}', '${c.commentId}')">${pinPending ? '처리 중...' : '해제'}</button>`;
+      } else {
+        pinBtn = `<span class="comment-pin-divider"></span><button class="comment-pin-btn"${pinPending ? ' disabled' : ''} onclick="pinComment('${postId}', '${itemId}', '${c.commentId}')">${pinPending ? '처리 중...' : PIN_ICON_OUTLINE + '고정'}</button>`;
+      }
+    }
     return `
-      <div class="comment-item${c.pending ? ' pending' : ''}${c.deleting ? ' pending' : ''}" id="comment-${c.commentId}" style="margin-left:${depth * 24}px;">
+      <div class="comment-item${c.pending ? ' pending' : ''}${c.deleting ? ' pending' : ''}${pinned ? ' pinned-highlight' : ''}" id="comment-${c.commentId}" style="margin-left:${depth * 24}px;">
         <div class="avatar ${roleClass(c.authorRole)}">${escapeHtml(initials(c.authorName))}</div>
         <div class="comment-body">
           ${parent ? `<div class="reply-to">↳ ${escapeHtml(parent.authorName)} ${escapeHtml(parent.authorRole || '')}에게 답장</div>` : ''}
@@ -3849,24 +3904,34 @@ async function loadPinnedComments() {
   renderPinnedArea();
 }
 
+// 목업(Main.dc.html)의 스파크 애니메이션 핀 아이콘 SVG — 그대로 재사용.
+const PIN_SPARK_ICON_SVG = '<svg class="pinned-icon" width="20" height="20" viewBox="-6 -6 36 36" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path><g stroke-width="2.2"><line class="spark spark-1" x1="22" y1="2" x2="26" y2="-2"></line><line class="spark spark-2" x1="22" y1="22" x2="26" y2="26"></line><line class="spark spark-3" x1="2" y1="22" x2="-2" y2="26"></line><line class="spark spark-4" x1="2" y1="2" x2="-2" y2="-2"></line></g></svg>';
+
 function renderPinnedArea() {
   const root = document.getElementById('pinned-area');
   if (!root) return;
   try {
     if (!pinnedState.items.length) { root.innerHTML = ''; return; }
-    root.innerHTML = `
-      <div class="pinned-area-box">
-        <div class="pinned-area-title">📌 고정된 댓글</div>
-        ${pinnedState.items.map(function (p) {
-          return `
-            <div class="pinned-item" onclick="goToComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">
-              <span class="pinned-author">${escapeHtml(p.authorName || '')} ${escapeHtml(p.authorRole || '')}</span>
-              <span class="pinned-text">${escapeHtml(truncate(p.contentSnapshot || '', 40))}</span>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+    const rowsHtml = pinnedState.items.map(function (p) {
+      const pending = pinningInFlight.has(p.commentId);
+      const unpinBtn = canPin()
+        ? `<button class="pinned-unpin-btn"${pending ? ' disabled' : ''} onclick="event.stopPropagation(); unpinComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">${pending ? '처리 중...' : '해제'}</button>`
+        : '';
+      return `
+        <div class="pinned-item">
+          ${PIN_SPARK_ICON_SVG}
+          <div class="pinned-text-row" onclick="goToComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">
+            <span class="pinned-author">${escapeHtml(p.authorName || '')} ${escapeHtml(p.authorRole || '')}</span><span class="pinned-sep"> : </span><span>${escapeHtml(p.contentSnapshot || '')}</span>
+          </div>
+          ${unpinBtn}
+        </div>
+      `;
+    }).join('');
+    const full = pinnedState.items.length >= 3;
+    const captionHtml = `<div class="pinned-area-caption">최대 3개까지 고정할 수 있어요 (${pinnedState.items.length}/3)${full ? ' — 더 고정하려면 기존 항목을 먼저 해제하세요' : ''}</div>`;
+    // 재홍님 요청 반영(2026-09-14): 타이틀 "이슈 댓글"로 표시.
+    const titleHtml = `<div class="pinned-area-title">📌 이슈 댓글</div>`;
+    root.innerHTML = titleHtml + rowsHtml + captionHtml;
   } catch (e) {
     // 고정 영역 렌더링 실패는 이 영역만 비우고 기존 피드/댓글에는 영향을 주지 않는다.
     root.innerHTML = '';
@@ -3877,10 +3942,11 @@ async function pinComment(postId, itemId, commentId) {
   if (!canPin() || pinningInFlight.has(commentId)) return;
   pinningInFlight.add(commentId);
   renderThread(postId, itemId);
+  renderPinnedArea();
   try {
     const res = await pinCommentRemote_(postId, itemId, commentId);
     if (res && res.ok) {
-      await loadPinnedComments();
+      await loadPinnedComments(); // renderPinnedArea()까지 포함
     } else if (res && res.error) {
       // PIN_LIMIT_REACHED뿐 아니라 모든 실패 사유에 대해 피드백을 준다(재홍님 코드 리뷰 지적 반영).
       alert(pinErrorMessage_(res.error));
@@ -3890,6 +3956,7 @@ async function pinComment(postId, itemId, commentId) {
   } finally {
     pinningInFlight.delete(commentId);
     renderThread(postId, itemId);
+    renderPinnedArea();
   }
 }
 
@@ -3897,10 +3964,11 @@ async function unpinComment(postId, itemId, commentId) {
   if (!canPin() || pinningInFlight.has(commentId)) return;
   pinningInFlight.add(commentId);
   renderThread(postId, itemId);
+  renderPinnedArea();
   try {
     const res = await unpinCommentRemote_(commentId);
     if (res && res.ok) {
-      await loadPinnedComments();
+      await loadPinnedComments(); // renderPinnedArea()까지 포함
     } else if (res && res.error) {
       alert(pinErrorMessage_(res.error));
     }
@@ -3909,6 +3977,7 @@ async function unpinComment(postId, itemId, commentId) {
   } finally {
     pinningInFlight.delete(commentId);
     renderThread(postId, itemId);
+    renderPinnedArea();
   }
 }
 
@@ -4375,4 +4444,3 @@ function doLogout() {
 </script>
 </body>
 </html>
-
