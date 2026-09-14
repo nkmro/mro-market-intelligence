@@ -187,7 +187,10 @@ font-size: 13px; padding: 2px 4px; display: none;
     flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; cursor: pointer; color: var(--text);
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   }
-  .pinned-author { font-weight: 700; }
+  /* 2026-09-14: 재홍님 요청 반영 - 원자재명이 먼저 눈에 들어와야 해서 굵기를 서로 바꿈
+     ("철 (강현민 담당) : 내용" - 원자재명 볼드, 이름/역할은 일반 굵기). */
+  .pinned-material { font-weight: 700; }
+  .pinned-author { font-weight: 400; }
   .pinned-sep { color: var(--text-muted); }
   .pinned-unpin-btn {
     border: none; background: none; color: var(--text-muted); font-size: 12px;
@@ -3920,11 +3923,17 @@ function renderPinnedArea() {
       const unpinBtn = canPin()
         ? `<button class="pinned-unpin-btn"${pending ? ' disabled' : ''} onclick="event.stopPropagation(); unpinComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">${pending ? '처리 중...' : '해제'}</button>`
         : '';
+      // 2026-09-14: "원자재명 (이름 역할) : 내용" 형식으로 변경 - 이슈 댓글 목록은 여러 게시물을
+      // 넘나들기 때문에 "어떤 원자재 이슈인지"가 먼저 보여야 한다는 재홍님 피드백 반영. materialName이
+      // 없는 예외적인 경우(백엔드에서 게시물을 못 찾은 경우)는 원자재명 부분 없이 자연스럽게 폴백.
+      const materialHtml = p.materialName
+        ? `<span class="pinned-material">${escapeHtml(p.materialName)}</span> `
+        : '';
       return `
         <div class="pinned-item">
           ${PIN_SPARK_ICON_SVG}
           <div class="pinned-text-row" onclick="goToComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">
-            <span class="pinned-author">${escapeHtml(p.authorName || '')} ${escapeHtml(p.authorRole || '')}</span><span class="pinned-sep"> : </span><span>${escapeHtml(p.contentSnapshot || '')}</span>
+            ${materialHtml}<span class="pinned-author">(${escapeHtml(p.authorName || '')} ${escapeHtml(p.authorRole || '')})</span><span class="pinned-sep"> : </span><span>${escapeHtml(p.contentSnapshot || '')}</span>
           </div>
           ${unpinBtn}
         </div>
