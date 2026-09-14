@@ -11,6 +11,10 @@
     --accent: #3a2f6e;
     --accent-dark: #241c4a;
     --accent-soft: #f2eaf6;
+    /* 2026-09-14: 재홍님 요청 - 이슈 댓글(#pinned-area)이 "전체 확인완료" 게시물 카드(--accent-soft)와
+       배경색이 똑같아 헷갈린다는 피드백에 따라, 이슈 댓글 전용 옅은 붉은 계열을 추가했다. 새 색을
+       만드는 대신 기존 --danger를 옅게 희석해 팔레트 일관성을 유지한다. */
+    --danger-soft: #f6e2de;
     --sidebar-bg-end: #4d3f8f;
     --sidebar-lower: #bfb8d6;
     --header-end: #7c5aa8;
@@ -173,13 +177,13 @@ font-size: 13px; padding: 2px 4px; display: none;
      어두워졌다 하도록 — 스파크와는 다른 리듬으로(2s), 서로 겹쳐도 산만하지 않게 한다. */
   @keyframes pin-body-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .pin-body { animation: pin-body-pulse 2s ease-in-out infinite; }
-  #pinned-area { background: var(--accent-soft); }
+  #pinned-area { background: var(--danger-soft); }
   .pinned-area-title {
-    font-size: 12px; font-weight: 700; color: var(--accent); padding: 10px 24px 0;
+    font-size: 12px; font-weight: 700; color: var(--danger); padding: 10px 24px 0;
   }
   .pinned-item {
     display: flex; align-items: flex-start; gap: 10px; padding: 10px 24px;
-    border-top: 1px solid rgba(58,47,110,.1);
+    border-top: 1px solid rgba(179,65,58,.16);
   }
   .pinned-item:first-child { border-top: none; }
   .pinned-icon { flex-shrink: 0; overflow: visible; margin-top: 1px; }
@@ -214,7 +218,9 @@ font-size: 13px; padding: 2px 4px; display: none;
     cursor: pointer; padding: 4px 0;
   }
   .comment-pin-btn[disabled], .comment-unpin-btn[disabled] { opacity: 0.5; cursor: default; }
-  .comment-item.pinned-highlight { background: var(--accent-soft); border-radius: 8px; padding: 6px 8px 8px; }
+  /* 2026-09-14: 이슈 댓글 영역과 같은 톤을 유지 - 스레드 안에서 봐도 "이게 그 고정 댓글이구나"가
+     바로 보이도록, 위 #pinned-area와 항상 같은 색을 쓴다(둘 다 --danger-soft). */
+  .comment-item.pinned-highlight { background: var(--danger-soft); border-radius: 8px; padding: 6px 8px 8px; }
   .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .bot-icon {
     width: 34px; height: 34px; border-radius: 50%;
@@ -3911,7 +3917,7 @@ async function loadPinnedComments() {
 }
 
 // 목업(Main.dc.html)의 스파크 애니메이션 핀 아이콘 SVG — 그대로 재사용.
-const PIN_SPARK_ICON_SVG = '<svg class="pinned-icon" width="20" height="20" viewBox="-6 -6 36 36" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line class="pin-body" x1="12" y1="17" x2="12" y2="22"></line><path class="pin-body" d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path><g stroke-width="2.2"><line class="spark spark-1" x1="22" y1="2" x2="26" y2="-2"></line><line class="spark spark-2" x1="22" y1="22" x2="26" y2="26"></line><line class="spark spark-3" x1="2" y1="22" x2="-2" y2="26"></line><line class="spark spark-4" x1="2" y1="2" x2="-2" y2="-2"></line></g></svg>';
+const PIN_SPARK_ICON_SVG = '<svg class="pinned-icon" width="20" height="20" viewBox="-6 -6 36 36" fill="none" stroke="var(--danger)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line class="pin-body" x1="12" y1="17" x2="12" y2="22"></line><path class="pin-body" d="M5 17h14l-1.4-1.4A3 3 0 0 1 17 13.6V8a5 5 0 0 0-10 0v5.6a3 3 0 0 1-.6 2L5 17z"></path><g stroke-width="2.2"><line class="spark spark-1" x1="22" y1="2" x2="26" y2="-2"></line><line class="spark spark-2" x1="22" y1="22" x2="26" y2="26"></line><line class="spark spark-3" x1="2" y1="22" x2="-2" y2="26"></line><line class="spark spark-4" x1="2" y1="2" x2="-2" y2="-2"></line></g></svg>';
 
 function renderPinnedArea() {
   const root = document.getElementById('pinned-area');
