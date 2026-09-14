@@ -2822,3 +2822,290 @@ exports.reminderBatchTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
 };
+
+// ---------------------------------------------------------------------------
+// 댓글 고정(Pin Comment) 기능 — 2026-09-11, PIN_COMMENT_CLOUDRUN_DESIGN.md 설계 확정 반영.
+// 기존 Apps Script 함수를 옮기는 게 아니라 완전 신규 기능이다. 기존 '댓글' 시트/기존
+// Firestore 컬렉션(sessions/pushSubscriptions 등)은 전부 읽기만 하고, 이 기능 전용으로
+// 새로 만든 Firestore 컬렉션 'pinnedComments'(문서 ID = commentId)에만 쓴다.
+//
+// [권한] 고정: 팀장/임원만. 해제: 팀장/임원이면 누구나(고정한 사람이 아니어도 됨).
+// [한도] 역할 구분 없이 전체 피드 기준 전역 3개(팀장 3 + 임원 3 = 6이 아니다 — 기획 확정).
+// [스냅샷] contentSnapshot은 고정 당시 댓글 내용을 그대로 고정 — 이후 원본 댓글이
+//         updateComment로 수정돼도 고정 영역 문구는 바뀌지 않는다(기획 확정, "공지" 성격).
+// [중복 고정] 이미 고정된 댓글을 다시 고정 요청하면 에러 없이 조용히 성공 처리(멱등, 기획 확정).
+// [원본 삭제] 조회 시점에 원본 댓글이 이미 삭제돼 있으면 그 pinnedComments 문서를 자동
+//            정리(자가정리)한다(기획 확정).
+//
+// [롤백] feed.html의 CLOUD_RUN_GET_PINNED_COMMENTS_URL / CLOUD_RUN_PIN_COMMENT_URL /
+// CLOUD_RUN_UNPIN_COMMENT_URL을 빈 문자열로 바꾸면 이 3개 함수 전부 즉시 쓰이지 않게 된다
+// (기존 CLOUD_RUN_*_URL 롤백 관례 그대로). 이 블록을 통째로 지워도 다른 함수는 전혀 영향받지
+// 않는다 — 아래 3개 함수 모두 다른 exports.* 함수를 호출하지 않고, 읽기 전용 공용 모듈
+// (lib/auth.js, lib/sheetsClient.js, lib/feedEngine.js)만 기존 함수들과 동일하게 재사용한다.
+const PINNED_COMMENTS_COLLECTION = 'pinnedComments';
+const PIN_MAX = 3;
+
+// pinnedComments 문서 하나 -> 프론트가 쓰기 좋은 평면 객체 (pinnedAt Timestamp -> ISO 문자열).
+function pinnedDocToJson_(doc) {
+  const d = doc.data();
+  const pinnedAtRaw = d.pinnedAt;
+  const pinnedAt = (pinnedAtRaw && pinnedAtRaw.toDate) ? pinnedAtRaw.toDate().toISOString() : null;
+  return {
+    commentId: doc.id,
+    postId: d.postId,
+    itemId: d.itemId || null,
+    authorEmail: d.authorEmail,
+    authorName: d.authorName,
+    authorRole: d.authorRole,
+    contentSnapshot: d.contentSnapshot,
+    pinnedByEmail: d.pinnedByEmail,
+    pinnedByName: d.pinnedByName,
+    pinnedAt: pinnedAt
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POST /getPinnedCommentsTest — 로그인한 모든 사용자가 조회 가능. 각 항목을 조회자 본인의
+// 팀 스코프(feedEngine.visibleCommentsForPost, 기존 getCommentsTest와 동일 필터)로 다시
+// 검증해서, 다른 팀 담당자 댓글이 고정 영역을 통해 새어나가지 않게 한다.
+exports.getPinnedCommentsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    const p0 = Date.now();
+    const pinnedSnap = await firestore.collection(PINNED_COMMENTS_COLLECTION).get();
+    timings.pinnedMs = Date.now() - p0;
+
+    if (pinnedSnap.empty) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: true, serverMs, timings, pinnedComments: [] });
+      return;
+    }
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+
+    const result = [];
+    const staleDocIds = []; // 원본 댓글이 이미 삭제된 경우 -> 자가정리 대상
+    pinnedSnap.docs
+      .sort(function (a, b) {
+        const at = a.data().pinnedAt, bt = b.data().pinnedAt;
+        const ams = (at && at.toMillis) ? at.toMillis() : 0;
+        const bms = (bt && bt.toMillis) ? bt.toMillis() : 0;
+        return ams - bms;
+      })
+      .forEach(function (doc) {
+        const d = doc.data();
+        const original = allComments.find(function (c) { return c.commentId === doc.id; });
+        if (!original) { staleDocIds.push(doc.id); return; }
+        const visible = feedEngine.visibleCommentsForPost(allComments, d.postId, viewer.role, viewer.team, leadScope, teamByEmail);
+        const stillVisible = visible.some(function (c) { return c.commentId === doc.id; });
+        if (!stillVisible) return; // 이 조회자 팀 스코프에서는 안 보임 -> 이번 응답에서만 제외(문서는 유지)
+        result.push(pinnedDocToJson_(doc));
+      });
+
+    // 자가정리: 원본 댓글이 삭제된 pinnedComments 문서를 지운다. 실패해도 이 요청의 응답
+    // 자체에는 영향을 주지 않도록 개별 delete를 catch로 감쌌지만(원칙 3), 응답을 보내기
+    // 전에 await로 완료를 기다린다 — Cloud Run/Cloud Functions는 응답 전송 후 컨테이너를
+    // 곧바로 얼릴 수 있어(await 없이 res.json()보다 먼저 함수가 끝나버리면) 백그라운드로
+    // 남겨둔 정리 작업이 중간에 끊길 수 있기 때문이다(재홍님 코드 리뷰 지적 반영).
+    if (staleDocIds.length > 0) {
+      await Promise.all(staleDocIds.map(function (id) {
+        return firestore.collection(PINNED_COMMENTS_COLLECTION).doc(id).delete().catch(function (e) {
+          console.error('[getPinnedCommentsTest] 자가정리 실패(무시): ' + id + ' - ' + e);
+        });
+      })).catch(function () {});
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, pinnedComments: result });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /pinCommentTest — 팀장/임원만. 이미 고정된 댓글은 에러 없이 조용히 성공(멱등).
+// 전체 최대 PIN_MAX(3)개 — Firestore 트랜잭션으로 "현재 개수 확인 + 추가"를 원자적으로 처리해
+// 동시에 두 사람이 마지막 슬롯을 두고 경쟁해도 4개가 되는 레이스 컨디션을 막는다.
+exports.pinCommentTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, postId, itemId, commentId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!postId || !commentId) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'MISSING_FIELDS' });
+      return;
+    }
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+    if (viewer.role !== '팀장' && viewer.role !== '임원') {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN_NOT_LEAD_OR_EXEC' });
+      return;
+    }
+
+    const leadScope = settings['팀장_열람범위'] || null;
+    const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
+    const visible = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+    const target = visible.find(function (c) { return c.commentId === commentId; });
+    if (!target) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'COMMENT_NOT_FOUND' });
+      return;
+    }
+
+    const docRef = firestore.collection(PINNED_COMMENTS_COLLECTION).doc(commentId);
+    let limitReached = false;
+    let alreadyPinned = false;
+
+    await firestore.runTransaction(async function (tx) {
+      // Firestore는 경합(다른 트랜잭션과의 충돌)이 있으면 이 콜백을 처음부터 다시 호출할 수
+      // 있다. limitReached/alreadyPinned를 콜백 바깥에서 선언해두고 여기서 리셋하지 않으면,
+      // 재시도 전 시도에서 true로 세팅된 값이 이번 시도 결과와 무관하게 그대로 남아 잘못된
+      // 응답(예: 실제로는 이번에 정상 고정됐는데도 이전 시도의 limitReached=true가 남아있는
+      // 경우)을 낼 수 있어 매 시도 시작 시 반드시 초기화한다(재홍님 코드 리뷰 지적 반영).
+      alreadyPinned = false;
+      limitReached = false;
+      const collRef = firestore.collection(PINNED_COMMENTS_COLLECTION);
+      const snap = await tx.get(collRef);
+      const existing = snap.docs.find(function (d) { return d.id === commentId; });
+      if (existing) { alreadyPinned = true; return; } // 멱등: 조용히 성공(기획 확정)
+      if (snap.size >= PIN_MAX) { limitReached = true; return; }
+      tx.set(docRef, {
+        postId: postId,
+        itemId: itemId || null,
+        authorEmail: target.authorEmail,
+        authorName: target.authorName,
+        authorRole: target.authorRole,
+        contentSnapshot: target.content, // 스냅샷 방식(기획 확정) — 이후 댓글 수정과 무관하게 유지
+        pinnedByEmail: viewer.email,
+        pinnedByName: viewer.name,
+        pinnedAt: FieldValue.serverTimestamp()
+      });
+    });
+
+    if (limitReached) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'PIN_LIMIT_REACHED' });
+      return;
+    }
+
+    let pinned = null;
+    if (!alreadyPinned) {
+      const freshSnap = await docRef.get();
+      pinned = pinnedDocToJson_(freshSnap);
+    }
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, alreadyPinned: alreadyPinned, pinned: pinned });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /unpinCommentTest — 팀장/임원 누구나(고정한 사람이 아니어도 된다, 기획 확정). 이미
+// 해제됐거나 존재하지 않는 commentId를 다시 해제 요청해도 성공으로 처리(멱등).
+exports.unpinCommentTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, commentId } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      const serverMs = Date.now() - t0;
+      res.status(auth.status).json(authFailureResponseBody_(serverMs, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    const email = auth.email;
+
+    if (!commentId) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'MISSING_COMMENT_ID' });
+      return;
+    }
+
+    const u0 = Date.now();
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    timings.sheetMs = Date.now() - u0;
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+
+    const viewer = feedEngine.findViewer(allUsers, email);
+    if (!viewer) {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
+      return;
+    }
+    if (viewer.role !== '팀장' && viewer.role !== '임원') {
+      const serverMs = Date.now() - t0;
+      res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN_NOT_LEAD_OR_EXEC' });
+      return;
+    }
+
+    await firestore.collection(PINNED_COMMENTS_COLLECTION).doc(commentId).delete();
+
+    const serverMs = Date.now() - t0;
+    res.status(200).json({ ok: true, serverMs, timings, commentId: commentId });
+  } catch (err) {
+    const serverMs = Date.now() - t0;
+    res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
+  }
+};
