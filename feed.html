@@ -158,6 +158,34 @@ font-size: 13px; padding: 2px 4px; display: none;
     0% { box-shadow: 0 0 0 3px var(--accent); }
     100% { box-shadow: none; }
   }
+  /* ===== 댓글 고정(Pin Comment) 신규 기능 CSS — 기존 규칙은 그대로 두고 전부 추가만 함
+     (PIN_COMMENT_CLOUDRUN_DESIGN.md 승인 확정, 2026-09-11) ===== */
+  .comment-item.flash { animation: flash-highlight 1.6s ease; }
+  .pinned-area-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .pinned-area-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+  .pinned-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer;
+    border-top: 1px solid var(--border);
+  }
+  .pinned-item:first-of-type { border-top: none; }
+  .pinned-author { font-size: 12px; font-weight: 700; color: var(--text); flex-shrink: 0; }
+  .pinned-text {
+    font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0;
+  }
+  .comment-pin-divider {
+    display: inline-block; width: 1px; height: 12px; background: var(--border);
+    margin: 0 2px; vertical-align: middle;
+  }
+  .comment-pin-btn {
+    font-size: 11px; background: none; border: none; cursor: pointer; padding: 4px 0;
+    color: var(--blue);
+  }
+  .comment-pin-btn.pinned { color: var(--accent); font-weight: 700; }
+  .comment-pin-btn[disabled] { opacity: 0.5; cursor: default; }
   .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .bot-icon {
     width: 34px; height: 34px; border-radius: 50%;
@@ -578,6 +606,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 
     <div class="main">
       <div id="feed-view">
+        <div id="pinned-area"></div>
         <div id="feed-root">
           <div class="feed-loading" id="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>
         </div>
@@ -702,6 +731,15 @@ const CLOUD_RUN_REGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-ma
 // 2026-09-07: registerPushSubscriptionTest와 대칭되는 로그아웃용 엔드포인트. 로그아웃 후에도
 // FCM 푸시가 계속 오던 문제(재홍님 발견) 수정 — doLogout()/무활동 로그아웃 경로에서 호출한다.
 const CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unregisterPushSubscriptionTest';
+// 댓글 고정(Pin Comment) 신규 기능 배선(PIN_COMMENT_CLOUDRUN_DESIGN.md 승인 확정, 2026-09-11) —
+// 기존 Apps Script에 대응하는 액션이 없는 완전 신규 엔드포인트 3개라, callApi()(Apps Script
+// 우선 + Cloud Run 있으면 대체하는 기존 패턴)를 쓰지 않고 이 URL들로 직접 호출한다. 폴백 없음 —
+// 실패하면 고정 기능만 조용히 비활성화되고(#pinned-area가 비어보임) 기존 피드/댓글은 그대로
+// 정상 동작한다. 다른 CLOUD_RUN_*_URL 상수와 동일하게, 빈 문자열로 바꾸면 즉시 이 기능
+// 전체가 꺼지는 롤백 스위치다.
+const CLOUD_RUN_GET_PINNED_COMMENTS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getPinnedCommentsTest';
+const CLOUD_RUN_PIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/pinCommentTest';
+const CLOUD_RUN_UNPIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unpinCommentTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -1190,6 +1228,11 @@ updateNotifPermButton();
 // 분기하므로(default/granted/denied) 여기서는 그냥 호출만 한다. 실패해도(권한 거부, 미지원
 // 브라우저 등) 로그인 자체가 막히지 않도록 await 없이 fire-and-forget으로 둔다.
 if (typeof initPushOnLogin_ === 'function') initPushOnLogin_().catch(function () {});
+// 댓글 고정(Pin Comment) 신규 기능 — 로그인 성공마다 1번, 초기 고정 목록을 불러온다.
+// initPushOnLogin_()과 동일하게 실패해도(백엔드 미배포, 네트워크 오류 등) 로그인 자체가
+// 막히지 않도록 await 없이 fire-and-forget으로 둔다 — #pinned-area가 비어보일 뿐 기존
+// 피드/댓글 로딩에는 전혀 영향이 없다.
+if (typeof loadPinnedComments === 'function') loadPinnedComments().catch(function () {});
 // push 6단계(PUSH_NOTIFICATION_STAGE6_DESIGN.md 3-2절) — 알림 클릭으로 새로 열렸을 때
 // (?view=notif) "알림" 탭으로 전환한다. proceedAfterAuth() 완료 시점(이 줄)에서 처리해서,
 // 세션/화면이 아직 준비 안 된 상태에서 switchView가 호출되는 타이밍 문제를 피한다.
@@ -2011,6 +2054,81 @@ function goToItem(postId, itemId) {
   }, 50);
 }
 
+// 댓글 고정(Pin Comment) 신규 기능 — 고정 영역 클릭 시 해당 댓글까지 이동한다.
+// goToItem()과 동일한 필터 해제/미로딩 게시물 조회 로직을 그대로 따라가되(기존 goToItem을
+// 수정하지 않고 새 함수로 완전히 분리), 스레드가 열려있지 않으면 toggleThread()의 완료를
+// 실제로 기다린 뒤(댓글 목록 fetch가 끝난 뒤) 특정 댓글 엘리먼트로 다시 스크롤+깜빡임한다
+// (goToItem은 fire-and-forget이라 그 완료를 기다릴 수 없어 그대로 재사용하지 않았다).
+function goToComment(postId, itemId, commentId) {
+  switchView('feed');
+  setTimeout(async () => {
+    const key = postId + '-' + itemId;
+
+    let filtersCleared = false;
+    if (feedState.teamFilter) {
+      feedState.teamFilter = '';
+      const teamSelectEl = document.getElementById('team-label');
+      if (teamSelectEl && teamSelectEl.tagName === 'SELECT') teamSelectEl.value = '';
+      filtersCleared = true;
+    }
+    if (feedState.searchQuery) {
+      feedState.searchQuery = '';
+      const searchInputEl = document.getElementById('search-input');
+      if (searchInputEl) searchInputEl.value = '';
+      const clearBtnEl = document.getElementById('search-clear-btn');
+      if (clearBtnEl) clearBtnEl.classList.remove('show');
+      filtersCleared = true;
+    }
+    if (filtersCleared) renderFeed();
+
+    let row = document.getElementById('row-' + key);
+    if (!row) {
+      const existsInFeed = feedState.posts.some(function (p) { return p.id === postId; });
+      if (!existsInFeed) {
+        let res = null;
+        if (CLOUD_RUN_GET_POST_BY_ID_URL) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+            const cloudRes = await fetch(CLOUD_RUN_GET_POST_BY_ID_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, postId: postId }),
+              signal: controller.signal
+            }).then(function (r) { return r.json(); });
+            clearTimeout(timeoutId);
+            const trustedFailure = cloudRes && (cloudRes.error === 'NOT_FOUND' || cloudRes.error === 'FORBIDDEN' || cloudRes.error === 'MISSING_POST_ID');
+            if (cloudRes && (cloudRes.ok === true || trustedFailure)) res = cloudRes;
+          } catch (e) {}
+        }
+        if (!res) {
+          try { res = await callApi('getPostById', { postId: postId }); } catch (e) { res = null; }
+        }
+        if (res && res.ok && res.post) {
+          feedState.posts.unshift(res.post);
+          renderFeed();
+        } else {
+          return;
+        }
+      }
+      row = document.getElementById('row-' + key);
+      if (!row) return;
+    }
+
+    const st = threadState[key] || (threadState[key] = { open: false, replyOpenFor: null });
+    if (!st.open) {
+      await toggleThread(postId, itemId);
+    } else if (session.role !== '담당') {
+      markThreadSeenLocal(postId, itemId);
+    }
+
+    const el = document.getElementById('comment-' + commentId) || row;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1600);
+  }, 50);
+}
+
 function renderPost(post) {
 const items = post.items || [];
 const itemsHtml = items.map(item => renderItemRow(post, item)).join('');
@@ -2242,6 +2360,11 @@ function canStartFirstComment(item) {
 function canReply() {
   return session && (session.role === '담당' || session.role === '팀장' || session.role === '임원');
 }
+// 댓글 고정(Pin Comment) 신규 기능 — 고정/해제 권한은 팀장·임원(최대 3개 전역 공유 한도).
+// 본인 댓글 여부와 무관하게 동일하게 적용된다(설계 문서 확정 사항).
+function canPin() {
+  return !!(session && (session.role === '팀장' || session.role === '임원'));
+}
 function roleClass(role) {
   if (role === '담당') return 'role-담당';
   if (role === '팀장') return 'role-팀장';
@@ -2290,8 +2413,15 @@ function renderThread(postId, itemId) {
     const deleteBtn = isMine
       ? `<button class="comment-delete-btn" onclick="deleteCommentConfirm('${postId}', '${itemId}', '${c.commentId}')">삭제</button>`
       : '';
+    // 댓글 고정(Pin Comment) 신규 기능 — 답장/수정/삭제와 구분되는 별도 권한(팀장·임원)이라
+    // 얇은 구분선 뒤에 붙인다(목업 확정 레이아웃과 동일). 본인 댓글 여부와 무관하게 노출된다.
+    const pinned = (typeof isPinned_ === 'function') && isPinned_(c.commentId);
+    const pinPending = (typeof pinningInFlight !== 'undefined') && pinningInFlight.has(c.commentId);
+    const pinBtn = ((c.pending || c.deleting) || !canPin())
+      ? ''
+      : `<span class="comment-pin-divider"></span><button class="comment-pin-btn${pinned ? ' pinned' : ''}"${pinPending ? ' disabled' : ''} onclick="${pinned ? 'unpinComment' : 'pinComment'}('${postId}', '${itemId}', '${c.commentId}')">${pinPending ? '처리 중...' : (pinned ? '고정됨' : '고정')}</button>`;
     return `
-      <div class="comment-item${c.pending ? ' pending' : ''}${c.deleting ? ' pending' : ''}" style="margin-left:${depth * 24}px;">
+      <div class="comment-item${c.pending ? ' pending' : ''}${c.deleting ? ' pending' : ''}" id="comment-${c.commentId}" style="margin-left:${depth * 24}px;">
         <div class="avatar ${roleClass(c.authorRole)}">${escapeHtml(initials(c.authorName))}</div>
         <div class="comment-body">
           ${parent ? `<div class="reply-to">↳ ${escapeHtml(parent.authorName)} ${escapeHtml(parent.authorRole || '')}에게 답장</div>` : ''}
@@ -2299,7 +2429,7 @@ function renderThread(postId, itemId) {
             <span class="role">${escapeHtml(c.authorRole || '')}</span>${!parent ? `<span class="role">· 최초 댓글</span>` : ''}<span class="time">· ${c.pending ? '전송 중...' : (c.deleting ? '삭제 중...' : escapeHtml(fmtTime(c.createdAt)))}</span>
           </div>
           <div class="comment-text" id="text-${c.commentId}">${escapeHtml(c.content)}</div>
-          ${(c.pending || c.deleting) ? '' : `<div class="comment-actions">${replyBtn}${editBtn}${deleteBtn}</div>`}
+          ${(c.pending || c.deleting) ? '' : `<div class="comment-actions">${replyBtn}${editBtn}${deleteBtn}${pinBtn}</div>`}
           <div id="composer-${key}-${c.commentId}"></div>
         </div>
       </div>
@@ -3625,6 +3755,163 @@ async function getUsersRemote_() {
   return res;
 }
 
+// ==== 댓글 고정(Pin Comment) — 신규 기능, 기존 댓글/피드 로직과 완전히 분리된 블록
+// (PIN_COMMENT_CLOUDRUN_DESIGN.md 승인 확정, 2026-09-11). 팀장/임원이 중요 댓글을 최대
+// 3개까지(역할별이 아닌 전역 공유 한도) 고정할 수 있다. 신규 Firestore 컬렉션
+// (pinnedComments)만 쓰고 기존 시트/컬렉션은 읽기만 하므로 기존 기능에 영향이 없다.
+// getComments/getItems 등과 달리 Apps Script 대응 액션이 없으므로 폴백 없이 Cloud Run
+// 직접 호출만 하며, 실패 시 #pinned-area만 조용히 비워지고 기존 피드/댓글은 그대로 동작한다.
+let pinnedState = { items: [], loaded: false };
+const pinningInFlight = new Set();
+
+async function getPinnedCommentsRemote_() {
+  if (!CLOUD_RUN_GET_PINNED_COMMENTS_URL) return null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const cloudRes = await fetch(CLOUD_RUN_GET_PINNED_COMMENTS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session ? session.sessionToken : null }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    if (cloudRes && cloudRes.ok === true) return cloudRes;
+  } catch (e) {}
+  return null;
+}
+
+async function pinCommentRemote_(postId, itemId, commentId) {
+  if (!CLOUD_RUN_PIN_COMMENT_URL) return { ok: false, error: 'FEATURE_DISABLED' };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const res = await fetch(CLOUD_RUN_PIN_COMMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, postId: postId, itemId: itemId, commentId: commentId }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    return res || { ok: false, error: 'NETWORK_ERROR' };
+  } catch (e) {
+    return { ok: false, error: 'NETWORK_ERROR' };
+  }
+}
+
+async function unpinCommentRemote_(commentId) {
+  if (!CLOUD_RUN_UNPIN_COMMENT_URL) return { ok: false, error: 'FEATURE_DISABLED' };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+    const res = await fetch(CLOUD_RUN_UNPIN_COMMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, commentId: commentId }),
+      signal: controller.signal
+    }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    return res || { ok: false, error: 'NETWORK_ERROR' };
+  } catch (e) {
+    return { ok: false, error: 'NETWORK_ERROR' };
+  }
+}
+
+// pin/unpin 실패 사유를 사람이 읽을 수 있는 문구로 변환한다(재홍님 코드 리뷰 지적 반영 —
+// 이전에는 PIN_LIMIT_REACHED 외의 실패(권한 없음, 댓글 삭제됨, 네트워크 오류 등)가 아무
+// 피드백 없이 조용히 무시됐다).
+function pinErrorMessage_(error) {
+  const map = {
+    'PIN_LIMIT_REACHED': '고정은 최대 3개까지만 가능합니다. 다른 댓글을 먼저 해제한 뒤 다시 시도해주세요.',
+    'FORBIDDEN_NOT_LEAD_OR_EXEC': '팀장/임원만 고정할 수 있어요.',
+    'COMMENT_NOT_FOUND': '댓글을 찾을 수 없어요.',
+    'MISSING_FIELDS': '필수 정보가 누락됐어요.',
+    'MISSING_COMMENT_ID': '댓글 정보가 누락됐어요.',
+    'USER_NOT_FOUND': '사용자 정보를 찾을 수 없어요.',
+    'FEATURE_DISABLED': '이 기능은 현재 사용할 수 없어요.',
+    'NETWORK_ERROR': '네트워크 오류가 발생했어요.'
+  };
+  return map[error] || ('고정 처리 실패: ' + error);
+}
+
+function isPinned_(commentId) {
+  return pinnedState.items.some(function (p) { return p.commentId === commentId; });
+}
+
+async function loadPinnedComments() {
+  try {
+    const res = await getPinnedCommentsRemote_();
+    pinnedState.items = (res && res.ok && Array.isArray(res.pinnedComments)) ? res.pinnedComments : [];
+  } catch (e) {
+    pinnedState.items = [];
+  }
+  pinnedState.loaded = true;
+  renderPinnedArea();
+}
+
+function renderPinnedArea() {
+  const root = document.getElementById('pinned-area');
+  if (!root) return;
+  try {
+    if (!pinnedState.items.length) { root.innerHTML = ''; return; }
+    root.innerHTML = `
+      <div class="pinned-area-box">
+        <div class="pinned-area-title">📌 고정된 댓글</div>
+        ${pinnedState.items.map(function (p) {
+          return `
+            <div class="pinned-item" onclick="goToComment('${p.postId}', '${p.itemId || ''}', '${p.commentId}')">
+              <span class="pinned-author">${escapeHtml(p.authorName || '')} ${escapeHtml(p.authorRole || '')}</span>
+              <span class="pinned-text">${escapeHtml(truncate(p.contentSnapshot || '', 40))}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } catch (e) {
+    // 고정 영역 렌더링 실패는 이 영역만 비우고 기존 피드/댓글에는 영향을 주지 않는다.
+    root.innerHTML = '';
+  }
+}
+
+async function pinComment(postId, itemId, commentId) {
+  if (!canPin() || pinningInFlight.has(commentId)) return;
+  pinningInFlight.add(commentId);
+  renderThread(postId, itemId);
+  try {
+    const res = await pinCommentRemote_(postId, itemId, commentId);
+    if (res && res.ok) {
+      await loadPinnedComments();
+    } else if (res && res.error) {
+      // PIN_LIMIT_REACHED뿐 아니라 모든 실패 사유에 대해 피드백을 준다(재홍님 코드 리뷰 지적 반영).
+      alert(pinErrorMessage_(res.error));
+    }
+  } catch (e) {
+    alert('네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+  } finally {
+    pinningInFlight.delete(commentId);
+    renderThread(postId, itemId);
+  }
+}
+
+async function unpinComment(postId, itemId, commentId) {
+  if (!canPin() || pinningInFlight.has(commentId)) return;
+  pinningInFlight.add(commentId);
+  renderThread(postId, itemId);
+  try {
+    const res = await unpinCommentRemote_(commentId);
+    if (res && res.ok) {
+      await loadPinnedComments();
+    } else if (res && res.error) {
+      alert(pinErrorMessage_(res.error));
+    }
+  } catch (e) {
+    alert('네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+  } finally {
+    pinningInFlight.delete(commentId);
+    renderThread(postId, itemId);
+  }
+}
+
 async function loadItems(isRetry) {
 const root = document.getElementById('items-view');
 // 이미 한번 불러온 적이 있으면(=백그라운드 복귀 등으로 인한 조용한 갱신) 화면을 비우지 않고
@@ -4088,3 +4375,4 @@ function doLogout() {
 </script>
 </body>
 </html>
+
