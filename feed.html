@@ -1243,6 +1243,13 @@ const __authTGroupStart = Date.now();
 const idlePromise = loadIdleTimeoutSetting().then(() => Date.now());
 const seenPromise = loadThreadSeenMap().then(() => Date.now());
 const notifPromise = loadNotifNewPosts().then(() => Date.now());
+// 2026-09-14 (재홍님 피드백): 이슈 댓글(#pinned-area)이 시황게시물보다 한 박자 늦게 나타나는
+// 문제 - 예전엔 아래 endAppActivating_()/hideAuthLoadingOverlay() 다음에야 fire-and-forget으로
+// 실행됐다(즉 피드가 다 그려진 뒤에야 요청을 시작함). 이제는 feed/idle/seen/notif와 나란히 로그인
+// 직후 바로 시작해 같은 화면 전환 타이밍에 같이 뜨도록 한다. session은 proceedAfterAuth() 진입
+// 시점에 이미 채워져 있어 여기서 호출해도 안전하고, #pinned-area는 앱 셸 표시 여부와 무관하게
+// 항상 DOM에 있는 정적 요소라 app-shell을 보여주기 전에 호출해도 문제없다.
+if (typeof loadPinnedComments === 'function') loadPinnedComments().catch(function () {});
 const feedOk = await feedPromise;
 if (!feedOk) { clearTimeout(__authSafetyTimer); return; } // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
 const __authTFeed = Date.now();
@@ -1279,11 +1286,8 @@ updateNotifPermButton();
 // 분기하므로(default/granted/denied) 여기서는 그냥 호출만 한다. 실패해도(권한 거부, 미지원
 // 브라우저 등) 로그인 자체가 막히지 않도록 await 없이 fire-and-forget으로 둔다.
 if (typeof initPushOnLogin_ === 'function') initPushOnLogin_().catch(function () {});
-// 댓글 고정(Pin Comment) 신규 기능 — 로그인 성공마다 1번, 초기 고정 목록을 불러온다.
-// initPushOnLogin_()과 동일하게 실패해도(백엔드 미배포, 네트워크 오류 등) 로그인 자체가
-// 막히지 않도록 await 없이 fire-and-forget으로 둔다 — #pinned-area가 비어보일 뿐 기존
-// 피드/댓글 로딩에는 전혀 영향이 없다.
-if (typeof loadPinnedComments === 'function') loadPinnedComments().catch(function () {});
+// 댓글 고정(Pin Comment) 신규 기능의 초기 고정 목록 로딩은 위쪽(feedPromise 등과 나란히)으로
+// 옮겼다(2026-09-14, 이슈 댓글이 시황게시물보다 늦게 뜨는 문제 수정) - 여기서 다시 부르지 않는다.
 // push 6단계(PUSH_NOTIFICATION_STAGE6_DESIGN.md 3-2절) — 알림 클릭으로 새로 열렸을 때
 // (?view=notif) "알림" 탭으로 전환한다. proceedAfterAuth() 완료 시점(이 줄)에서 처리해서,
 // 세션/화면이 아직 준비 안 된 상태에서 switchView가 호출되는 타이밍 문제를 피한다.
