@@ -30,7 +30,13 @@ function sheetSerialToMs(v) {
 }
 
 // Code.gs canViewComment_와 동일한 판단(팀장_열람범위 반영).
-function teamScopeAllows(role, viewerTeam, targetTeam, leadScope) {
+// [2026-09-15 수정, 재홍님 지적] 임원은 여러 팀을 관리하며 어느 게시물/품목에도 자유롭게
+// 댓글을 달 수 있는데, 그 댓글이 임원 본인의 소속 팀(예: 본사) 기준으로만 노출되면 정작
+// 답글을 달아야 할 다른 팀 담당/팀장에게는 안 보이는 모순이 생긴다. 그래서 "댓글 작성자가
+// 임원"인 경우(authorRole, 댓글 작성 당시 스냅샷)는 조회자의 역할/팀과 무관하게 항상 노출한다.
+// authorRole을 넘기지 않는 기존 호출부(있다면)는 undefined이므로 이전과 동일하게 동작한다.
+function teamScopeAllows(role, viewerTeam, targetTeam, leadScope, authorRole) {
+  if (authorRole === '임원') return true;
   if (role === '임원') return true;
   if (role === '팀장') return leadScope === '전체' ? true : viewerTeam === targetTeam;
   if (role === '담당' || role === '일반') return viewerTeam === targetTeam;
@@ -85,7 +91,7 @@ function visibleComments(itemComments, viewerRole, viewerTeam, leadScope, teamBy
   return itemComments
     .filter(function (c) {
       const authorTeam = teamByEmail[String(c.authorEmail || '').trim().toLowerCase()];
-      return teamScopeAllows(viewerRole, viewerTeam, authorTeam, leadScope);
+      return teamScopeAllows(viewerRole, viewerTeam, authorTeam, leadScope, c.authorRole);
     })
     .slice()
     .sort(function (a, b) {
@@ -104,7 +110,7 @@ function visibleCommentsForPost(allComments, postId, viewerRole, viewerTeam, lea
     .filter(function (c) { return String(c.postId) === String(postId); })
     .filter(function (c) {
       const authorTeam = teamByEmail[String(c.authorEmail || '').trim().toLowerCase()];
-      return teamScopeAllows(viewerRole, viewerTeam, authorTeam, leadScope);
+      return teamScopeAllows(viewerRole, viewerTeam, authorTeam, leadScope, c.authorRole);
     })
     .slice()
     .sort(function (a, b) {
