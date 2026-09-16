@@ -568,11 +568,18 @@ return null;
 * 코멘트 열람 권한 체크. 코멘트 조회 API(3단계 이후)에서 이 함수를 호출해
 * 서버에서 필터링한다. 클라이언트 필터 절대 금지 원칙 반영.
 *
+* [2026-09-15 수정, 재홍님 지적] 임원은 여러 팀을 관리하며 어느 게시물/품목에도
+* 자유롭게 댓글을 달 수 있는데, 그 댓글이 임원 본인의 소속 팀(예: 본사) 기준으로만
+* 노출되면, 정작 답글을 달아야 할 다른 팀 담당/팀장에게는 안 보이는 모순이 생긴다.
+* 그래서 "댓글 작성자가 임원"인 경우는 조회자의 역할/팀과 무관하게 항상 노출한다.
+*
 * @param {Object} user - { role, team } (findUser_ 반환값)
-* @param {string} commentTeam - 조회하려는 코멘트가 속한 팀
+* @param {string} commentTeam - 조회하려는 코멘트 작성자가 속한 팀
+* @param {string} [authorRole] - 코멘트 작성 당시 작성자의 역할 스냅샷(댓글 시트 F열)
 * @return {boolean}
 */
-function canViewComment_(user, commentTeam) {
+function canViewComment_(user, commentTeam, authorRole) {
+if (authorRole === '임원') return true; // 임원 댓글은 팀 스코프 무관 전원 열람 가능
 switch (user.role) {
 case '임원':
 return true; // 전 지역
@@ -936,17 +943,18 @@ ${itemName}
 
 규칙:
 1. 먼저 이 품목의 원가에 실질적으로 영향을 주는 원자재를 모두 나열해봐. 하나만 있다고 단정하지 말고 여러 개일 가능성을 항상 먼저 검토해 (예: 부직포 필터 → 펄프, PP). 단, 품목명 자체가 이미 시장에서 유통되는 화학제품/원자재명(예: 가성소다, 요소, 황산, 암모니아)이라면 그 상위 원료(예: 소금, 천연가스)로 쪼개지 말고 품목명 자체를 주요원자재로 사용해 - 시황 뉴스는 원료가 아니라 실제 유통되는 화학제품명 기준으로 보도되기 때문이야. 단, 품목명에 쓰인 표현이 업계 관용명/줄임말/오기이고 뉴스·시황 보도에서는 정식 화학명이 훨씬 더 많이 쓰인다면(예: '유산반토'→실제 뉴스는 '황산알루미늄', '차염소산소다'→실제 뉴스는 '차아염소산소다'), 품목명 표현을 그대로 쓰지 말고 뉴스 검색에 실제로 걸리는 정식 명칭을 사용해.
-2. 나열한 원자재 각각에 대해 기존 목록을 확인해. 세부 등급 차이 정도면(예: 폴리에틸렌 vs 저밀도폴리에틸렌) 기존 항목명을 재사용해. 하지만 원료 자체가 달라서 시황(가격 흐름)이 별도로 움직이는 경우(예: 버진 펄프 vs 재활용 고지/폐지)는 억지로 기존 항목에 합치지 말고 새 원자재로 제안해(isNew: true).
-3. 위 2번에 해당하지 않고 애매하면 가장 가까운 기존 항목을 재사용해 — 원자재 종류가 무한정 늘어나지 않게 신중하게 판단해.
-4. 반드시 아래 JSON 형식으로만 응답해. 다른 설명 붙이지 마.
-5. keyword(수집키워드)는 원자재명 그대로 써도 되고, 뉴스 검색에 더 적합한 시장 용어로 바꿔도 좋아
+2. 품목명에 괄호 ( )가 있으면 그 안의 내용을 확인해. 괄호 안이 쉼표 등으로 구분된 실제 원자재/화학성분명(예: 벤젠, 구연산, 가성소다)으로 판단되면 그 성분들을 주요 원자재 후보로 우선 사용해. 단, 괄호 안 내용이 화학성분명이 아니라 제품 유형/용도/등급 설명(예: 무기물세정제, 산업용, KS등급)이면 그 내용은 무시하고 품목명 전체를 기준으로 1번 규칙대로 판단해.
+3. 나열한 원자재 각각에 대해 기존 목록을 확인해. 세부 등급 차이 정도면(예: 폴리에틸렌 vs 저밀도폴리에틸렌) 기존 항목명을 재사용해. 하지만 원료 자체가 달라서 시황(가격 흐름)이 별도로 움직이는 경우(예: 버진 펄프 vs 재활용 고지/폐지)는 억지로 기존 항목에 합치지 말고 새 원자재로 제안해(isNew: true).
+4. 위 3번에 해당하지 않고 애매하면 가장 가까운 기존 항목을 재사용해 — 원자재 종류가 무한정 늘어나지 않게 신중하게 판단해.
+5. 반드시 아래 JSON 형식으로만 응답해. 다른 설명 붙이지 마.
+6. keyword(수집키워드)는 원자재명 그대로 써도 되고, 뉴스 검색에 더 적합한 시장 용어로 바꿔도 좋아
 (예: '폴리에틸렌' 대신 'PE 필름'). 화학제품의 경우 업계 관용명/줄임말과 정식 화학명이 다를 수 있는데,
 반드시 실제 뉴스·시황 기사 검색에 걸리는 쪽을 keyword로 선택해 - 관용명이 뉴스에 거의 안 나온다면
 정식 화학명을 keyword로 써(예: '유산반토'가 아니라 '황산알루미늄', '차염소산소다'가 아니라 '차아염소산소다').
 korean(한글명) 필드는 관용명을 유지해도 되지만, keyword만큼은 실제 검색 결과가 나오는 표현이어야 해.
 단, '가격'/'인상'/'인하'/'단가' 같은 시황 단어는 절대 붙이지 마 —
 그건 검색 시점에 별도로 조합돼.
-6. 최종적으로 응답에 포함하는 원자재(materials 배열)는 품목의 원가에서 차지하는 비중이 큰 순서로 최대 2개까지만 선정해. 후보가 여러 개 있더라도 가장 핵심적인 2개만 남기고 나머지는 제외해.
+7. 최종적으로 응답에 포함하는 원자재(materials 배열)는 품목의 원가에서 차지하는 비중이 큰 순서로 최대 2개까지만 선정해. 후보가 여러 개 있더라도 가장 핵심적인 2개만 남기고 나머지는 제외해.
 
 {
 "materials": [
@@ -1485,6 +1493,16 @@ Logger.log('[유사게시물스킵] ' + c.code + ' "' + c.title + '" - 최근 ' 
 rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '유사게시물스킵', similarPost.id]);
 return;
 }
+// [4]번 유사 게시물 숫자매칭 드라이런 (2026-09-14, 재홍님 승인): isSimilarToRecentPost_(텍스트 겹침
+// 0.5)로는 못 잡는 사례(9/11-9/12 나프타 실사례: 조사/어미만 달라 요약 겹침 0.417로 임계값 미달)를
+// 감지만 하고 실제 스킵에는 아직 반영하지 않는다(드라이런 1단계). 여기서 걸려도 게시는 그대로
+// 진행된다 - 재홍님이 탈락뉴스 시트의 '숫자매칭감지-드라이런' 행들을 며칠간 검토해 오탐이 없다고
+// 확인되면, 다음 단계에서 이 블록을 실제 스킵(return)으로 전환한다.
+const numericDryRunMatch = isNumericMatchDryRun_(recentPostsForSimilarityCheck, c.code, c.title, result.summary);
+if (numericDryRunMatch) {
+Logger.log('[숫자매칭감지-드라이런] ' + c.code + ' "' + c.title + '" - 최근 게시물과 핵심 숫자 겹침 감지(실제로는 그대로 게시함, 비교 대상: "' + numericDryRunMatch.title + '")');
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '숫자매칭감지-드라이런', numericDryRunMatch.id]);
+}
 const newPostId_ = Utilities.getUuid();
 postSheet.appendRow([newPostId_, c.code, c.korean, c.title, result.summary, c.link, c.pubDate, new Date()]);
 postedIdsForCode_.push(newPostId_);
@@ -1927,6 +1945,76 @@ const cases = [
 cases.forEach(tc => {
 const dup = isSimilarToRecentPost_(recentPosts, tc.code, tc.title, tc.summary);
 Logger.log('[' + tc.label + '] ' + (dup ? '스킵됨 (유사 게시물: "' + dup.title + '")' : '게시 진행'));
+});
+}
+
+/**
+* [4]번 유사 게시물 숫자매칭 드라이런 (2026-09-14).
+* 배경: 9/11-9/12 나프타 실사례 - 두 게시물 다 "나프타 9~10월(다음달) 물량을 지난해 대비 90%
+* 수준 확보"라는 동일한 핵심 사실을 담고 있었지만, 조사/어미가 달라 isSimilarToRecentPost_의
+* 요약 겹침이 0.417로 임계값(0.5)에 근소하게 미달해 스킵되지 않았다(SIMILAR_POST_NUMERIC_MATCH_DESIGN.md
+* 참고). 요약 겹침 임계값을 전체적으로 낮추면 진짜 다른 기사까지 스킵될 위험이 커서, 대신 "핵심
+* 숫자가 실제로 같은지"를 보조 조건으로 추가한다.
+*
+* 텍스트에서 단위가 붙은 숫자만 "핵심 숫자"로 추출한다(화이트리스트 방식) - "1개", "2번째"처럼
+* 단위 없는 맨 숫자는 추출 대상이 아니라서 오탐 걱정 없이 자동으로 걸러진다.
+*/
+function extractKeyNumbers_(text) {
+const s = String(text || '');
+const patterns = [
+/\d+(?:\.\d+)?\s?%/g, // 퍼센트: 90%
+/\d{1,2}\s?월/g, // 월: 9월, 10월
+/\d{1,2}\s?일/g, // 일(날짜): 15일
+/\d+(?:,\d{3})*(?:\.\d+)?\s?(?:달러|원|위안|엔|유로)/g, // 금액: 100달러, 1만4858달러
+/\d+(?:\.\d+)?\s?(?:톤|배럴|만톤|만배럴|kt|bbl)/gi // 물동량 단위: 500톤
+];
+const found = new Set();
+patterns.forEach(re => {
+const matches = s.match(re) || [];
+matches.forEach(m => found.add(m.replace(/\s+/g, '')));
+});
+return found;
+}
+// 판정 임계값 (2026-09-14, 재홍님 승인 - 우선 하드코딩, 드라이런 결과 보고 설정 시트 노출 여부 결정):
+// 핵심 숫자 1개 이상 공통 + 요약 겹침(titleOverlap_) 0.35 이상이면 "숫자매칭" 감지로 본다.
+const NUMERIC_MATCH_MIN_COMMON_COUNT = 1;
+const NUMERIC_MATCH_SUMMARY_OVERLAP_MIN = 0.35;
+/**
+* recentPosts(같은 원자재코드, 비교기간 이내) 중 핵심 숫자가 위 임계값만큼 겹치는 게시물을
+* 찾아 반환한다(없으면 null). isSimilarToRecentPost_와 달리 아직 드라이런 단계라 이 함수의
+* 반환값은 실제 스킵(return)에는 쓰이지 않고 로그/탈락뉴스 기록에만 쓰인다.
+*/
+function isNumericMatchDryRun_(recentPosts, code, title, summary) {
+const numsNew = extractKeyNumbers_(title + ' ' + summary);
+if (numsNew.size === 0) return null;
+for (const p of recentPosts) {
+if (p.code !== code) continue;
+const numsOld = extractKeyNumbers_((p.title || '') + ' ' + (p.summary || ''));
+let common = 0;
+numsNew.forEach(n => { if (numsOld.has(n)) common++; });
+if (common < NUMERIC_MATCH_MIN_COMMON_COUNT) continue;
+if (titleOverlap_(summary, p.summary) >= NUMERIC_MATCH_SUMMARY_OVERLAP_MIN) return p;
+}
+return null;
+}
+
+/**
+* isNumericMatchDryRun_()의 동작을 실제 9/11-9/12 나프타 사례(및 대조군)로 검증하는 테스트
+* 함수 (2026-09-14). 시트를 읽거나 쓰지 않음 - Apps Script 편집기에서 이 함수만 선택해 실행하고
+* 로그를 보면 된다.
+*/
+function testNumericMatchDryRun() {
+const recentPosts = [
+{ code: 'RM071', title: '국제유가 100달러 돌파…국내 기름값에도 긴장감', summary: '산업통상부는 나프타의 9월과 10월 물량을 지난해 평균 대비 90% 수준으로 확보했다고 밝혀, 나프타 공급·수급 동향과 관련된 구체적 수치를 제시했다.' }
+];
+const cases = [
+{ label: '실사례: 9/12 나프타 (감지 기대)', code: 'RM071', title: "유가 폭탄에 한국 경제도 '휘청'…물가 연쇄 상승 우려", summary: '다음 달 원유와 나프타 도입 물량을 지난해 대비 90% 이상 확보했다는 내용이 언급됐다.' },
+{ label: '숫자 하나만 우연히 같고 나머지는 다른 기사 (감지 안 됨 기대)', code: 'RM071', title: '나프타 정기보수 돌입, 가동률 90% 유지', summary: '한 정유사가 나프타분해설비(NCC) 정기보수에 돌입하며 가동률을 90% 수준으로 유지하기로 했다.' },
+{ label: '원자재코드가 다름 (감지 안 됨 기대)', code: 'RM007', title: '구리 가격 90% 반등, 10월 전망 밝아', summary: '구리 가격이 지난해 대비 90% 수준까지 반등했고 10월에도 강세가 예상된다.' }
+];
+cases.forEach(tc => {
+const match = isNumericMatchDryRun_(recentPosts, tc.code, tc.title, tc.summary);
+Logger.log('[' + tc.label + '] ' + (match ? '감지됨 (비교 대상: "' + match.title + '")' : '감지 안 됨'));
 });
 }
 
@@ -2496,7 +2584,7 @@ return jsonResponse_({ ok: false, error: 'MISSING_POST_ID' });
 const all = getCommentsForPost_(postId);
 const visible = all.filter(function (c) {
 const authorTeam = getUserTeam_(c.authorEmail);
-return canViewComment_(user, authorTeam);
+return canViewComment_(user, authorTeam, c.authorRole);
 });
 
 visible.sort(function (a, b) {
@@ -2586,7 +2674,7 @@ return String(c.postId) === String(postId);
 });
 const visibleComments = updatedForPost.filter(function (c) {
 const authorTeam = getUserTeam_(c.authorEmail);
-return canViewComment_(user, authorTeam);
+return canViewComment_(user, authorTeam, c.authorRole);
 });
 visibleComments.sort(function (a, b) {
 return new Date(a.createdAt) - new Date(b.createdAt);
@@ -2632,7 +2720,7 @@ return String(c.postId) === String(postId);
 });
 const visibleComments = updatedForPost.filter(function (c) {
 const authorTeam = getUserTeam_(c.authorEmail);
-return canViewComment_(user, authorTeam);
+return canViewComment_(user, authorTeam, c.authorRole);
 });
 visibleComments.sort(function (a, b) {
 return new Date(a.createdAt) - new Date(b.createdAt);
@@ -2847,7 +2935,7 @@ if (!lastComment || new Date(c.createdAt) > new Date(lastComment.createdAt)) las
 // (getFeed 한 번으로 스레드 클릭 시 재조회 없이 즉시 렌더링 가능하게 함. 기존 confirmed/commentCount 계산 로직은 건드리지 않음)
 const visibleComments = itemComments.filter(function (c) {
 const authorTeam = teamByEmail[String(c.authorEmail || '')];
-return canViewComment_(user, authorTeam);
+return canViewComment_(user, authorTeam, c.authorRole);
 }).sort(function (a, b) {
 return new Date(a.createdAt) - new Date(b.createdAt);
 });
