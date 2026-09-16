@@ -27,6 +27,8 @@ mro-market-intelligence/
 > **2026-09-03 업데이트**: 품목 관리 탭에서 유독 자주 뜨던 "서버 연결이 지연되고 있어요" 알림의 원인을 확인해 수정했습니다(커밋 `1f40350`) — `getItems`/`getCustomers`는 이미 Cloud Run 우선 배선이었지만, 같은 화면이 담당자 드롭다운용으로 추가로 부르는 `getUsers` 호출 하나만 배선에서 빠져 있던 것을 확인, "사용자 현황" 화면에서 쓰던 `getUsersRemote_()`를 재사용하도록 통일했습니다. 자세한 내용은 아래 "알려진 주요 버그 수정 이력" 절 참고. 이 작업 중 `loginLocks`/`writeLocks`/`writeIdempotency` 3개 Firestore 컬렉션이 그동안 어느 문서에도 기록되어 있지 않았던 것도 함께 발견해 이번에 처음 문서화했습니다(아래 "Firestore 컬렉션 전체 목록" 절).
 >
 > **2026-09-04~07 업데이트**: 시황게시물에서 외부 AI(Claude/Gemini 등)에 그대로 붙여넣을 리서치 보고서 작성 프롬프트를 생성해주는 "📝 AI 보고서 프롬프트 생성" 버튼을 추가했습니다(Apps Script 신규 액션 `generateReportPrompt`, 커밋 `1e87cb0`) — 자세한 내용은 아래 API 매핑표 참고. 이 액션의 실측 응답 시간(26~40초)이 기존 공용 20초 타임아웃보다 길어 서버는 정상 완료됐는데 클라이언트가 먼저 끊어 "생성 실패"로 잘못 표시되던 문제를 액션별 60초 타임아웃으로 수정했고(커밋 `eb311eb`), 그 여파로 패널이 열려 있는 시간이 30초 폴링 재렌더링과 겹치면서 "열리자마자 닫히는" 버그가 생긴 것도 함께 수정했습니다(커밋 `cbbb227`). 또한 로그아웃(수동/무활동 자동 모두) 시 그 기기의 FCM 푸시 구독을 비활성화하도록 해, 로그아웃 후에도 알림이 계속 오던 문제를 해결했습니다(신규 Cloud Run 함수 `unregisterPushSubscriptionTest`, 커밋 `d347f85`/`ec663ed`) — 자세한 내용은 아래 "Web Push / FCM 알림 구조" 절 참고. 이 외에 `suggestMaterials`(품목 등록 시 AI 원자재 추천)의 hedge/재시도 로직이 DeepSeek 중복 호출을 유발하던 문제도 함께 수정했습니다(커밋 `46f6180`) — 아래 "알려진 주요 버그 수정 이력" 절 참고.
+>
+> **2026-09-09~15 업데이트**: 이 기간 커밋들은 GitHub 웹 업로드로 "Update feed.html" 같은 내용 없는 메시지로만 올라가 있어, 이번에 코드 diff를 직접 대조해 소급 문서화했습니다. ① **다중 기기 로그인 시 푸시 오발송 버그**: 같은 계정으로 PC·폰 등 여러 기기에 로그인해 있을 때 세션 활동 판정이 이메일 단위였던 탓에, 그중 한 기기만 로그아웃해도 이미 로그아웃한 그 기기에까지 푸시가 계속 발송되고 있었습니다. 이메일 단위 "살아있는 세션 없음" 판정을 우선 추가해 완화했고(커밋 `fb016f7`/`88c933a`), 로그인 세션에 `deviceId`를 저장해 기기 단위로 재판정하고 로그아웃 시점에 세션을 즉시 무효화하도록 근본 수정했습니다(커밋 `99ab87b`/`8a6410d`/`f88c8d2`/`f1b6cb8`/`2494fb5`) — 같은 배치에서 `doLogout()`이 실수로 `await` 처리되어 로그아웃 버튼을 눌러도 화면 전환이 몇 초씩 멈추던 회귀 버그도 함께 발견해 수정했습니다(`f88c8d2`). 자세한 내용은 아래 "알려진 주요 버그 수정 이력" 절 참고. ② **임원 댓글 팀 스코프 버그 수정**(커밋 `7d6fc9c`): 임원이 다른 팀 품목에 남긴 댓글이 정작 그 팀 담당자·팀장에게는 안 보이던 문제 — 작성자가 임원이면 조회자의 역할·팀과 무관하게 항상 노출되도록 수정. 아래 "알려진 주요 버그 수정 이력" 절 참고. ③ **댓글 고정(Pin Comment) 기능 신규 추가**(커밋 `631ca1e` 등 다수): 팀장/임원이 중요 댓글을 전역 최대 3개까지 고정해 상단에 상시 노출하는 기능을 새로 추가했습니다(Code.gs에는 대응 기능 없음, 신규 Firestore 컬렉션 `pinnedComments`). 자세한 내용은 아래 "댓글 고정(Pin Comment) 기능" 절과 API 매핑표 참고. ④ **알림 선택 삭제/읽음 처리**(커밋 `cf39a16`): 2026-09-01에 추가했던 팀장/임원 전용 "알림 전체 지우기" 일괄 버튼을, 개별 알림을 체크박스로 골라 삭제/읽음 처리할 수 있는 방식으로 교체했습니다(전체선택 체크 시 기존과 동일하게 동작해 기능 손실 없음) — 아래 "Web Push / FCM 알림 구조" 절의 "알림 탭 선택 삭제/읽음 처리" 항목 참고.
 
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
@@ -95,6 +97,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | 품목 등록/수정 (신규 고객사 포함) (`feed.html` 품목 관리 화면) | `upsertItem`, `upsertCustomer` | `upsertItem`: ✅ 전환됨 (`CLOUD_RUN_UPSERT_ITEM_URL`) / `upsertCustomer`: ⏸ Cloud Run에 `upsertCustomerTest`는 배포·검증되어 있으나 프론트에서 단독으로 부르는 곳이 없음(신규 고객사는 `upsertItem` 호출에 함께 실려 감) **(2026-09-01 갱신: 이전에는 둘 다 "미착수"로 표시되어 있었으나 `upsertItem`은 실제로 전환·연동 완료 상태였음)** | `handleUpsertItem_`, `handleUpsertCustomer_` | 3단 폴백 정책. `UPSERTITEM_UPSERTCUSTOMER_CLOUDRUN_DESIGN.md` 참고 |
 | 새 게시물/댓글 필요/답변 요청 통합 푸시, 담당자 댓글 마감 리마인더 푸시 (Code.gs에는 없는 신규 기능) | (Cloud Run 전용 신규 API, action 이름 없음) | ✅ 전부 배포·연동 완료 — FCM 토큰 등록(`registerPushSubscriptionTest`, 로그인 시 자동 호출), 5분 주기 통합 푸시(`pushBatchTest`, Cloud Scheduler `push-batch-5min`), 매시 정각 리마인더(`reminderBatchTest`, Cloud Scheduler `reminder-batch-hourly`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | `registerPushSubscriptionTest`는 코드가 8/28에 커밋된 뒤 Cloud Run 배포가 누락된 채 방치되어 있다가 **2026-09-01에 배포 완료**됨(그 전까지는 로그인해도 어떤 기기도 실제로 푸시를 등록하지 못하는 상태였음). `PUSH_NOTIFICATION_STAGE3~STAGE6_DESIGN.md` 참고. 전체 구조·Firestore 스키마·Cloud Scheduler 설정·버그 수정 이력(`be8d6fa`, `2d142b6`, `f214df0`, `f8ad0da`, `abc64bf`)은 아래 "Web Push / FCM 알림 구조" 절 참고 |
 | 시황게시물별 AI 보고서 작성용 프롬프트 생성 (`feed.html` "📝 AI 보고서 프롬프트 생성" 버튼) | `generateReportPrompt` | — (Cloud Run 전환 대상 아님, Apps Script 전용 신규 기능) | `handleGenerateReportPrompt_` | 2026-09-04 신규(커밋 `1e87cb0`). 게시물의 원자재명/제목/AI요약/링크를 '설정' 시트 `보고서프롬프트템플릿` 키의 메타 프롬프트에 채워 DeepSeek을 1회 호출해 "프롬프트 텍스트"만 생성(뉴스 재분석 아님). hedge/재시도(`RETRYABLE_API_ACTIONS`) 대상에서 제외되고, 실측 응답 26~40초에 맞춰 클라이언트 타임아웃도 이 액션만 60초로 별도 설정(다른 액션은 20초, 커밋 `eb311eb`) |
+| 댓글 고정/해제/목록 조회 (`feed.html` "📌 이슈 댓글" 배너, 팀장/임원 전용) | `pinComment`, `unpinComment`, `getPinnedComments` | ✅ 3개 전부 Cloud Run 전용 신규 (`pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-09-14 신규. 전역 최대 3개 고정, 고정 시점 스냅샷 저장, 원본 삭제 시 자가정리, Firestore 트랜잭션으로 동시성 제어. 자세한 내용은 위 "댓글 고정(Pin Comment) 기능" 절 참고 |
 | 그 외 나머지 action (`markChecked`, `suggestMaterials`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
 
 > 이 표는 2026-09-01 기준입니다(실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
@@ -131,8 +134,8 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 **알림 클릭 동작** (`sw.js`)
 `notificationclick` 리스너는 이미 열려 있는 창이 있으면 `postMessage({type:'mro-push-click', view:'notif'})`로 신호만 보내고 `focus()`(리로드 없음), 열려 있는 창이 없으면 `feed.html?view=notif`로 새 창을 엽니다(해시 `#notif`가 아니라 쿼리스트링). `feed.html`은 이 메시지/쿼리스트링을 받아 `switchView('notif')`로 알림 탭을 열어줍니다.
 
-**알림 탭 일괄 삭제** (커밋 `f8ad0da`)
-`renderNotif()`는 현재 탭이 "댓글 필요" 또는 "답변 요청"이고 `session.role`이 `팀장`/`임원`일 때만 탭 목록 바로 아래에 "알림 전체 지우기" 버튼을 렌더링합니다 — "새 게시물" 탭과 "담당" 역할에는 버튼 자체가 렌더링되지 않습니다. 버튼을 누르면 `clearAllNotifInActiveTab()`이 현재 활성 탭 기준으로 일치하는 스레드를 `hasUnreadReply`/`hasAwaitingReply`로 다시 계산한 뒤, 새 서버 API 없이 기존 `markThreadSeenLocal()`(→`markThreadSeenRemote_()`) 경로를 스레드마다 호출해 일괄 읽음 처리합니다. 다른 탭의 알림에는 영향이 없습니다.
+**알림 탭 선택 삭제/읽음 처리** (2026-08-02~09 순차 개선: 커밋 `f8ad0da` → `cf39a16`)
+`renderNotif()`는 현재 탭이 "댓글 필요" 또는 "답변 요청"이고 `session.role`이 `팀장`/`임원`일 때만 탭 목록 바로 아래에 처리 UI를 렌더링합니다 — "새 게시물" 탭과 "담당" 역할에는 렌더링되지 않습니다. 처음에는(`f8ad0da`) 탭 전체를 한 번에 읽음 처리하는 "알림 전체 지우기" 버튼 하나뿐이었는데, 2026-09-09(`cf39a16`)에 **체크박스 기반 선택 삭제/읽음 처리**로 대체되었습니다 — 전체선택 체크박스 + 알림별 개별 체크박스 + "선택한 알림 확인 처리" 버튼으로 구성되며, 전체선택을 체크한 채 처리하면 예전과 동일하게 탭 전체가 일괄 처리되어 기능 손실은 없습니다. 선택 상태는 탭("댓글 필요"/"답변 요청")마다 독립적으로 유지됩니다. 실제 처리는 여전히 새 서버 API 없이 기존 `markThreadSeenLocal()`(→`markThreadSeenRemote_()`) 경로를 선택된 스레드마다 호출하는 방식이며, 처리 대상 스레드는 `hasUnreadReply`/`hasAwaitingReply` 기준으로 현재 활성 탭에서 다시 계산됩니다. 다른 탭의 알림에는 영향이 없습니다.
 
 **"댓글 필요" 읽음 처리 규칙 — 담당은 읽기만으로 안 사라짐 (의도된 설계, 버그 아님)**
 `goToItem()`/`toggleThread()`가 스레드를 열 때 `markThreadSeenLocal()`을 호출하는 조건에 `session.role !== '담당'`이 걸려 있습니다 — 즉 **담당 역할로 로그인해서 "댓글 필요" 알림을 열어봐도, 그것만으로는 읽음 처리가 되지 않고 배지가 그대로 남습니다.** 팀장/임원이 열어보면 즉시 읽음 처리되는 것과 다릅니다. 이건 버그가 아니라 재홍님이 정한 규칙입니다: 담당이 단순히 읽기만 해도 알림이 사라지면, 나중에 그 품목에 문제가 생겨 원인을 찾으려 할 때 "댓글 필요" 목록에서 해당 스레드를 다시 찾을 수 없게 됩니다 — 그래서 담당은 **실제로 답글을 남겨야만**(그 순간부터 자신이 마지막 작성자가 되어 `hasUnreadReply()`가 자연히 false를 반환) 알림이 사라지도록 의도적으로 막아둔 것입니다(2026-09-02, 세션 대화로 확인 — 별도 커밋 없음, 기존 동작 그대로). **새 AI/개발자에게: 이 조건을 "역할 체크가 잘못됐다"고 보고 지우지 마세요** — 지우면 이 안전장치가 깨집니다.
@@ -155,9 +158,24 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 - **커밋 `f214df0`** (`feed.html`): 탭이 완전히 닫혀 있다가 FCM 알림 클릭으로 새로 열리는 콜드 스타트에서, `loadFeed()`가 `notifNewPostsCache`만 로드됐는지 확인하고 `threadSeenMap`은 확인하지 않은 채 배지 카운트를 계산하는 바람에 "댓글 필요"/"답변 요청" 건수가 빠진 낮은 값으로 기준값(`lastNotifCount`)이 먼저 잡히고, 곧이어 `threadSeenMap`까지 로드된 뒤의 정상 계산과 비교되면서 카운트가 오른 것처럼 보여 인앱 알림이 스스로 발동하던 문제. `notifNewPostsCache.loaded && threadSeenMapLoaded`가 모두 준비된 뒤에만 계산하도록 수정 — 위 ②(`2d142b6`)와는 별개의, 백그라운드 복귀와 무관한 경로였음.
 - **커밋 `abc64bf`** (`feed.html`): 위 ②·③이 각각 막았던 개별 경로 외에, `refreshOnResume()`이 여러 비동기 경로를 동시 실행하면서 1회성 억제 플래그를 가장 먼저 끝난 경로만 소비해버려 나머지 경로가 낡은 캐시 기준으로 알림을 다시 띄우던 4번째 중복 알림 버그. "경로 하나씩 막는" 방식 대신 영구 `localStorage` 기준선 + 단일 판단 함수(`evaluateLocalNotification_()`) + 범위를 넓힌 `appActivating` 플래그로 구조 자체를 다시 설계 — 자세한 내용은 위 "클라이언트 인앱 알림 중복 방지 구조" 참고. `suppressNextLocalNotif`는 완전히 대체·제거되었고, `f214df0`의 `threadSeenMapLoaded` 게이트는 그대로 유지됨.
 
+## 댓글 고정(Pin Comment) 기능
+
+2026-09-14 신규 추가(커밋 `631ca1e` 등 다수, 설계 문서 [`PIN_COMMENT_CLOUDRUN_DESIGN.md`](./PIN_COMMENT_CLOUDRUN_DESIGN.md)/[`PIN_COMMENT_CODE_DIFF.md`](./PIN_COMMENT_CODE_DIFF.md)). Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능으로, Cloud Run 전용 엔드포인트 3개(`pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest`)와 신규 Firestore 컬렉션 `pinnedComments`로 구현되어 있습니다.
+
+**정책**
+- 팀장/임원만 댓글을 고정할 수 있고, **전역으로 최대 3개**까지만 고정 가능합니다(역할별·게시물별 한도가 아니라 시스템 전체 공용 한도).
+- 해제는 고정한 사람이 아니어도 팀장/임원이면 누구나 할 수 있습니다.
+- 이미 고정된 댓글을 다시 고정 요청해도 에러 없이 멱등 처리됩니다.
+- 고정 시점의 댓글 내용을 스냅샷으로 저장하므로, 이후 원본 댓글이 수정되어도 고정 배너의 내용은 바뀌지 않습니다.
+- 원본 댓글이 삭제되면 고정도 자동으로 함께 정리(자가정리)됩니다.
+- 동시에 여러 요청이 들어와도 한도(3개)가 깨지지 않도록 Firestore 트랜잭션으로 동시성을 제어합니다.
+
+**화면(`feed.html`)**
+고정된 댓글은 상단 sticky 헤더 영역에 "📌 이슈 댓글" 배너로 노출되어 스크롤해도 항상 보이며, 클릭하면 해당 댓글 위치로 스크롤 이동합니다. 배너의 세부 UI(말줄임, 강조색, 로딩 타이밍 등)는 같은 주에 여러 차례 다듬어졌습니다(커밋 `867def1`/`611a393`/`ee50a33`/`644ec91`/`da8990c`/`048bd99`) — 세부 변경 이력은 두 설계 문서 참고.
+
 ## Firestore 컬렉션 전체 목록
 
-Cloud Run 함수들이 쓰는 Firestore 컬렉션 7개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스). 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
+Cloud Run 함수들이 쓰는 Firestore 컬렉션 8개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스). 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
 
 | 컬렉션 | 문서 ID | 쓰는 함수 | 용도 |
 |---|---|---|---|
@@ -168,6 +186,7 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 7개입니다(전부 `mro-mark
 | `pushSubscriptions` | `{email}_{deviceId}` | `registerPushSubscriptionTest` | 기기별 FCM 푸시 토큰 |
 | `pushNotifyState` | `email` | `pushBatchTest` | 5분 주기 통합 푸시의 중복 발송 방지(직전 집계값 signature 비교) |
 | `reminderDeliveries` | `{날짜}_{targetHour}_{email}` | `reminderBatchTest` | 담당자 댓글 마감 리마인더의 시각별 하루 1회 발송 보장 |
+| `pinnedComments` | `commentId` | `pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest` | 팀장/임원이 고정한 "이슈 댓글"(전역 최대 3개), 고정 시점 내용 스냅샷 저장 |
 
 > `loginLocks`/`writeLocks`/`writeIdempotency` 3개는 2026-09-02 이 문서 정리 작업 중 코드(`cloud-run/mro-functions/index.js`, `lib/writeLock.js`, `lib/writeIdempotency.js`)를 직접 확인해 처음으로 문서화했습니다 — 이전까지는 `cloud-run/README.md`의 "Firestore 구조" 절에도 빠져 있었습니다. 상세 필드 구성 등은 `cloud-run/README.md`도 함께 갱신해 두었습니다.
 
@@ -210,6 +229,8 @@ Web Push/알림 관련 버그 4건(중복 표시 3건 + 구조 재설계 1건)�
 - **로그인 TDZ(Temporal Dead Zone) 오류로 인한 전체 로그인 장애** (2026-09-01, 커밋 `ef37c4a`): 알림 중복 방지 구조 재설계(`abc64bf`)가 `proceedAfterAuth()`/`refreshOnResume()`에서 `appActivating`/`lastNotifCount` 변수를 참조하도록 바뀌었는데, 그 두 변수의 `let` 선언이 참조 지점보다 아래(파일 뒤쪽, `init()` 실행 이후)에 그대로 남아 있어 "Cannot access 'appActivating' before initialization" 오류가 발생 — **Apps Script든 Cloud Run이든 경로와 무관하게, 이 커밋이 배포된 직후 모든 신규 로그인/세션 복귀가 무한로딩에 빠지는 전체 장애**였습니다. `notifFetchSeq`와 동일한 방식으로 두 변수의 선언 위치만 `init()` 호출 전으로 옮겨 당일 수정, 로직 변경은 없음.
 - **품목 관리 탭의 "서버 연결이 지연되고 있어요" 알림이 유독 잦았던 원인** (2026-09-03, 커밋 `1f40350`): `getItems`/`getCustomers`는 이미 Cloud Run 우선 시도(실패 시 Apps Script 폴백)로 배선되어 있었지만, 같은 화면(`loadItems()`)이 담당자 드롭다운을 채우려고 내부적으로 추가로 부르는 `getUsers` 호출 하나만 배선에서 제외되어 처음부터 Apps Script로 직행하고 있었습니다(코드 주석에 "이번 배선 대상이 아니라 그대로 둔다"고 의도적으로 남겨져 있었음). `loadItems()`가 3개 API를 `Promise.allSettled`로 동시에 부르는 구조라, 이 하나만 늦어져도 화면 하단에 지연 알림이 떴던 것 — "사용자 현황" 화면(`loadUsers()`)에서 이미 쓰고 있던 `getUsersRemote_()`(Cloud Run 우선 + Apps Script 폴백)를 `loadItems()`에도 그대로 재사용하도록 호출부 1줄만 교체해 해결. 버그가 아니라 예전 마이그레이션 작업에서 이 호출 하나만 배선 대상에서 빠뜨린 누락이었습니다.
 - **`suggestMaterials`(품목 등록 시 AI 원자재 추천) hedge/재시도로 인한 DeepSeek 중복 호출** (2026-09-04, 커밋 `46f6180`): 조회성 액션과 함께 hedge/재시도 대상(`RETRYABLE_API_ACTIONS`)에 들어있던 `suggestMaterials`가 실제로는 AI 생성 + 원자재마스터 쓰기라는 부작용이 있는 액션이라, hedge가 걸리면 DeepSeek이 중복 호출되고 유사·중복 원자재 행이 생길 위험이 있었습니다. `suggestMaterials`를 `RETRYABLE_API_ACTIONS`에서 제외하고, 자동 재시도가 없어진 만큼 서버 실패·네트워크 오류 시 버튼에 "⚠️ 추천 실패 - 다시 시도"를 명시적으로 표시하도록 수정.
+- **다중 기기 로그인 시 푸시 오발송** (2026-09-09~11, 커밋 `fb016f7`/`88c933a`/`99ab87b`/`8a6410d`/`f88c8d2`/`f1b6cb8`/`2494fb5`): 같은 계정으로 PC·폰 등 여러 기기에 로그인해 있을 때, 세션이 살아있는지 판정하는 로직(`isSessionRecentlyActive_`)이 이메일 단위였던 탓에 한 기기만 로그아웃해도(다른 기기가 살아있으면) 이미 로그아웃한 그 기기에까지 푸시가 계속 발송되고 있었습니다(재홍님이 Cloud Logging으로 직접 확인). 1차로 이메일 단위 "살아있는 세션 전무" 판정(`anyLive`)을 추가해 완화한 뒤(`fb016f7`/`88c933a`), 로그인 시 세션 문서에 `deviceId`를 저장하고(`index.html`의 `getOrCreateDeviceId()`) 발송 직전 구독별로 "이 기기" 세션이 살아있는지(`isDeviceSessionAlive_`) 재확인해 죽은 기기 구독만 개별 비활성화하도록 근본 수정했습니다. 로그아웃 시점에도 세션 `expiresAt`을 즉시 과거로 되돌려(`invalidateSessionOnLogout_`) 자연만료 전까지의 취약 시간대를 없앴습니다. 같은 배치에서 2026-09-07에 `doLogout()`이 async로 바뀌며 실수로 `await`가 붙어 로그아웃 버튼을 눌러도 서버 응답(최대 5초 타임아웃)이 끝날 때까지 화면 전환이 멈추던 회귀 버그도 발견해 fire-and-forget으로 되돌렸습니다(`f88c8d2`).
+- **임원 댓글이 다른 팀 담당자·팀장에게 안 보이던 문제** (2026-09-15, 커밋 `7d6fc9c`, `cloud-run/mro-functions/lib/feedEngine.js`): 임원은 자기 소속과 무관하게 여러 팀 품목에 댓글을 달 수 있는데, 노출 여부를 판정하는 `teamScopeAllows`가 댓글 **작성자의 소속팀** 기준으로만 동작해, 정작 그 댓글에 답해야 할 다른 팀 담당자/팀장에게는 댓글 자체가 보이지 않는 모순이 있었습니다. 댓글 작성자(`authorRole`)가 임원이면 조회자의 역할·팀과 무관하게 항상 노출하도록 수정.
 
 ## 배포/롤백 방법
 
@@ -246,3 +267,5 @@ Web Push/알림 관련 버그 4건(중복 표시 3건 + 구조 재설계 1건)�
 - [`POSTCOMMENT_CLOUDRUN_ANALYSIS.md`](./POSTCOMMENT_CLOUDRUN_ANALYSIS.md) — 댓글 기능 Cloud Run 이전 가능성 최초 분석 (초안 — 아래 `_v2` 문서로 대체됨)
 - [`POSTCOMMENT_CLOUDRUN_DESIGN.md`](./POSTCOMMENT_CLOUDRUN_DESIGN.md) — postComment 전환 설계 초안 (`_v2`로 대체됨)
 - [`POSTCOMMENT_CLOUDRUN_DESIGN_v2.md`](./POSTCOMMENT_CLOUDRUN_DESIGN_v2.md) — postComment 전환 최종 설계(3단 폴백 정책 등, 승인·구현·연동 완료) — 최신
+- [`PIN_COMMENT_CLOUDRUN_DESIGN.md`](./PIN_COMMENT_CLOUDRUN_DESIGN.md) — 댓글 고정(Pin Comment) 기능 설계 (정책·Firestore 스키마·동시성 제어 등, 승인·구현·연동 완료)
+- [`PIN_COMMENT_CODE_DIFF.md`](./PIN_COMMENT_CODE_DIFF.md) — 댓글 고정(Pin Comment) 기능 구현 코드 diff 상세
