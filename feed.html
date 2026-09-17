@@ -193,7 +193,9 @@ font-size: 13px; padding: 2px 4px; display: none;
   }
   /* 2026-09-14: 재홍님 요청 반영 - 원자재명이 먼저 눈에 들어와야 해서 굵기를 서로 바꿈
      ("철 (강현민 담당) : 내용" - 원자재명 볼드, 이름/역할은 일반 굵기). */
-  .pinned-material { font-weight: 700; }
+    /* 2026-09-17: 재홍님 요청 - 핀 아이콘(.pin-body)이 반짝이는 것과 같은 리듬으로 원자재명도
+     깜빡이게 함(같은 keyframe 재사용, 서로 다른 요소지만 통일감 유지). */
+  .pinned-material { font-weight: 700; animation: pin-body-pulse 2s ease-in-out infinite; }
   .pinned-author { font-weight: 400; }
   .pinned-sep { color: var(--text-muted); }
   .pinned-unpin-btn {
