@@ -1,15 +1,4 @@
-/**
- * ===== 미러 파일 안내 (2026-08-18 동기화) =====
- * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
- * Code.gs 를 그대로 복사한 미러 사본입니다. 실제로 코드를 수정/배포하는 곳은 여전히 Apps Script 편집기이며,
- * 이 GitHub 파일은 "지금 운영 중인 코드가 무엇인지" 기록/추적하기 위한 용도입니다.
- *
- * [알려진 차이점] 이 사본은 브라우저 자동화로 편집기 내용을 복사해 옮기는 과정에서 원본의 들여쓰기(공백)가
- * 모두 제거되었습니다(줄바꿈과 코드 내용 자체는 100% 동일하며, 문법적으로도 유효한 코드입니다 — node --check로
- * 검증됨). 즉 로직/동작에는 차이가 없지만, 보기 편한 들여쓰기는 원본과 다릅니다. 다음에 Code.gs를 수정해
- * 이 파일을 다시 동기화할 때는, 가능하면 Apps Script 편집기에서 직접 다운로드한 원본 형태로 교체해 주세요.
- */
-
+// [DELIVERY] 이 파일은 Apps Script 라이브 편집기 전체 교체용입니다 — 미러 배너 없음(정상, 라이브엔 배너 넣지 않음).
 /**
 * MRO 자재 시황 관리 시스템 - 인증/권한 백엔드
 * v23: 이메일+비밀번호 로그인/회원가입으로 전환 (Google OAuth 방식 폐기)
@@ -1124,7 +1113,50 @@ const similarPostCompareDays = similarPostCompareDaysValid ? similarPostCompareD
 // logRetentionDays)과 동일한 패턴(값이 없거나 0/음수/숫자가 아니면 기본값)으로 통일했다 -
 // 유사게시물비교기간에 적용한 경고 로그는 이번 변경 범위 밖이라 넣지 않았다.
 const rejectedNewsRetentionDays = Number(map['탈락뉴스보관기간']) || 30;
-return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays };
+// 2026-09-22: 시황 뉴스 수집 중단 기간(명절/휴무 등, 재홍님 승인). 콤마로 여러 기간 지정 가능
+// (예: "261001~261003, 261225~261226"). 실제 판정은 isInNewsBlackout_()에서 수행.
+const newsBlackoutPeriods = String(map['시황수집중단기간'] || '');
+return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays, newsBlackoutPeriods };
+}
+
+/**
+ * '설정' 시트의 '시황수집중단기간' 값을 파싱해 오늘(todayYYMMDD, 'yyMMdd' 문자열)이
+ * 뉴스 수집 차단 기간에 포함되는지 판정하는 순수 함수.
+ *
+ * 형식: 콤마(,)로 여러 기간 나열 가능.
+ *   - 단일일: "261001"
+ *   - 기간(양끝 포함): "261001~261003"
+ *   - 복수: "261001~261003, 261225~261226"
+ *
+ * 잘못된 형식의 항목(자릿수 불일치, 숫자 아님, 범위 미완성, 시작>종료 등)은 조용히
+ * 무시하고 나머지 유효한 항목만 적용한다. 유효한 항목이 하나도 없으면 안전 원칙에 따라
+ * 차단하지 않는다(false 반환).
+ */
+function isInNewsBlackout_(todayYYMMDD, settingValue) {
+var raw = String(settingValue || '');
+var entries = raw.split(',');
+for (var i = 0; i < entries.length; i++) {
+var entry = entries[i].trim();
+if (!entry) continue; // 빈 항목 무시 (예: "261001,,261002"의 중간 빈 값)
+
+var parts = entry.split('~').map(function (s) { return s.trim(); });
+
+if (parts.length === 1) {
+var single = parts[0];
+if (!/^\d{6}$/.test(single)) continue; // 형식 불량 무시 (예: "26100", "abc")
+if (todayYYMMDD === single) return true;
+} else if (parts.length === 2) {
+var start = parts[0], end = parts[1];
+if (!/^\d{6}$/.test(start) || !/^\d{6}$/.test(end)) continue; // 미완성 범위 등 무시
+if (start > end) {
+Logger.log('[수집중단] 잘못된 범위(시작 > 종료)라 무시합니다: ' + entry);
+continue;
+}
+if (todayYYMMDD >= start && todayYYMMDD <= end) return true;
+}
+// parts.length가 3 이상이면(예: "a~b~c") 형식 불량으로 간주해 무시
+}
+return false;
 }
 // 네이버 뉴스검색 API가 &quot; 등 HTML 엔티티로 이스케이프한 title/description을 원래 문자로 되돌리는 유틸
 function decodeHtmlEntities_(str) { return String(str).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
@@ -1199,6 +1231,18 @@ sheet.appendRow([entry.link, entry.code, entry.korean, entry.title, entry.descri
 function collectMarketNews() {
 const scriptStartTime_ = new Date().getTime();
 const props = PropertiesService.getScriptProperties();
+
+// 2026-09-22: 시황 뉴스 수집 중단 기간 체크 (설정 시트 '시황수집중단기간', 재홍님 승인).
+// 명절/휴무 등 특정 기간에는 네이버 API 호출·AI 판단·게시를 전부 건너뛴다.
+// 판정 로직은 isInNewsBlackout_()로 분리되어 있어 이 블록은 호출만 한다.
+const newsBlackoutSetting_ = getSettings_().newsBlackoutPeriods;
+const todayYYMMDD_ = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+if (isInNewsBlackout_(todayYYMMDD_, newsBlackoutSetting_)) {
+Logger.log('[수집중단] 블랙아웃 적용: ' + newsBlackoutSetting_ + ' (오늘 ' + todayYYMMDD_ + ')');
+props.setProperty('CMN_LAST_STAGE', '수집중단(블랙아웃:' + newsBlackoutSetting_ + ')@' + new Date().toISOString());
+return;
+}
+
 const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
 const rmSheet = ss.getSheetByName('원자재마스터');
 const postSheet = ss.getSheetByName('시황게시물');
