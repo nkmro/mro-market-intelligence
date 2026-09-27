@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-09-23 suggestRawMaterials 프롬프트 규칙2 우선순위 수정)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-09-27 품목 원자재수정일 I열 stamping 추가 - 태그 변경 시 과거 게시물 소급매칭 방지)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -772,6 +772,21 @@ console.error('ensureItemRowComplete row ' + r2 + ' error: ' + rowErr2);
 
 if (col === 2) { autofillManagerFromCustomer_(sheet, row); return; } // B열(고객사) 선택 시 D/E 연쇄 자동입력 (신규 행용)
 
+// 시트에서 F열(주요원자재)을 사람이 직접 타이핑해 수정한 경우도 태그 변경으로 간주해
+// I열(원자재수정일)을 갱신한다. 단일 셀 편집이고 이전 값(e.oldValue)을 알 수 있는 경우만
+// 처리 - 여러 셀 붙여넣기 등은 대상에서 제외한다 (2026-09-23).
+if (col === 6) {
+const isSingleCellEditF = e.range.getNumRows() === 1 && e.range.getNumColumns() === 1;
+if (isSingleCellEditF && typeof e.oldValue !== 'undefined') {
+const newF = e.range.getValue();
+if (normalizeMaterialsForCompare_(e.oldValue) !== normalizeMaterialsForCompare_(newF)) {
+sheet.getRange(row, 9).setValue(new Date());
+sheet.getRange(row, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+}
+}
+return;
+}
+
 if (col !== 3) return; // C열(품목명)만 반응
 
 // v19: 단일 셀(1x1) 편집인지 판별 - 붙여넣기(여러 행/열 동시 편집)와 구분해서 처리
@@ -789,7 +804,13 @@ if (existingF !== '' && !isSingleCellEdit) return;
 const result = suggestRawMaterials(itemName);
 if (!result) return;
 
-sheet.getRange(row, 6).setValue(result.korean.join(', '));
+const newMaterials2 = result.korean.join(', ');
+const materialsChanged2 = normalizeMaterialsForCompare_(existingF) !== normalizeMaterialsForCompare_(newMaterials2);
+sheet.getRange(row, 6).setValue(newMaterials2);
+if (materialsChanged2) {
+sheet.getRange(row, 9).setValue(new Date());
+sheet.getRange(row, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+}
 } catch (err) {
 // 실패해도 시트 편집 자체는 막지 않음
 console.error('onEditInstallable error: ' + err);
@@ -2912,7 +2933,8 @@ manager: row[3],
 team: row[4],
 materials: row[5],
 status: row[6],
-registeredAt: row[7]
+registeredAt: row[7],
+materialsUpdatedAt: row[8]
 });
 }
 return result;
@@ -2942,6 +2964,17 @@ return result;
 /**
 * 게시물의 원자재명을 쓰는 품목 전체(팀 필터 전, 원본).
 */
+// 품목의 "주요원자재" 태그가 실질적으로 바뀌었는지 비교용 정규화.
+// trim + 콤마 분리 + 정렬 후 비교해서 공백/순서 차이로 오탐하지 않게 한다. (2026-09-23)
+function normalizeMaterialsForCompare_(s) {
+return String(s || '')
+.split(',')
+.map(function (t) { return t.trim(); })
+.filter(function (t) { return t; })
+.sort()
+.join(',');
+}
+
 function getRelatedItems_(post, allItems) {
 // [2026-08-06 성능 최적화] materialMatch/statusActive는 게시물의 materialName에만 의존하고
 // 개별 게시물(post)과는 무관하다(afterRegistration만 게시물별로 다름). handleGetFeed_/
@@ -2960,9 +2993,12 @@ return materialMatch && statusActive;
 });
 _materialItemsCache_[materialName] = candidates;
 }
-// 품목 등록일 이전에 작성된 게시물은 매핑 대상에서 제외 (신규 품목 소급 답글 요구 버그 수정)
+// 품목 등록일 또는 주요원자재 태그 마지막 수정일 중 더 늦은 시점 이전에 작성된 게시물은
+// 매핑 대상에서 제외한다. 태그를 바꿔도 그 이전에 수집된 다른 원자재 게시물이 소급
+// 매칭되지 않도록 방지 (2026-09-23, P.E.G#6000 9/9 게시물 소급노출 이슈 대응).
 return candidates.filter(function (it) {
-return !it.registeredAt || new Date(post.createdAt) >= new Date(it.registeredAt);
+var cutoff = it.materialsUpdatedAt || it.registeredAt;
+return !cutoff || new Date(post.createdAt) >= new Date(cutoff);
 });
 }
 
@@ -3577,7 +3613,13 @@ const data = getSheetValues_(SHEET_ITEM);
 let found = false;
 for (let i = 1; i < data.length; i++) {
 if (String(data[i][0]).trim() === String(itemId).trim()) {
+const oldMaterials = data[i][5];
+const materialsChanged = normalizeMaterialsForCompare_(oldMaterials) !== normalizeMaterialsForCompare_(materials);
 sheet.getRange(i + 1, 2, 1, 6).setValues([[customer, itemName, manager, team, materials, status]]);
+if (materialsChanged) {
+sheet.getRange(i + 1, 9).setValue(new Date());
+sheet.getRange(i + 1, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+}
 SpreadsheetApp.flush();
 invalidateSheetCache_(SHEET_ITEM);
 found = true;
