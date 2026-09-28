@@ -1,3 +1,4 @@
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 품목마스터 읽기 A2:I 확장 + upsertItem 원자재수정일 I열 stamping)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -387,7 +388,8 @@ const SHEET_ITEM_NAME = '품목마스터';
 const SHEET_COMMENT_NAME = '댓글';
 const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:I');
 const POLL_POST_RANGE = encodeURIComponent(SHEET_POST_NAME + '!A2:H');
-const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:H');
+// 2026-09-28: A2:H → A2:I (I열 원자재수정일을 feedEngine.relatedActiveItems cutoff에 쓰기 위함)
+const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:I');
 const POLL_COMMENT_RANGE = encodeURIComponent(SHEET_COMMENT_NAME + '!A2:I');
 const POLL_SETTINGS_RANGE = encodeURIComponent(SHEET_SETTING_NAME + '!A2:C');
 
@@ -1823,7 +1825,7 @@ async function getFreshCustomerRows_(client) {
   return (resp.data && resp.data.values) || [];
 }
 
-// 품목마스터(POLL_ITEM_RANGE, 헤더 제외 A2:H)를 지금 이 순간 값으로 다시 읽는다. H열(등록일)이
+// 품목마스터(POLL_ITEM_RANGE, 헤더 제외 A2:I — 2026-09-28 확장)를 지금 이 순간 값으로 다시 읽는다. H열(등록일)이
 // 실제 날짜형 셀이라 UNFORMATTED_VALUE로 받는다(getItemsTest와 동일한 이유) — 이번 두 함수는
 // H열 값 자체를 읽어서 쓰지는 않지만(row index 조회용), 다른 함수들과 같은 방식을 유지한다.
 async function getFreshItemRows_(client) {
@@ -1843,7 +1845,7 @@ function findCustomerRowByCode_(rows, code) {
 
 // Code.gs getItemById_(2229~2247행)이 하는 "자재코드로 품목 찾기"와, itemId 수정 대상 찾기
 // 둘 다에 쓰는 공용 조회(품목마스터 A열은 자재코드=itemId이므로 로직이 동일하다). rows는
-// fresh read로 받은 원본 행 배열(A2:H 기준, index 0 == 시트 2행). 못 찾으면 -1.
+// fresh read로 받은 원본 행 배열(A2:I 기준 — 2026-09-28 확장, index 0 == 시트 2행). 못 찾으면 -1.
 function findItemRowIndexById_(rows, itemId) {
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][0]).trim() === String(itemId).trim()) return i;
@@ -1870,6 +1872,31 @@ async function updateItemRow_(client, sheetRow, values6) {
   const updateRange = encodeURIComponent(SHEET_ITEM_NAME + '!B' + sheetRow + ':G' + sheetRow);
   const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=RAW`;
   await client.request({ url: updateUrl, method: 'PUT', data: { values: [values6] } });
+}
+
+// [2026-09-28] Code.gs normalizeMaterialsForCompare_(2969행) 그대로 포팅. lib/에는 같은 역할의
+// 함수가 없음을 확인(grep)했고, 호출부가 upsertItemAction_ 하나뿐이라 lib/로 빼지 않고 이
+// 파일의 upsertItem 헬퍼들 옆에 둔다. trim + 콤마 분리 + 빈 값 제거 + 정렬 후 비교해서
+// 공백/순서 차이로 "태그가 바뀌었다"고 오탐하지 않게 한다.
+function normalizeMaterialsForCompare_(s) {
+  return String(s || '')
+    .split(',')
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t; })
+    .sort()
+    .join(',');
+}
+
+// [2026-09-28] Code.gs handleUpsertItem_ 수정 경로의 I열(원자재수정일) stamping 대응
+// (sheet.getRange(i+1, 9).setValue(new Date())). H열 등록일과 동일하게 시트 시리얼 숫자를
+// RAW로 쓴다(msToSheetSerialForItem_). I열 한 칸만 쓴다 — A~H는 건드리지 않는다.
+// [표시 형식 주의] RAW 숫자는 셀 서식을 바꾸지 않는다. I열이 날짜 서식이 아닌 셀이면 숫자로
+// 보이고, Apps Script 폴백 경로(getValues)에서도 Date가 아니라 Number로 읽힌다 — 배포 전
+// I열 전체에 날짜·시간 서식(yyyy-mm-dd hh:mm:ss)을 한 번 지정해 둘 것(배포 안내 참고).
+async function updateItemMaterialsUpdatedAt_(client, sheetRow, serial) {
+  const updateRange = encodeURIComponent(SHEET_ITEM_NAME + '!I' + sheetRow);
+  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=RAW`;
+  await client.request({ url: updateUrl, method: 'PUT', data: { values: [[serial]] } });
 }
 
 // Code.gs handleUpsertItem_(3213~3217행)이 appendRow에 new Date()를 쓰고 이후
@@ -2000,7 +2027,14 @@ async function upsertItemAction_(viewer, allUsers, allCustomers, body) {
           if (rowIndex === -1) {
             result = { ok: false, error: 'ITEM_NOT_FOUND' };
           } else {
+            // [2026-09-28] 쓰기 전에 fresh read 값(F열)과 비교해서 태그가 실제로 바뀐 경우에만
+            // I열을 찍는다(Code.gs handleUpsertItem_와 동일 — B~G 갱신 후 I열 갱신 순서).
+            const oldMaterials = freshItemRows[rowIndex][5];
+            const materialsChanged = normalizeMaterialsForCompare_(oldMaterials) !== normalizeMaterialsForCompare_(materials);
             await updateItemRow_(client, rowIndex + 2, [customer, itemName, manager, team, materials, status]);
+            if (materialsChanged) {
+              await updateItemMaterialsUpdatedAt_(client, rowIndex + 2, msToSheetSerialForItem_(Date.now()));
+            }
             result = { ok: true, itemId: itemId, mode: 'updated' };
           }
         } else if (findItemRowIndexById_(freshItemRows, materialCode) !== -1) {
