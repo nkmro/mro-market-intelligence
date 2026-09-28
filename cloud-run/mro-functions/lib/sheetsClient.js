@@ -1,3 +1,4 @@
+// [DELIVERY] cloud-run/mro-functions/lib/sheetsClient.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 rowsToItems에 원자재수정일 I열 추가)
 // cloud-run/mro-functions/lib/sheetsClient.js
 //
 // Sheets 읽기 공통화. pollSignalTest가 이미 쓰던 GoogleAuth 클라이언트 생성 +
@@ -61,7 +62,8 @@ function rowsToPosts(rows) {
   });
 }
 
-// 품목마스터 (!A2:H) : itemId,customer,itemName,manager,team,materials,status,registeredAt(H)
+// 품목마스터 (!A2:I) : itemId,customer,itemName,manager,team,materials,status,registeredAt(H),
+// materialsUpdatedAt(I, 원자재수정일 — 2026-09-28 추가. 비어 있으면 undefined → feedEngine에서 null 처리)
 function rowsToItems(rows) {
   return rows.map(function (row) {
     return {
@@ -72,7 +74,8 @@ function rowsToItems(rows) {
       team: row[4],
       materials: row[5],
       status: row[6],
-      registeredAtRaw: row[7]
+      registeredAtRaw: row[7],
+      materialsUpdatedAtRaw: row[8]
     };
   });
 }
