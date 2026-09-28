@@ -1,3 +1,4 @@
+// [DELIVERY] cloud-run/mro-functions/lib/feedEngine.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 relatedActiveItems cutoff에 원자재수정일 I열 반영)
 // cloud-run/mro-functions/lib/feedEngine.js
 //
 // 공통 판정/변환 로직. 기존 index.js에 pollSignalTest 전용으로 있던 5개 함수
@@ -43,15 +44,23 @@ function teamScopeAllows(role, viewerTeam, targetTeam, leadScope, authorRole) {
   return false;
 }
 
-// Code.gs getRelatedItems_와 동일한 판단(원자재명 매칭 + 활성 + 등록일 이전 게시물 제외).
+// Code.gs getRelatedItems_와 동일한 판단(원자재명 매칭 + 활성 + cutoff 이전 게시물 제외).
+// [2026-09-28 원자재수정일 반영] cutoff = 원자재수정일(I열)이 있으면 I열, 없으면 등록일(H열).
+// Code.gs getRelatedItems_의 `it.materialsUpdatedAt || it.registeredAt`와 같은 의미로 맞춰
+// Apps Script 폴백 경로와 Cloud Run 경로의 결과가 항상 같게 한다(재홍님 결정 2026-09-28).
+// 품목의 주요원자재 태그를 바꾸면 그 시점 이전에 수집된 게시물이 소급 매칭되지 않도록 한다
+// (P.E.G#6000 9/9 프로필렌 게시물 소급노출 이슈 — Apps Script v88에서 이미 반영했으나, 실제
+// getFeed는 이 Cloud Run 경로를 타고 있어 무력화돼 있었음). 둘 다 없으면 이전과 동일하게 통과.
 function relatedActiveItems(post, allItems) {
   return allItems.filter(function (it) {
     const materialMatch = String(it.materials || '').indexOf(post.materialName) !== -1;
     const statusActive = it.status === '활성';
     if (!(materialMatch && statusActive)) return false;
     const registeredMs = sheetSerialToMs(it.registeredAtRaw);
-    if (registeredMs === null) return true;
-    return sheetSerialToMs(post.createdAtRaw) >= registeredMs;
+    const materialsUpdatedMs = sheetSerialToMs(it.materialsUpdatedAtRaw);
+    const cutoffMs = materialsUpdatedMs !== null ? materialsUpdatedMs : registeredMs;
+    if (cutoffMs === null) return true;
+    return sheetSerialToMs(post.createdAtRaw) >= cutoffMs;
   });
 }
 
