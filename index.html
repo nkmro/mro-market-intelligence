@@ -1,12 +1,25 @@
+<!-- [DELIVERY] 이 파일은 GitHub index.html 전체 교체용입니다 (모바일 터치 오조작·화면 확대 방지, 2026-09-29) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>MRO 자재 시황 관리 시스템 - 로그인</title>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#3a2f6e">
 <style>
+  /* [2026-09-29] 모바일 터치 오조작·화면 확대 방지 (index.html / feed.html 공통)
+     - 입력칸 터치 시 화면이 당겨지는(자동 확대) 현상: iOS는 입력칸 글자가 16px보다 작으면
+       포커스 때 자동 확대한다 → 터치 기기에서만 입력칸 글자를 16px로 맞추고, viewport에
+       maximum-scale=1 을 지정해 이중으로 막는다.
+     - 두 번 탭 확대 방지: touch-action: manipulation
+     - 탭할 때 회색 번쩍임 / 버튼 길게 눌러 글자 선택·복사 메뉴 뜨는 것 방지 */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
+  * { -webkit-tap-highlight-color: transparent; }
+  button, a, label, .tab, .nav-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
+  }
   :root {
     --accent: #3a2f6e;
     --accent-dark: #241c4a;
@@ -138,6 +151,11 @@
   .success-screen .name { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
   .success-screen .role { font-size: 13px; color: var(--text-muted); }
 </style>
+<script>
+// [2026-09-29] iOS는 viewport의 user-scalable=no를 무시하고 두 손가락 확대를 허용하므로,
+// Safari 전용 제스처 이벤트를 막아 핀치 확대를 차단한다(다른 브라우저에는 이 이벤트가 없어 영향 없음).
+document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+</script>
 </head>
 <body>
 
