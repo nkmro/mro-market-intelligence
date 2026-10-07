@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 신규 파일 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일: 대상 선정 + 메일 본문 생성 — 3차: Outlook 도형(VML) 제거하고 서식만, 맑은 고딕 우선)
+// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 신규 파일 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일: 대상 선정 + 메일 본문 생성 — 3차: Outlook 도형(VML) 제거하고 서식만, 맑은 고딕 우선 / 4차: 버튼·카드 간격을 빈 줄로)
 // cloud-run/mro-functions/lib/issueMail.js
 //
 // 이슈 댓글 메일(설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4)의 "계산" 부분만 모은 모듈. 시트/Firestore/메일
@@ -79,8 +79,8 @@ function card(e,o){
          '<div style="font-size:13px;line-height:1.5;color:'+C.text+';white-space:pre-wrap;">'+esc(e.content)+'</div>'+
        '</td></tr></table>'+
    '</td></tr></table>'+
-   // 이 댓글로 바로 가기(밝은 배경 + 진한 글자: 어느 메일 프로그램에서도 읽히게)
-   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr><td align="center">'+
+   // 이 댓글로 바로 가기 — Outlook은 표의 margin을 무시해 버튼이 댓글에 붙어 보였다 → 빈 줄(높이 14px)로 간격 확보(4차)
+   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="14" style="height:14px;line-height:14px;font-size:1px;">&nbsp;</td></tr><tr><td align="center">'+
      button('앱에서 이 댓글 보기 ›', commentLink(e))+
    '</td></tr></table>'+
   '</td></tr></table>';
@@ -100,7 +100,8 @@ function buildHtml(r,opts){
   (r.testMode?'<div style="font-size:12px;color:'+C.danger+';background:'+C.dangerSoft+';padding:8px 10px;margin:0 0 12px;">[시험 발송] 설정 \'이슈댓글메일테스트수신자\'로 이 주소에만 보냈습니다. 정식 운영이었다면 '+r.realRecipientCount+'명에게 각자 해당되는 내용이 발송됩니다.</div>':'')+
   '<div style="font-size:14px;color:'+C.text+';margin:0 0 4px;line-height:1.6;">'+esc(r.name)+'님, 안녕하세요.</div>'+
   '<div style="font-size:13px;color:'+C.muted+';line-height:1.6;margin:0 0 16px;">오늘 선정된 <b style="color:'+C.danger+';">📌 이슈 댓글</b> '+r.entries.length+'건을 공유드립니다. 각 댓글의 <b>앱에서 이 댓글 보기</b>를 누르면 해당 시황게시물로 바로 이동합니다.</div>'+
-  r.entries.map(function(e){return card(e,o);}).join('')+
+  // 카드 사이 간격도 Outlook에서 margin이 무시되므로 빈 줄로 띄운다(4차)
+  r.entries.map(function(e){return card(e,o);}).join('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="14" style="height:14px;line-height:14px;font-size:1px;">&nbsp;</td></tr></table>')+
   '<div style="border-top:1px solid '+C.border+';margin:18px 0 0;padding-top:12px;font-size:11px;color:#9a9891;line-height:1.6;">이 메일은 MRO 자재 시황 관리 시스템에서 매일 '+r.sendHour+'시에 자동 발송했어요.<br>이 메일에 회신하면 관리자(jhjoo@nkmro.com)에게 전달돼요. 업무 의견은 앱 댓글로 남겨주세요.</div>'+
   '</td></tr></table>'+
   '</td></tr></table>'+
