@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 신규 파일 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일: 대상 선정 + 메일 본문 생성 — 2차: Outlook 둥근 배지·이름 띄어쓰기·버튼 가독성·댓글 바로가기)
+// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 신규 파일 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일: 대상 선정 + 메일 본문 생성 — 3차: Outlook 도형(VML) 제거하고 서식만, 맑은 고딕 우선)
 // cloud-run/mro-functions/lib/issueMail.js
 //
 // 이슈 댓글 메일(설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4)의 "계산" 부분만 모은 모듈. 시트/Firestore/메일
@@ -17,7 +17,8 @@ const C = { accent:'#3a2f6e', headerEnd:'#7c5aa8', blue:'#2f5fd0', blueSoft:'#e8
   purple:'#7c4fd0', bg:'#f6f5f2', border:'#e2e0da', text:'#1f2320', muted:'#6b6f6a', danger:'#b3413a', dangerSoft:'#f6e2de' };
 const ROLE_COLOR = { '담당':C.accent, '팀장':C.blue, '임원':C.purple };
 const DOW = ['일','월','화','수','목','금','토'];
-const FONT = '-apple-system,BlinkMacSystemFont,Segoe UI,Malgun Gothic,sans-serif';
+// Outlook이 글꼴 목록 앞부분(-apple-system 등)을 해석하지 못하면 다른 글꼴로 바뀌어 글자가 깨져 보여 맑은 고딕을 맨 앞에 둔다(2026-10-07)
+const FONT = "'Malgun Gothic','맑은 고딕',Apple SD Gothic Neo,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 // 기사 링크는 http/https만 허용(그 외 형식은 링크를 넣지 않음)
 function safeUrl(u){u=String(u||'').trim();return /^https?:\/\//i.test(u)?u:'';}
@@ -27,24 +28,23 @@ function fmtTime(ms,nowMs){if(ms==null)return'';const a=kst(ms),n=kst(nowMs);ret
 function initials(name){return name?String(name).trim().slice(-2):'?';} // 앱 initials()와 동일
 function buildSubject(nowMs,count){const p=kst(nowMs);return '[MRO 시황] '+p.m+'/'+p.d+'('+p.dow+') 오늘의 이슈 댓글 '+count+'건';}
 
-// ── Outlook(PC) 대응 도우미 (2026-10-07 재홍님 수신 화면 피드백 반영) ──
-// Outlook PC는 border-radius·max-width·인라인 여백을 무시하고 링크 글자색을 덮어써서
-// 둥근 배지가 사각형, 이름·역할이 붙어 보임, 버튼 글자가 안 보이는 문제가 생겼다.
-// → Outlook 전용(VML) 둥근 모양을 함께 넣고, 다른 메일 프로그램은 기존 CSS로 그린다.
+// ── 메일 프로그램 호환 도우미 (2026-10-07 재홍님 Outlook 수신 화면 피드백 반영) ──
+// Outlook 전용 도형(VML)으로 둥근 모양을 그리면 Outlook에서 글자가 잘려 보여(3차 확인) 도형은 쓰지 않고
+// 서식(CSS)만 넣는다(재홍님 결정). Outlook에서는 모서리가 각지게 보일 수 있지만 글자는 온전히 보인다.
 function pill(text, opt){
-  // opt: { fg, bg, border, fontSize, height, padX, href }
-  const t=esc(text); const fs=opt.fontSize, h=opt.height;
-  const w=Math.max(h, Math.round(String(text).length*fs*1.05)+opt.padX*2);
-  const vml='<!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"'+(opt.href?' href="'+esc(opt.href)+'"':'')+' style="height:'+h+'px;v-text-anchor:middle;width:'+w+'px;" arcsize="50%" fillcolor="'+opt.bg+'" strokecolor="'+(opt.border||opt.bg)+'" strokeweight="1px"><w:anchorlock/><center style="color:'+opt.fg+';font-family:Malgun Gothic,sans-serif;font-size:'+fs+'px;font-weight:bold;">'+t+'</center></v:roundrect><![endif]-->';
-  const css='display:inline-block;font-size:'+fs+'px;font-weight:700;color:'+opt.fg+';background:'+opt.bg+';border:1px solid '+(opt.border||opt.bg)+';padding:'+Math.round((h-fs-2)/2)+'px '+opt.padX+'px;border-radius:'+h+'px;line-height:'+fs+'px;text-decoration:none;';
-  const inner='<span style="color:'+opt.fg+';">'+t+'</span>';
-  const html=opt.href?'<a href="'+esc(opt.href)+'" style="'+css+'">'+inner+'</a>':'<span style="'+css+'">'+inner+'</span>';
-  return vml+'<!--[if !mso]><!-->'+html+'<!--<![endif]-->';
+  // opt: { fg, bg, border, fontSize, padY, padX }
+  const t=esc(text);
+  return '<span style="display:inline-block;font-size:'+opt.fontSize+'px;font-weight:700;color:'+opt.fg+';background:'+opt.bg+';border:1px solid '+(opt.border||opt.bg)+';padding:'+opt.padY+'px '+opt.padX+'px;border-radius:20px;line-height:1.2;">'+t+'</span>';
+}
+// 버튼: 배경색을 표 칸(bgcolor)에 넣고 글자는 흰색을 링크 안쪽에 한 번 더 지정 — Outlook이 링크 글자색을
+// 덮어써서 어두운 배경에 어두운 글자가 되던 문제(1차 피드백) 방지
+function button(text, href){
+  return '<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr><td bgcolor="'+C.accent+'" style="background:'+C.accent+';border-radius:20px;padding:10px 22px;">'+
+    '<a href="'+esc(href)+'" style="color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;font-family:'+FONT+';"><span style="color:#ffffff;">'+esc(text)+'</span></a></td></tr></table>';
 }
 function avatar(name, color){
   const t=esc(initials(name));
-  return '<!--[if mso]><v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:26px;height:26px;v-text-anchor:middle;" fillcolor="'+color+'" stroke="f"><center style="color:#ffffff;font-family:Malgun Gothic,sans-serif;font-size:10px;font-weight:bold;">'+t+'</center></v:oval><![endif]-->'+
-    '<!--[if !mso]><!--><div style="width:26px;height:26px;line-height:26px;border-radius:50%;background:'+color+';color:#ffffff;font-size:11px;font-weight:700;text-align:center;">'+t+'</div><!--<![endif]-->';
+  return '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="26" height="26" align="center" valign="middle" bgcolor="'+color+'" style="width:26px;height:26px;border-radius:13px;background:'+color+';color:#ffffff;font-size:11px;font-weight:700;text-align:center;">'+t+'</td></tr></table>';
 }
 // 메일의 "앱에서 이 댓글 보기" → 앱이 이 주소를 받으면 해당 게시물로 이동해 댓글을 펼치고 강조한다
 function commentLink(e){
@@ -59,7 +59,7 @@ function card(e,o){
    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;"><tr>'+
      '<td width="34" style="width:34px;vertical-align:middle;"><img src="'+o.botIconSrc+'" width="34" height="34" alt="" style="display:block;width:34px;height:34px;border-radius:50%;background:'+C.bg+';"></td>'+
      '<td width="8" style="width:8px;">&nbsp;</td>'+
-     (e.materialName?'<td width="1%" style="vertical-align:middle;white-space:nowrap;">'+pill(e.materialName,{fg:C.blue,bg:C.blueSoft,border:C.blueBorder,fontSize:16,height:28,padX:12})+'</td><td width="8" style="width:8px;">&nbsp;</td>':'')+
+     (e.materialName?'<td width="1%" style="vertical-align:middle;white-space:nowrap;">'+pill(e.materialName,{fg:C.blue,bg:C.blueSoft,border:C.blueBorder,fontSize:16,padY:3,padX:12})+'</td><td width="8" style="width:8px;">&nbsp;</td>':'')+
      '<td width="1%" style="vertical-align:middle;white-space:nowrap;font-size:11px;font-weight:500;color:'+C.muted+';">AI&nbsp;시황봇</td>'+
      '<td width="99%" align="right" style="vertical-align:middle;font-size:12px;color:'+C.muted+';white-space:nowrap;">'+esc(fmtTime(e.postCreatedMs,o.nowMs))+'</td>'+
    '</tr></table>'+
@@ -81,7 +81,7 @@ function card(e,o){
    '</td></tr></table>'+
    // 이 댓글로 바로 가기(밝은 배경 + 진한 글자: 어느 메일 프로그램에서도 읽히게)
    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr><td align="center">'+
-     pill('앱에서 이 댓글 보기 ›',{fg:'#ffffff',bg:C.accent,border:C.accent,fontSize:13,height:36,padX:20,href:commentLink(e)})+
+     button('앱에서 이 댓글 보기 ›', commentLink(e))+
    '</td></tr></table>'+
   '</td></tr></table>';
 }
