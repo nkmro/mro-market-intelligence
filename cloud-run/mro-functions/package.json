@@ -4,6 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "@google-cloud/firestore": "^9.0.0",
-    "google-auth-library": "^9.14.1"
+    "google-auth-library": "^9.14.1",
+    "nodemailer": "^10.0.15"
   }
 }

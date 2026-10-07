@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 품목마스터 읽기 A2:I 확장 + upsertItem 원자재수정일 I열 stamping)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 회사 메일 서버 접속 시험용 smtpCheckTest 추가 — 기존 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3152,4 +3152,39 @@ exports.unpinCommentTest = async (req, res) => {
     const serverMs = Date.now() - t0;
     res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
   }
+};
+
+// ===== [2026-10-07 신규] 회사 메일 서버(whoisworks) 직접 발송 접속 시험 =====
+// 이슈 댓글 메일 기능(ISSUE_COMMENT_MAIL_DESIGN.md) 구현 전에 "Cloud Run에서 회사 메일 서버로
+// 로그인·발송이 되는지"만 확인하는 진단용 함수. 기존 함수와 공유하는 코드/데이터 없음.
+// - 비공개 배포(--no-allow-unauthenticated) + 비밀번호는 Secret Manager(SMTP_PASSWORD)로만 받음.
+// - body.send가 true일 때만 관리자(jhjoo@nkmro.com) 한 곳으로 시험 메일 1통. 다른 주소로는 못 보냄.
+// - 시험이 끝나면 이 함수는 삭제한다(설계서 8번 참고).
+const mailer = require('./lib/mailer');
+exports.smtpCheckTest = async (req, res) => {
+  const t0 = Date.now();
+  const out = { ok: false, loginOk: false, sent: false };
+  try {
+    await mailer.verifyLogin();
+    out.loginOk = true;
+    if (req.body && req.body.send === true) {
+      const r = await mailer.sendMessages([{
+        to: mailer.FROM_ADDRESS,
+        subject: '[MRO 시황] 메일 발송 시험 (Cloud Run 직접 발송)',
+        text: 'Cloud Run에서 회사 메일 서버로 직접 보낸 시험 메일입니다.',
+        html: '<div style="font-family:Malgun Gothic,sans-serif;font-size:14px;color:#1f2320;">' +
+          '<img src="cid:botIcon" width="34" height="34" alt="" style="border-radius:50%;vertical-align:middle;"> ' +
+          '<b>Cloud Run 직접 발송 시험 메일</b><br><br>받은편지함에 왔고, 보낸사람이 MRO 자재 시황 &lt;jhjoo@nkmro.com&gt;로 보이고, ' +
+          '왼쪽에 시황봇 아이콘이 보이면 정상입니다.</div>',
+        withBotIcon: true
+      }]);
+      out.sendResult = r;
+      out.sent = !!(r.ok && r.sent === 1);
+    }
+    out.ok = true;
+  } catch (err) {
+    out.error = mailer.describeError(err);
+  }
+  out.serverMs = Date.now() - t0;
+  res.status(200).json(out);
 };
