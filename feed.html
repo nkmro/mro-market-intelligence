@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (설정 화면에 이슈 댓글 메일 설정 3개 추가, 2026-10-07) -->
+<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (이슈 댓글 메일 '앱에서 이 댓글 보기' 링크로 해당 게시물·댓글 바로 이동, 2026-10-07) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1199,9 +1199,19 @@ async function refreshSessionViaWhoami_() {
   }
 }
 
+// 2026-10-07 신규 — 메일 링크(?post=&comment=)로 열렸는데 로그인 화면으로 보내야 할 때, 목적지를
+// 같은 탭의 sessionStorage에 잠시 맡겨 둔다(로그인 후 proceedAfterAuth()에서 꺼내 이동).
+function stashDeepLink_() {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.get('post') && q.get('comment')) sessionStorage.setItem('mro_pending_deeplink', location.search);
+  } catch (e) {}
+}
+
 (async function init() {
 session = getSession();
 if (!session || !session.sessionToken) {
+stashDeepLink_(); // 2026-10-07: 메일 "앱에서 이 댓글 보기"로 들어왔는데 로그인 전이면 로그인 후 이어서 이동
 window.location.href = 'index.html';
 return;
 }
@@ -1223,6 +1233,7 @@ clearIdleTracking();
 try {
 if (navigator.clearAppBadge) navigator.clearAppBadge();
 } catch (e) {}
+stashDeepLink_(); // 2026-10-07: 무활동 로그아웃 후 재로그인해도 메일 링크 목적지로 이어서 이동
 window.location.href = 'index.html';
 return;
 }
@@ -1321,6 +1332,21 @@ if (typeof initPushOnLogin_ === 'function') initPushOnLogin_().catch(function ()
 // switchView는 기존 함수를 그대로 호출만 하는 것이라 새로 정의하지 않는다.
 try {
   if (new URLSearchParams(location.search).get('view') === 'notif') switchView('notif');
+} catch (e) {}
+// 2026-10-07 신규(재홍님 요청) — 이슈 댓글 메일의 "앱에서 이 댓글 보기" 링크
+// (feed.html?post=..&item=..&comment=..)로 들어오면, 이슈 댓글 영역 클릭과 똑같이 goToComment()로
+// 해당 시황게시물로 이동해 댓글 스레드를 펼치고 그 댓글을 강조한다. 로그인 전이었다면 init()에서
+// sessionStorage에 잠시 맡겨 둔 값을 로그인 후 여기서 꺼내 쓴다. 처리 후 주소창의 값은 지워
+// 새로고침해도 다시 이동하지 않게 한다. 실패해도 기존 화면에는 영향 없음(try/catch).
+try {
+  const __dlSearch = new URLSearchParams(location.search).get('comment') ? location.search : (sessionStorage.getItem('mro_pending_deeplink') || '');
+  sessionStorage.removeItem('mro_pending_deeplink');
+  const __dl = new URLSearchParams(__dlSearch);
+  const __dlPost = __dl.get('post'), __dlComment = __dl.get('comment');
+  if (__dlPost && __dlComment) {
+    if (new URLSearchParams(location.search).get('comment')) history.replaceState(null, '', location.pathname);
+    goToComment(__dlPost, __dl.get('item') || '', __dlComment);
+  }
 } catch (e) {}
 startPolling();
 setupIdleTimer();
