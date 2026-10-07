@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 회사 메일 서버 접속 시험용 smtpCheckTest 추가 — 기존 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일 issueMailBatchTest 추가, 시험용 smtpCheckTest 제거 — 기존 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3154,37 +3154,118 @@ exports.unpinCommentTest = async (req, res) => {
   }
 };
 
-// ===== [2026-10-07 신규] 회사 메일 서버(whoisworks) 직접 발송 접속 시험 =====
-// 이슈 댓글 메일 기능(ISSUE_COMMENT_MAIL_DESIGN.md) 구현 전에 "Cloud Run에서 회사 메일 서버로
-// 로그인·발송이 되는지"만 확인하는 진단용 함수. 기존 함수와 공유하는 코드/데이터 없음.
-// - 비공개 배포(--no-allow-unauthenticated) + 비밀번호는 Secret Manager(SMTP_PASSWORD)로만 받음.
-// - body.send가 true일 때만 관리자(jhjoo@nkmro.com) 한 곳으로 시험 메일 1통. 다른 주소로는 못 보냄.
-// - 시험이 끝나면 이 함수는 삭제한다(설계서 8번 참고).
+// ===== [2026-10-07 신규] 이슈 댓글 메일 (설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4) =====
+// Cloud Scheduler가 매시 정각에 호출(비공개 배포 + OIDC 토큰). 설정 '이슈댓글메일발송시각'(기본 17시)이
+// 지난 첫 실행에서 하루 한 번, "오늘 고정된 이슈 댓글"을 고정한 사람 기준(팀장→그 팀 담당·일반,
+// 임원→전사)으로 회사 메일 서버(lib/mailer.js)를 통해 jhjoo@nkmro.com 명의로 발송한다.
+// - 기존 함수/시트/컬렉션은 읽기만 한다. 새로 쓰는 곳: Firestore issueMailRuns, issueMailDeliveries.
+// - 끄기: 설정 '이슈댓글메일사용' = FALSE (또는 Scheduler 작업 일시중지).
+// - 시험: 설정 '이슈댓글메일테스트수신자'에 주소를 넣으면 그 주소 한 곳에만 보낸다.
+// - 회사 메일 로그인이 실패하면 아무에게도 보내지 않고 기록만 남긴다(계정 잠김 방지: 로그인은 1회만 시도).
 const mailer = require('./lib/mailer');
-exports.smtpCheckTest = async (req, res) => {
+const issueMail = require('./lib/issueMail');
+const ISSUE_MAIL_RUNS = 'issueMailRuns';
+const ISSUE_MAIL_DELIVERIES = 'issueMailDeliveries';
+
+exports.issueMailBatchTest = async (req, res) => {
   const t0 = Date.now();
-  const out = { ok: false, loginOk: false, sent: false };
+  const nowMs = Date.now();
+  const today = issueMail.kstDateStr(nowMs);
   try {
-    await mailer.verifyLogin();
-    out.loginOk = true;
-    if (req.body && req.body.send === true) {
-      const r = await mailer.sendMessages([{
-        to: mailer.FROM_ADDRESS,
-        subject: '[MRO 시황] 메일 발송 시험 (Cloud Run 직접 발송)',
-        text: 'Cloud Run에서 회사 메일 서버로 직접 보낸 시험 메일입니다.',
-        html: '<div style="font-family:Malgun Gothic,sans-serif;font-size:14px;color:#1f2320;">' +
-          '<img src="cid:botIcon" width="34" height="34" alt="" style="border-radius:50%;vertical-align:middle;"> ' +
-          '<b>Cloud Run 직접 발송 시험 메일</b><br><br>받은편지함에 왔고, 보낸사람이 MRO 자재 시황 &lt;jhjoo@nkmro.com&gt;로 보이고, ' +
-          '왼쪽에 시황봇 아이콘이 보이면 정상입니다.</div>',
-        withBotIcon: true
-      }]);
-      out.sendResult = r;
-      out.sent = !!(r.ok && r.sent === 1);
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const allPosts = rowsToPosts((valueRanges[1] && valueRanges[1].values) || []);
+    const allItems = rowsToItems((valueRanges[2] && valueRanges[2].values) || []);
+    const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
+    const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
+
+    const enabled = String(settings['이슈댓글메일사용'] || '').trim().toUpperCase() === 'TRUE';
+    if (!enabled) { res.status(200).json({ ok: true, skipped: true, reason: 'DISABLED', serverMs: Date.now() - t0 }); return; }
+
+    const sendHour = issueMail.parseSendHour(settings['이슈댓글메일발송시각']);
+    const currentHour = new Date(nowMs + 9 * 60 * 60 * 1000).getUTCHours();
+    if (currentHour < sendHour) { res.status(200).json({ ok: true, skipped: true, reason: 'NOT_YET', currentHour, sendHour, serverMs: Date.now() - t0 }); return; }
+
+    const runRef = firestore.collection(ISSUE_MAIL_RUNS).doc(today);
+    const runSnap = await runRef.get();
+    if (runSnap.exists && runSnap.data().status === 'done') { res.status(200).json({ ok: true, skipped: true, reason: 'ALREADY_DONE', today, serverMs: Date.now() - t0 }); return; }
+
+    const pinnedSnap = await firestore.collection(PINNED_COMMENTS_COLLECTION).get();
+    const pins = pinnedSnap.docs.map(function (doc) {
+      const d = doc.data();
+      return {
+        commentId: doc.id, postId: d.postId, itemId: d.itemId || null, contentSnapshot: d.contentSnapshot,
+        pinnedByEmail: d.pinnedByEmail, pinnedByName: d.pinnedByName,
+        pinnedAtMs: (d.pinnedAt && d.pinnedAt.toMillis) ? d.pinnedAt.toMillis() : null
+      };
+    });
+    const testRecipient = String(settings['이슈댓글메일테스트수신자'] || '').trim();
+    const plan = issueMail.planIssueMail({ nowMs, pins, allUsers, allPosts, allItems, allComments, testRecipient });
+
+    const summary = { today, sendHour, testMode: !!testRecipient, todayPinCount: plan.todayPinCount, excluded: plan.excluded };
+    if (plan.recipients.length === 0) {
+      await runRef.set(Object.assign({ status: 'done', sent: 0, failed: 0, finishedAt: FieldValue.serverTimestamp() }, summary));
+      res.status(200).json(Object.assign({ ok: true, sent: 0, serverMs: Date.now() - t0 }, summary)); return;
     }
-    out.ok = true;
+
+    // 이미 받은 사람 제외(중간 실패 후 재시도 대비)
+    const pending = [];
+    for (const r of plan.recipients) {
+      const dSnap = await firestore.collection(ISSUE_MAIL_DELIVERIES).doc(today + '_' + r.email).get();
+      if (!dSnap.exists) pending.push(r);
+    }
+
+    // 회사 메일 서버 로그인은 1회만 시도. 실패하면 아무에게도 안 보내고 다음 정각에 다시(계정 잠김 방지).
+    try {
+      await mailer.verifyLogin();
+    } catch (loginErr) {
+      const e = mailer.describeError(loginErr);
+      console.error('[issueMailBatchTest] 회사 메일 로그인 실패: ' + JSON.stringify(e));
+      await runRef.set(Object.assign({ status: 'login_failed', error: e, lastTriedAt: FieldValue.serverTimestamp() }, summary));
+      res.status(200).json(Object.assign({ ok: false, error: 'SMTP_LOGIN_FAILED', detail: e, serverMs: Date.now() - t0 }, summary)); return;
+    }
+
+    let sent = 0; let failed = 0; const failures = [];
+    for (let i = 0; i < pending.length; i += 100) {
+      const chunk = pending.slice(i, i + 100);
+      const messages = chunk.map(function (r) {
+        const subject = (r.testMode ? '[시험] ' : '') + issueMail.buildSubject(nowMs, r.entries.length);
+        return {
+          to: r.email, subject: subject, withBotIcon: true,
+          html: issueMail.buildHtml({ name: r.name, sendHour: sendHour, entries: r.entries, testMode: !!r.testMode, realRecipientCount: r.realRecipientCount }, { nowMs: nowMs }),
+          text: issueMail.buildText({ name: r.name, entries: r.entries })
+        };
+      });
+      const result = await mailer.sendMessages(messages);
+      if (!result.ok) { failed += chunk.length; failures.push({ error: result.error, index: result.index }); continue; }
+      for (const r of result.results) {
+        if (r.ok) {
+          sent++;
+          await firestore.collection(ISSUE_MAIL_DELIVERIES).doc(today + '_' + r.to).set({ sentAt: FieldValue.serverTimestamp(), messageId: r.messageId || null, testMode: !!testRecipient });
+        } else {
+          failed++; failures.push({ to: r.to, error: r.error });
+        }
+      }
+    }
+
+    // 일부 실패 시 관리자에게 알림 1통(관리자 알림 자체 실패는 기록만)
+    if (failed > 0) {
+      try {
+        await mailer.sendMessages([{
+          to: mailer.FROM_ADDRESS,
+          subject: '[MRO 시황] 이슈 댓글 메일 일부 발송 실패 (' + today + ')',
+          text: '발송 ' + sent + '통 성공, ' + failed + '통 실패.\n' + failures.map(function (f) { return (f.to || '') + ' ' + JSON.stringify(f.error); }).join('\n'),
+          html: '<pre style="font-size:12px;">' +
+            '발송 ' + sent + '통 성공, ' + failed + '통 실패.\n' + failures.map(function (f) { return String(f.to || '').replace(/[<>&]/g, '') + ' ' + JSON.stringify(f.error).replace(/[<>&]/g, ''); }).join('\n') + '</pre>'
+        }]);
+      } catch (notifyErr) { console.error('[issueMailBatchTest] 관리자 알림 실패: ' + notifyErr); }
+    }
+
+    await runRef.set(Object.assign({ status: 'done', sent: sent, failed: failed, failures: failures.slice(0, 50), finishedAt: FieldValue.serverTimestamp() }, summary));
+    res.status(200).json(Object.assign({ ok: true, sent, failed, serverMs: Date.now() - t0 }, summary));
   } catch (err) {
-    out.error = mailer.describeError(err);
+    console.error('[issueMailBatchTest] 오류: ' + err);
+    res.status(500).json({ ok: false, error: String((err && err.message) || err), serverMs: Date.now() - t0 });
   }
-  out.serverMs = Date.now() - t0;
-  res.status(200).json(out);
 };
