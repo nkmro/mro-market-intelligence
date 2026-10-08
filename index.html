@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub index.html 전체 교체용입니다 (모바일 터치 오조작·화면 확대 방지, 2026-09-29) -->
+<!-- [DELIVERY] 이 파일은 GitHub index.html 전체 교체용입니다 (회원가입·비밀번호 찾기 Cloud Run 이전 + 자동 전환 안전장치, 2026-10-08 검토 반영 2차) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -271,6 +271,9 @@ const CLOUD_RUN_GET_TEAMS_URL = 'https://asia-northeast3-mro-market-intelligence
 // 엔드포인트. 로그아웃 후에도 FCM 푸시가 계속 오던 문제(재홍님 발견) 수정 — index.html도
 // 자체 doLogout()/무활동 로그아웃 경로가 있어서 feed.html과 별개로 같은 상수를 둔다.
 const CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unregisterPushSubscriptionTest';
+// 2026-10-08: 회원가입·비밀번호 찾기(인증코드 메일)를 Apps Script에서 Cloud Run으로 이전(재홍님 승인).
+// 빈 문자열로 바꾸면 즉시 기존 Apps Script 경로로만 동작한다(다른 CLOUD_RUN_*_URL과 동일한 롤백 스위치).
+const CLOUD_RUN_AUTH_CODE_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/authCodeTest';
 
 // 로그인진단로그에 접속 기기 종류(iOS/Android/Windows/Mac 등)를 남기기 위한 판별 함수.
 // navigator.userAgentData(최신 표준)는 사파리/파이어폭스가 지원을 안 해서 iOS 전체가 빠지므로
@@ -353,7 +356,11 @@ const ERROR_MESSAGES = {
   DUPLICATE_IN_PROGRESS_RETRY_LATER: '이전 로그인 요청을 아직 처리 중이에요. 잠시 후 다시 시도해주세요.',
   LOGIN_BUSY_RETRY: '지금 로그인 요청이 많아 처리 중이에요. 잠시 후 다시 시도해주세요.',
     TOO_MANY_ATTEMPTS: '시도 횟수를 초과했어요. 인증코드를 다시 요청해주세요.',
-    TOO_MANY_REQUESTS: '너무 많이 요청하셨어요. 1시간 후 다시 시도해주세요.'
+    TOO_MANY_REQUESTS: '너무 많이 요청하셨어요. 1시간 후 다시 시도해주세요.',
+    // 2026-10-08 신규(Cloud Run 회원가입·비밀번호 찾기)
+    MAILBOX_NOT_FOUND: '이 주소로 메일을 보낼 수 없어요. 회사 메일 주소를 다시 확인해주세요.',
+    INVALID_EMAIL: '이메일 주소 형식을 확인해주세요.',
+    MAIL_SEND_FAILED: '인증 메일을 보내지 못했어요. 잠시 후 다시 시도해주세요.'
 };
 
 function errMsg(code, res) {
@@ -599,6 +606,113 @@ async function doLogin() {
   }
 }
 
+// ── 2026-10-08 신규: 회원가입·비밀번호 찾기 Cloud Run 연결 + 안전장치(재홍님 승인, 검토 반영 2차) ──
+// 1단계(인증코드 받기): Cloud Run(authCodeTest)에 먼저 보낸다.
+//   - 정상 응답(성공이든 "이미 가입된 이메일" 같은 오류든)은 그대로 화면에 쓴다.
+//   - 10초 안에 응답이 없으면 같은 요청 번호로 한 번 더 보낸다(서버가 같은 번호는 한 번만 처리 → 메일 중복 없음).
+//   - 그래도 응답이 없거나, 서버 오류(500)·메일 발송 실패·"아직 처리 중"이면 기존 Apps Script로 자동 전환한다.
+//     → 최악의 경우 Cloud Run 대기 20초 후 전환.
+// 2단계(가입 완료/새 비밀번호 저장): 인증코드는 보낸 쪽만 확인할 수 있다.
+//   - 1단계를 어디서 처리했는지 sessionStorage에 이메일과 함께 기억한다(새로고침해도 유지).
+//   - 기억한 쪽에 먼저 확인하고, 코드가 없다/틀리다고 하면 다른 쪽에도 같은 코드로 한 번 더 확인한다.
+//     (기억이 사라졌거나, Cloud Run이 늦게 메일을 보내 두 곳에서 코드가 나간 드문 경우까지 대비)
+//   - 단, 1단계가 Cloud Run에서 바로 성공한 것이 기억돼 있으면 Apps Script에는 코드가 없으므로 다시 확인하지 않는다.
+const AUTH_CODE_TIMEOUT_MS = 10000;
+const AUTH_FLOW_STORAGE_PREFIX = 'mro_auth_flow_';
+const AUTH_CODE_FALLBACK_ERRORS = new Set(['SERVER_ERROR', 'MAIL_SEND_FAILED', 'DUPLICATE_IN_PROGRESS_RETRY_LATER']);
+const AUTH_CODE_RECHECK_ERRORS = new Set(['CODE_EXPIRED_OR_NOT_FOUND', 'CODE_MISMATCH', 'CODE_MISMATCH_OR_EXPIRED']);
+
+function normEmail_(email) { return String(email || '').trim().toLowerCase(); }
+function setAuthFlowSource_(flow, email, source) {
+  try { sessionStorage.setItem(AUTH_FLOW_STORAGE_PREFIX + flow, JSON.stringify({ email: normEmail_(email), source: source })); } catch (e) {}
+}
+function getAuthFlowSource_(flow, email) {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(AUTH_FLOW_STORAGE_PREFIX + flow) || 'null');
+    return (v && v.email === normEmail_(email)) ? v.source : null;
+  } catch (e) { return null; }
+}
+function clearAuthFlowSource_(flow) {
+  try { sessionStorage.removeItem(AUTH_FLOW_STORAGE_PREFIX + flow); } catch (e) {}
+}
+
+async function authCodeAttempt_(requestBody) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(function () { controller.abort(); }, AUTH_CODE_TIMEOUT_MS);
+  try {
+    const res = await fetch(CLOUD_RUN_AUTH_CODE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
+    let json;
+    try { json = await res.json(); } catch (parseErr) { return { ambiguous: true }; }
+    if (json && typeof json.ok === 'boolean') return { ambiguous: false, status: res.status, json: json };
+    return { ambiguous: true };
+  } catch (networkErr) {
+    return { ambiguous: true };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Cloud Run에 보내고(응답 없음/처리 중이면 같은 요청 번호로 1회 재시도) 결과를 돌려준다.
+async function authCodeCloudRun_(action, body) {
+  const requestBody = Object.assign({ action: action, idempotencyKey: generateIdempotencyKey_() }, body);
+  let r = await authCodeAttempt_(requestBody);
+  if (r.ambiguous || (r.json && r.json.error === 'DUPLICATE_IN_PROGRESS_RETRY_LATER')) {
+    console.log('[' + action + '] source=cloud-run ' + (r.ambiguous ? 'no-response' : 'in-progress') + '(attempt=1) -> retrying with same idempotencyKey');
+    r = await authCodeAttempt_(requestBody);
+  }
+  return r;
+}
+
+async function authCodeAppsScript_(action, body) {
+  try { return await callApi(action, body); } catch (e) { return { ok: false, error: 'SERVER_ERROR' }; }
+}
+
+// flow: 'signup' | 'reset', step: 'request' | 'confirm'
+async function callAuthCode_(flow, step, action, body) {
+  if (!CLOUD_RUN_AUTH_CODE_URL) return callApi(action, body);
+
+  if (step === 'request') {
+    const r = await authCodeCloudRun_(action, body);
+    const needFallback = r.ambiguous || r.status >= 500 || (r.json && r.json.ok === false && AUTH_CODE_FALLBACK_ERRORS.has(r.json.error));
+    if (needFallback) {
+      console.log('[' + action + '] source=cloud-run failed(' + (r.ambiguous ? 'no-response' : (r.json && r.json.error)) + ') -> fallback to apps-script');
+      const res = await callApi(action, body);
+      if (res && res.ok) setAuthFlowSource_(flow, body.email, 'apps-script');
+      return res;
+    }
+    console.log('[' + action + '] source=cloud-run ok=' + r.json.ok + (r.json.error ? ' error=' + r.json.error : ''));
+    if (r.json.ok) setAuthFlowSource_(flow, body.email, 'cloud-run');
+    return r.json;
+  }
+
+  // step === 'confirm'
+  const remembered = getAuthFlowSource_(flow, body.email); // 'cloud-run' | 'apps-script' | null(기억 없음)
+  const order = remembered === 'apps-script' ? ['apps-script', 'cloud-run'] : ['cloud-run', 'apps-script'];
+  const recheckAllowed = remembered !== 'cloud-run';
+
+  async function ask(source) {
+    if (source === 'apps-script') return { res: await authCodeAppsScript_(action, body), ambiguous: false };
+    const r = await authCodeCloudRun_(action, body);
+    if (r.ambiguous) return { res: { ok: false, error: 'SERVER_ERROR' }, ambiguous: true };
+    return { res: r.json, ambiguous: false };
+  }
+
+  const first = await ask(order[0]);
+  console.log('[' + action + '] source=' + order[0] + ' ok=' + first.res.ok + (first.res.error ? ' error=' + first.res.error : ''));
+  if (first.res.ok) { clearAuthFlowSource_(flow); return first.res; }
+  if (recheckAllowed && (first.ambiguous || AUTH_CODE_RECHECK_ERRORS.has(first.res.error))) {
+    const second = await ask(order[1]);
+    console.log('[' + action + '] recheck source=' + order[1] + ' ok=' + second.res.ok + (second.res.error ? ' error=' + second.res.error : ''));
+    if (second.res.ok) { clearAuthFlowSource_(flow); return second.res; }
+  }
+  return first.res;
+}
+
 async function doRequestSignup() {
   hideError('signup-error');
   const email = document.getElementById('signup-email').value.trim();
@@ -609,7 +723,7 @@ async function doRequestSignup() {
 
   startLoadingFill('btn-signup-request');
   try {
-    const res = await callApi('requestSignup', { email, name, team, password });
+    const res = await callAuthCode_('signup', 'request', 'requestSignup', { email, name, team, password });
     if (!res.ok) { cancelLoadingFill('btn-signup-request'); showError('signup-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-signup-request');
     document.getElementById('signup-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
@@ -629,7 +743,7 @@ async function doVerifySignup() {
 
   startLoadingFill('btn-signup-verify');
   try {
-    const res = await callApi('verifySignup', { email, code });
+    const res = await callAuthCode_('signup', 'confirm', 'verifySignup', { email, code });
         if (!res.ok) { cancelLoadingFill('btn-signup-verify'); showError('signup-verify-error', errMsg(res.error, res)); return; }
     await finishLoadingFill('btn-signup-verify');
     document.getElementById('signup-password').value = document.getElementById('signup-password').value;
@@ -654,7 +768,7 @@ async function doRequestReset() {
 
   startLoadingFill('btn-reset-request');
   try {
-    const res = await callApi('requestPasswordReset', { email });
+    const res = await callAuthCode_('reset', 'request', 'requestPasswordReset', { email });
     if (!res.ok) { cancelLoadingFill('btn-reset-request'); showError('reset-error', errMsg(res.error)); return; }
     await finishLoadingFill('btn-reset-request');
     document.getElementById('reset-sent-to').textContent = email + ' 으로 인증코드를 보냈어요.';
@@ -676,7 +790,7 @@ async function doConfirmReset() {
 
   startLoadingFill('btn-reset-confirm');
   try {
-    const res = await callApi('confirmPasswordReset', { email, code, newPassword });
+    const res = await callAuthCode_('reset', 'confirm', 'confirmPasswordReset', { email, code, newPassword });
         if (!res.ok) { cancelLoadingFill('btn-reset-confirm'); showError('reset-confirm-error', errMsg(res.error, res)); return; }
     await finishLoadingFill('btn-reset-confirm');
     showTab('login');
