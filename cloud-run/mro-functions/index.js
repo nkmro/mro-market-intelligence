@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일 issueMailBatchTest 추가, 시험용 smtpCheckTest 제거 — 기존 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-08 회원가입·비밀번호 찾기 authCodeTest 추가 — 기존 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3267,5 +3267,110 @@ exports.issueMailBatchTest = async (req, res) => {
   } catch (err) {
     console.error('[issueMailBatchTest] 오류: ' + err);
     res.status(500).json({ ok: false, error: String((err && err.message) || err), serverMs: Date.now() - t0 });
+  }
+};
+
+// ===== [2026-10-08 신규] 회원가입·비밀번호 찾기 (Apps Script에서 이전, 재홍님 승인) =====
+// 로그인 화면(index.html)의 "회원가입"과 "비밀번호 찾기"가 쓰는 4가지 요청을 하나의 함수에서
+// body.action으로 나눠 처리한다: requestSignup / verifySignup / requestPasswordReset /
+// confirmPasswordReset. 판단 규칙은 lib/authCodes.js(Code.gs와 같은 순서·같은 오류 코드),
+// 여기서는 실제 시트·Firestore·회사 메일 서버를 연결해 넘겨준다.
+// - 안전장치: 화면은 1단계(인증코드 받기)에서 이 함수가 응답이 없거나 메일 발송에 실패하면
+//   기존 Apps Script로 자동 전환한다(index.html callAuthCode_ 참고).
+// - 기록: 요청마다 결과를 Cloud Run 로그에 한 줄 남긴다([authCode] ...). 인증코드·비밀번호는 남기지 않는다.
+// - 새로 쓰는 Firestore 컬렉션: authCodes(인증코드 10분 보관), authRateLimits(1시간 요청 횟수).
+const authCodes = require('./lib/authCodes');
+const AUTH_CODES_COLLECTION = 'authCodes';
+const AUTH_RATE_COLLECTION = 'authRateLimits';
+
+function authCodeDeps_() {
+  let clientPromise = null;
+  const sheets = function () { if (!clientPromise) clientPromise = getUserWriteClient_(); return clientPromise; };
+  return {
+    now: function () { return Date.now(); },
+    randomCode: function () { return String(crypto.randomInt(100000, 1000000)); },
+    hashPassword: hashPassword_,
+    codes: {
+      set: function (id, data) { return firestore.collection(AUTH_CODES_COLLECTION).doc(id).set(data); },
+      remove: function (id) { return firestore.collection(AUTH_CODES_COLLECTION).doc(id).delete(); },
+      // 비교·시도 횟수·삭제를 트랜잭션 하나로 — 같은 코드로 동시에 두 번 눌러도 한 번만 성공
+      consume: function (id, code, nowMs) {
+        const ref = firestore.collection(AUTH_CODES_COLLECTION).doc(id);
+        return firestore.runTransaction(async function (tx) {
+          const snap = await tx.get(ref);
+          const j = authCodes.judgeCode(snap.exists ? snap.data() : null, code, nowMs);
+          if (j.next === 'delete') tx.delete(ref);
+          else if (j.next) tx.set(ref, j.next);
+          return { status: j.status, remaining: j.remaining, data: j.data };
+        });
+      }
+    },
+    rate: {
+      tryIncrement: function (id, nowMs) {
+        const ref = firestore.collection(AUTH_RATE_COLLECTION).doc(id);
+        return firestore.runTransaction(async function (tx) {
+          const snap = await tx.get(ref);
+          const j = authCodes.judgeRate(snap.exists ? snap.data() : null, nowMs);
+          if (j.next) tx.set(ref, j.next);
+          return j.allowed;
+        });
+      }
+    },
+    users: {
+      // 매번 시트 최신값을 읽는다(changePasswordTest의 getFreshUserRows_와 같은 원칙)
+      find: async function (email) {
+        const rows = await getFreshUserRows_(await sheets());
+        const e = String(email).trim().toLowerCase();
+        for (let i = 0; i < rows.length; i++) {
+          if (String(rows[i][0] || '').trim().toLowerCase() === e) {
+            return { rowNum: i + 2, email: rows[i][0], name: rows[i][1], status: rows[i][4] };
+          }
+        }
+        return null;
+      },
+      append: async function (rowValues) {
+        const client = await sheets();
+        const appendRange = encodeURIComponent(SHEET_USER_NAME + '!A:I');
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${appendRange}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+        await client.request({ url: url, method: 'POST', data: { values: [rowValues] } });
+      },
+      updateCells: async function (rowNum, cells) {
+        const client = await sheets();
+        for (const col of Object.keys(cells)) await updateUserCell_(client, rowNum, col, cells[col]);
+      }
+    },
+    sendMail: async function (mail) {
+      const r = await mailer.sendMessages([mail]);
+      if (!r.ok) return { ok: false, reason: r.error === 'RECIPIENT_NOT_ALLOWED' ? 'INVALID_EMAIL' : 'SEND_FAILED', detail: r };
+      const one = r.results[0];
+      if (one.ok) return { ok: true };
+      const e = one.error || {};
+      // 회사 메일 서버가 받는 사람 주소 단계에서 거절(550 등) = 그런 메일함 없음
+      const rcptRejected = e.code === 'EENVELOPE' || (e.command === 'RCPT TO' && e.responseCode >= 500);
+      return { ok: false, reason: rcptRejected ? 'MAILBOX_NOT_FOUND' : 'SEND_FAILED', detail: e };
+    }
+  };
+}
+
+exports.authCodeTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  const body = req.body || {};
+  const action = String(body.action || '');
+  const email = String(body.email || '').trim().toLowerCase();
+  try {
+    const fn = authCodes.ACTIONS[action];
+    if (!fn) { res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', serverMs: Date.now() - t0 }); return; }
+    const deps = authCodeDeps_();
+    // 화면이 응답을 못 받아 같은 요청을 다시 보내도(같은 idempotencyKey) 메일이 두 번 가지 않게 한다
+    const result = await withIdempotency(firestore, body.idempotencyKey ? 'authCode_' + body.idempotencyKey : null, 'authCode_' + action, function () {
+      return fn(deps, body);
+    });
+    console.log('[authCode] ' + JSON.stringify({ action: action, email: email, ok: !!result.ok, error: result.error || null, remainingAttempts: result.remainingAttempts, ms: Date.now() - t0 }));
+    res.status(200).json(Object.assign({ serverMs: Date.now() - t0 }, result));
+  } catch (err) {
+    console.error('[authCode] ' + JSON.stringify({ action: action, email: email, ok: false, error: 'SERVER_ERROR', detail: String((err && err.message) || err).slice(0, 300), ms: Date.now() - t0 }));
+    res.status(500).json({ ok: false, error: 'SERVER_ERROR', serverMs: Date.now() - t0 });
   }
 };
