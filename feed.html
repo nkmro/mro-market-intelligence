@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (이슈 댓글 메일 '앱에서 이 댓글 보기' 링크로 해당 게시물·댓글 바로 이동, 2026-10-07) -->
+<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (알림 탭 스크롤 고정 + 폴더 탭 디자인(A안), 2026-10-12) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -374,14 +374,27 @@ font-size: 13px; padding: 2px 4px; display: none;
     padding: 10px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted);
     background: var(--bg); border-bottom: 1px solid var(--border);
   }
-  .notif-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
-.notif-tab { border: none; background: transparent; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; }
-.notif-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-.notif-tab-count { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+  /* 2026-10-12 재홍님 요청: 알림 탭을 스크롤해도 고정 + "진짜 탭" 같은 폴더 탭 디자인(시안 A안 선택).
+     - 탭 줄과 '전체 선택' 줄을 .notif-sticky로 묶어 보라색 머리글(.header-stack) 바로 아래에 고정한다.
+       머리글 높이는 화면/기기마다 달라서 JS(watchHeaderStackHeight_)가 --header-stack-h로 넣어준다.
+     - .notif-panel의 overflow:hidden은 고정(sticky)을 막기 때문에 알림 화면에서만 clip으로 바꾼다
+       (clip을 모르는 오래된 브라우저는 visible로 동작 — 모서리만 덜 둥글 뿐 기능은 같다).
+       사용자 현황 화면도 .notif-panel을 쓰지만 거기는 그대로 둔다. */
+  .notif-panel.notif-panel-tabs { overflow: visible; overflow: clip; }
+  .notif-sticky { position: sticky; top: var(--header-stack-h, 0px); z-index: 6; background: var(--card); border-radius: 12px 12px 0 0; margin-bottom: 12px; transition: box-shadow .15s; }
+  .notif-sticky.is-stuck { box-shadow: 0 6px 10px -6px rgba(0,0,0,.18); }
+  .notif-tabs { display: flex; gap: 4px; padding: 10px 10px 0; background: #efedf3; border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--border); }
+.notif-tab { flex: 1; min-width: 0; border: 1px solid transparent; border-bottom: none; background: #e3e0ea; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 10px 4px 9px; border-radius: 10px 10px 0 0; margin-bottom: -1px; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 5px; white-space: nowrap; position: relative; }
+.notif-tab:hover { color: var(--text); }
+.notif-tab.active { background: var(--card); color: var(--accent); border-color: var(--border); }
+.notif-tab.active::before { content: ""; position: absolute; left: 10px; right: 10px; top: -1px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+.notif-tab-count { background: #fff; color: var(--text); border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
 .notif-tab.active .notif-tab-count { background: var(--accent); color: #fff; }
+@media (max-width: 380px) { .notif-tabs { padding: 8px 6px 0; gap: 3px; } .notif-tab { font-size: 12px; gap: 3px; } .notif-tab-count { padding: 1px 5px; } }
 .notif-tab-content { display: flex; flex-direction: column; gap: 10px; }
 .notif-clear-toolbar {
-  display: flex; align-items: center; gap: 14px; padding: 0 16px 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 14px; padding: 8px 16px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); background: var(--card);
 }
 .notif-selectall-wrap { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
 .notif-selectall-wrap span { font-size: 12px; font-weight: 600; color: var(--text); }
@@ -1862,6 +1875,29 @@ let notifActiveTab = '새 게시물';
 // 임시 선택 상태이기 때문에 그럴 필요가 없다.
 let notifSelection = { '댓글 필요': new Set(), '답변 요청': new Set() };
 
+// 2026-10-12: 알림 탭 고정용 — 보라색 머리글(.header-stack) 높이를 CSS 변수 --header-stack-h로 알려주고
+// (화면 폭·이슈 댓글 배너 여부에 따라 높이가 달라짐), 탭이 머리글에 붙어 있을 때만 옅은 그림자를 준다.
+(function watchHeaderStackHeight_() {
+  function setH() {
+    const hs = document.querySelector('.header-stack');
+    if (hs) document.documentElement.style.setProperty('--header-stack-h', Math.round(hs.getBoundingClientRect().height) + 'px');
+  }
+  function updateStuck() {
+    const el = document.getElementById('notif-sticky');
+    if (!el || !el.offsetParent) return;
+    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-stack-h')) || 0;
+    el.classList.toggle('is-stuck', el.getBoundingClientRect().top <= top + 1 && window.scrollY > 0);
+  }
+  try {
+    const hs = document.querySelector('.header-stack');
+    if (hs && window.ResizeObserver) new ResizeObserver(function () { setH(); updateStuck(); }).observe(hs);
+  } catch (e) {}
+  window.addEventListener('resize', setH);
+  window.addEventListener('scroll', updateStuck, { passive: true });
+  window.__updateNotifStuck_ = updateStuck;
+  setH();
+})();
+
 function renderNotif() {
 const root = document.getElementById('notif-view');
 
@@ -1938,13 +1974,16 @@ ${selectedCount > 0 ? `<span class="notif-selected-count">${selectedCount}개 �
 }
 
 root.innerHTML = `
-<div class="notif-panel">
+<div class="notif-panel notif-panel-tabs">
+<div class="notif-sticky" id="notif-sticky">
 <div class="notif-tabs">${tabsHtml}</div>
 ${clearToolbarHtml}
+</div>
 <div class="notif-tab-content">${contentHtml || '<div class="notif-empty">여기엔 알림이 없어요.</div>'}</div>
 </div>
 `;
 updateNotifPermButton();
+try { if (window.__updateNotifStuck_) window.__updateNotifStuck_(); } catch (e) {}
 }
 
 function switchNotifTab(key) {
