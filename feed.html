@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (알림 탭 스크롤 고정 + 폴더 탭 디자인(A안), 2026-10-12) -->
+<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (AI 원자재 추천 대기시간 20초→60초, 2026-10-12) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -876,7 +876,10 @@ const DEFAULT_API_REQUEST_TIMEOUT_MS = 20000;
 // 다른 조회/AI 액션보다 훨씬 오래 걸린다(실측 26~40초, 2026-09-04 실행 로그 기준). 기본 20초 타임아웃을
 // 그대로 쓰면 서버(Apps Script/DeepSeek)는 정상적으로 완료됐는데 클라이언트가 먼저 요청을 중단해버려
 // "생성 실패"로 잘못 표시되는 문제가 있었다. 이 액션만 타임아웃을 넉넉하게 늘린다. (2026-09-07: 메타 프롬프트 템플릿이 길어져 60초로도 부족한 사례 발생 — 120초로 재상향)
-const API_REQUEST_TIMEOUT_MS_BY_ACTION = { generateReportPrompt: 120000 };
+// 2026-10-12: suggestMaterials(AI 원자재 추천)도 같은 이유로 추가 — 실행 기록상 19~28초 걸린 요청이 있어
+// 기본 20초에 앱이 먼저 포기하고 "추천 실패"를 띄웠다(서버는 계속 처리). 재시도 없이 1회만 보내는 액션이라
+// 대기만 60초로 늘려도 AI 중복 호출 위험은 없다(2026-09-04 hedge/재시도 제거 결정 유지).
+const API_REQUEST_TIMEOUT_MS_BY_ACTION = { generateReportPrompt: 120000, suggestMaterials: 60000 };
 const API_HEDGE_DELAY_MS = 2500;                  // 1차 요청이 이 시간 안에 안 끝나면 2차(중복) 요청을 추가로 보낸다.
 const API_ROUND_BACKOFF_MS = [1500, 3000, 6000]; // 라운드(=hedge 세트 또는 단일 시도) 사이 대기. 기존 800/1600ms에서 상향.
 
@@ -4241,6 +4244,7 @@ if (!itemId && !canEdit) return; // 방어: 뷰어 권한(담당)으로는 신�
 const item = itemId ? itemsState.items.find(function (it) { return it.itemId === itemId; }) : null;
 itemsState.editingItemId = itemId;
 itemsState.pendingNewCustomerName = null;
+suggestMaterialsSeq_++; // 2026-10-12: 이전 폼에서 기다리던 AI 추천 응답이 새로 연 폼에 끼어들지 않게 무효화
 itemsState.selectedMaterials = item && item.materials ? item.materials.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
 const managerOptions = itemsState.teamUsers.map(function (u) {
 return `<option value="${escapeHtml(u.name)}" ${item && String(item.manager || '').trim() === String(u.name || '').trim() ? 'selected' : ''}>${escapeHtml(u.name)}</option>`;
@@ -4305,6 +4309,7 @@ renderMaterialTags();
 
 function closeItemForm() {
 itemsState.pendingNewCustomerName = null;
+suggestMaterialsSeq_++; // 2026-10-12: 닫은 폼의 AI 추천 응답이 나중에 도착해도 반영하지 않게 무효화
 const overlay = document.getElementById('item-form-overlay');
 if (overlay) overlay.remove();
 }
@@ -4353,6 +4358,9 @@ clearTimeout(itemNameDebounceTimer);
 itemNameDebounceTimer = setTimeout(function () { suggestMaterialsForForm(); }, 800);
 }
 
+// 2026-10-12: 대기시간을 60초로 늘리면서, 앞선(느린) 추천 응답이 나중 요청보다 늦게 도착해 최신 결과를
+// 덮어쓰는 일을 막는다 — 가장 마지막에 보낸 요청의 응답만 화면에 반영한다.
+let suggestMaterialsSeq_ = 0;
 async function suggestMaterialsForForm() {
 const nameInput = document.getElementById('item-name-input');
 if (!nameInput) return;
@@ -4360,8 +4368,10 @@ const itemName = nameInput.value.trim();
 if (!itemName) return;
 const btn = document.getElementById('ai-suggest-btn');
 if (btn) { btn.disabled = true; btn.textContent = '⏳ 추천 받는 중...'; }
+const mySeq = ++suggestMaterialsSeq_;
 try {
 const res = await callApi('suggestMaterials', { itemName: itemName });
+if (mySeq !== suggestMaterialsSeq_) return; // 더 최근 요청이 있으면 이 응답은 버린다
 if (res.ok && res.materials) {
 itemsState.selectedMaterials = res.materials;
 renderMaterialTags();
@@ -4376,6 +4386,7 @@ if (btn) { btn.disabled = false; btn.textContent = '⚠️ 추천 실패 - 다�
 }
 } catch (e) {
 // 네트워크 오류/타임아웃 등 요청 자체가 실패한 경우도 동일하게 안내.
+if (mySeq !== suggestMaterialsSeq_) return;
 if (btn) { btn.disabled = false; btn.textContent = '⚠️ 추천 실패 - 다시 시도'; }
 }
 }
