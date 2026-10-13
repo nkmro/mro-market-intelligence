@@ -444,3 +444,11 @@ done
 - 실사용 로그에서 `totalMs`가 48,000을 넘는 건이 나오면 시트 쓰기 시간 포함 예산을 다시 검토한다(T10은 시트 쓰기 시간 제외).
 - 30초 경계: 29.9초 실패는 Apps Script로 넘어가 총 대기가 길어질 수 있고, 30초 이상 실패는 바로 "다시 시도" — 의도된 선택(재홍님 판정).
 - 단계 2 전까지 Apps Script 경로(시트 편집·15분 점검·앱 폴백)는 스크립트 잠금만 써서, Cloud Run과 정확히 같은 순간 새 원자재를 만들면 번호가 겹칠 짧은 틈이 남는다(이름 중복은 양쪽 사후 검증이 막음).
+
+### C-6. 단계 2 대기 상태 (2026-10-13 기준 — 다음 세션은 여기서 이어받는다)
+- **현재 운영 상태:** 앱 "AI 추천 다시 받기"는 Cloud Run `suggestMaterialsTest`(리비전 00002-zem)가 처리하고, 실패 시 Apps Script 웹앱 **버전 88**로 자동 폴백. 시트 편집(②-a·②-b)과 15분 점검은 아직 Apps Script(Head) 그대로.
+- **재홍님 결정(10/13):** 단계 2는 오늘 시작하지 않음. 계획서·Code.gs diff 초안을 검토한 뒤 다음 세션에서 시작 여부 결정.
+- **준비된 것(커밋 안 함, 검토용 초안):** `stage2_plan.md`(계획서), `stage2_Code.gs.diff`(Code.gs 변경 전체), `stage2_tests.diff`(가짜 데이터 시험 25건 신규 + 단계 1 시험 A그룹 보정, 94건 유지), 시험 결과 25/25·94/94 통과.
+- **단계 2 변경 4가지(+1):** ① `suggestRawMaterials` 동결 주석 ② 원자재마스터 공용 잠금(Firestore `writeLocks/rawMaterialMaster`, Cloud Run과 같은 문서·규칙, 접속 실패 시 기존 스크립트 잠금만으로 진행) ③ `[suggest]` 로그 1줄(`source=apps-script`, `mode=app|sheet_fill|sheet_edit|sweep`) ④ ②-a 빈 F 자동 채우기·15분 점검 F 채우기에서 I열 갱신(규칙 v2, ②-b는 기존대로) / +RM 번호를 Cloud Run과 같은 규칙(RM숫자만)으로.
+- **시작 전 확인할 것:** (a) 웹앱 버전 88과 편집기(Head) 코드가 같은지 — 새 버전 89는 Head 전체를 배포하므로 필수 (미확인 1) (b) Apps Script 계정의 Firestore 쓰기 권한 — 배포 후 `stage2CheckFsLock` 1회 실행으로 확인.
+- **다음 세션 시작 시:** 재홍님이 "단계 2 시작/보류"만 알려 주면 된다. 작업자는 이 문서(GitHub 최상위 `MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md`)와 `stage2_plan.md`·diff를 먼저 읽는다. 단계 2 초안의 기준 커밋은 `9e74666`이며, 그 뒤 `apps-script/Code.gs`가 바뀌었으면 diff를 다시 만든다.
