@@ -1,11 +1,12 @@
 // cloud-run/mro-functions/tests/materialsuggest_run_tests.js
-// AI 원자재 추천(suggestMaterialsTest, 단계 1 mode=app, 2026-10-12) 가짜 데이터 시험.
+// AI 원자재 추천(suggestMaterialsTest, 단계 1 mode=app, 2026-10-12 / 2026-10-13 시간 예산 수정) 가짜 데이터 시험.
 // 실제 시트·Firestore·DeepSeek는 쓰지 않는다(네트워크 호출 0건).
 //
 //   A그룹: Apps Script 원본(Code.gs suggestRawMaterials)을 그대로 실행한 결과와 Cloud Run 엔진 결과를
 //          같은 가짜 원자재마스터·같은 AI 응답으로 비교(프롬프트 글자 일치, 추가되는 행, 반환값).
 //   B그룹: index.js의 suggestMaterialsTest를 그대로 실행(인증·권한·잠금·요청 번호·로그·오류 코드·시트 쓰기 요청).
-//   C그룹: feed.html의 suggestMaterialsRemote_ / suggestMaterialsForForm을 그대로 실행(자동 폴백 규칙).
+//   C그룹: feed.html의 suggestMaterialsRemote_ / suggestMaterialsForForm을 그대로 실행(자동 폴백 규칙, 30초 규칙).
+//   T그룹: 시간 예산(AI 1회 40초·전체 45초·재시도 10초 기준·요청 50초) — 가짜 시계로 실제 엔진 실행.
 //
 // 실행: (cloud-run/mro-functions 폴더에서) node tests/materialsuggest_run_tests.js
 // Code.gs·feed.html 위치: 저장소 최상위 기준 apps-script/Code.gs, feed.html
@@ -176,7 +177,7 @@ async function runCloudRun(rawRows, aiTexts, itemName, extra) {
   const holder = 'h1';
   const deps = {
     io: ms.makeSheetsIO(sh.client, 'SHEET'),
-    lock: { acquire: () => acquireLock(fs_, ms.RAW_LOCK_NAME, holder, extra.lockOpts || ms.RAW_LOCK_OPTS), release: () => releaseLock(fs_, ms.RAW_LOCK_NAME, holder) },
+    lock: { acquire: w => acquireLock(fs_, ms.RAW_LOCK_NAME, holder, extra.lockOpts || Object.assign({}, ms.RAW_LOCK_OPTS, { waitMs: w })), release: () => releaseLock(fs_, ms.RAW_LOCK_NAME, holder) },
     ai: aiFromTexts(aiTexts, prompts),
     now: () => Date.UTC(2026, 9, 12, 8, 0, 0)
   };
@@ -287,7 +288,8 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
     const o = ms.readOptions({ '원자재추천AI대기초': '99', '원자재추천AI시도횟수': '5' });
     const d = ms.readOptions({});
     const bad = ms.readOptions({ '원자재추천AI대기초': '아무거나' });
-    check('A21 설정값: 없음→20초·2회, 99초→20초(상한), 5회→2회(상한), 숫자 아님→기본값', d.aiTimeoutSec === 20 && d.aiAttempts === 2 && o.aiTimeoutSec === 20 && o.aiAttempts === 2 && bad.aiTimeoutSec === 20, { o, d, bad });
+    const lo = ms.readOptions({ '원자재추천AI대기초': '3' });
+    check('A21 설정값: 없음→40초·2회, 99초→45초(상한), 3초→10초(하한), 5회→2회(상한), 숫자 아님→기본 40초', d.aiTimeoutSec === 40 && d.aiAttempts === 2 && o.aiTimeoutSec === 45 && o.aiAttempts === 2 && lo.aiTimeoutSec === 10 && bad.aiTimeoutSec === 40, { o, d, bad, lo });
   }
 
   console.log('── B그룹: index.js suggestMaterialsTest 그대로 실행 ──');
@@ -371,12 +373,12 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
   check('B17 실패 로그에 시도별 httpStatus 500 2건', lj2.attempts.length === 2 && lj2.attempts.every(a => a.httpStatus === 500) && lj2.error === 'AI_FAILED', lj2);
 
   {
-    e = makeEnv({ ai: ['HANG'], settings: [['원자재추천AI대기초', 5], ['원자재추천AI시도횟수', 1]] });
+    e = makeEnv({ ai: ['HANG'], settings: [['원자재추천AI대기초', 10], ['원자재추천AI시도횟수', 1]] });
     const t0 = Date.now();
     r = await e.call({ mode: 'app', sessionToken: 'TOK_LEADER', itemName: '응답없음' });
     const el = Date.now() - t0;
     const lj3 = JSON.parse(e.logs.find(l => l.startsWith('[suggest] ')).slice(10));
-    check('B18 AI가 응답 없음 → 설정한 5초에 끊고 AI_FAILED(설정 시트 값 반영, 시도 1회)', r.error === 'AI_FAILED' && el >= 4900 && el < 7000 && lj3.attempts[0].error === 'TIMEOUT' && lj3.aiTimeoutSec === 5 && lj3.aiAttempts === 1, { el, lj3 });
+    check('B18 AI가 응답 없음 → 설정한 10초(하한)에 실제로 끊고 AI_FAILED(설정 시트 값 반영, 시도 1회)', r.error === 'AI_FAILED' && el >= 9900 && el < 12000 && lj3.attempts[0].error === 'TIMEOUT' && lj3.attempts[0].timeoutMs === 10000 && lj3.aiTimeoutSec === 10 && lj3.aiAttempts === 1, { el, lj3 });
   }
   {
     e = makeEnv({ ai: [J({ materials: [{ isNew: true, korean: '니켈', keyword: '니켈' }] })] });
@@ -403,9 +405,10 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
   check('C0 스위치 상수 = suggestMaterialsTest 주소', urlLine.includes("'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/suggestMaterialsTest'"));
 
   function makeFront(opts) {
-    const fx = { fetchBodies: [], apiCalls: [], logs: [], btn: { disabled: false, textContent: '', dataset: { default: '✨ AI 추천 다시 받기' } }, rendered: 0 };
+    const fx = { vnow: 1000000, fetchBodies: [], apiCalls: [], logs: [], btn: { disabled: false, textContent: '', dataset: { default: '✨ AI 추천 다시 받기' } }, rendered: 0 };
     const ctx = {
       console: { log: s => fx.logs.push(s) }, setTimeout, clearTimeout, AbortController, JSON, Object,
+      Date: { now: () => fx.vnow }, // 가짜 시계: 응답이 몇 초 뒤에 온 것처럼 흉내
       session: { sessionToken: 'TOK' },
       DEFAULT_API_REQUEST_TIMEOUT_MS: 20000,
       API_REQUEST_TIMEOUT_MS_BY_ACTION: { suggestMaterials: opts.timeoutMs || 60000 },
@@ -416,6 +419,8 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
         if (b === 'NETWORK') throw new TypeError('Failed to fetch');
         if (b === 'HANG') return new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
         if (opts.onFetch) await opts.onFetch(fx);
+        if (opts.delayMs) fx.vnow += opts.delayMs;
+        if (b.networkAfter) throw new TypeError('Failed to fetch');
         return { status: b.status, json: async () => { if (b.html) throw new SyntaxError('Unexpected token <'); return b.json; } };
       },
       callApi: async (action, body) => { fx.apiCalls.push({ action, body }); return opts.gas || { ok: true, materials: ['GAS결과'] }; },
@@ -463,6 +468,78 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
     await fx.ctx.__form();
     check('C12 기다리는 사이 더 최근 요청이 생기면 Apps Script로 넘기지 않음(쓸모없는 AI 호출 방지)', fx.apiCalls.length === 0 && fx.ctx.itemsState.selectedMaterials === null, fx.apiCalls.length);
   }
+
+  console.log('── C그룹 보충: 30초 넘은 실패는 Apps Script로 넘기지 않음 ──');
+  const slowCases = [
+    { id: 'C14', name: 'AI_FAILED가 29.9초에 옴 → Apps Script로 넘김', o: { delayMs: 29900, remote: { status: 200, json: { ok: false, error: 'AI_FAILED' } } }, expectGas: true },
+    { id: 'C15', name: 'AI_FAILED가 30.0초에 옴 → 넘기지 않고 실패 표시(SLOW_FAILURE)', o: { delayMs: 30000, remote: { status: 200, json: { ok: false, error: 'AI_FAILED' } } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' },
+    { id: 'C16', name: 'AI_FAILED가 42초에 옴(AI가 40초에 끊긴 경우) → 넘기지 않음', o: { delayMs: 42000, remote: { status: 200, json: { ok: false, error: 'AI_FAILED' } } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' },
+    { id: 'C17', name: 'LOCK_TIMEOUT이 33초에 옴 → 넘기지 않음', o: { delayMs: 33000, remote: { status: 200, json: { ok: false, error: 'LOCK_TIMEOUT' } } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' },
+    { id: 'C18', name: '503이 35초에 옴 → 넘기지 않음', o: { delayMs: 35000, remote: { status: 503, json: { ok: false } } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' },
+    { id: 'C19', name: '연결 끊김이 31초에 남 → 넘기지 않음', o: { delayMs: 31000, remote: { networkAfter: true } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' },
+    { id: 'C20', name: '503이 2초에 옴 → 그대로 넘김(빠른 실패)', o: { delayMs: 2000, remote: { status: 503, json: { ok: false } } }, expectGas: true },
+    { id: 'C21', name: '성공이 45초에 옴 → 시간과 상관없이 결과 표시', o: { delayMs: 45000, remote: { status: 200, json: { ok: true, materials: ['고무'] } } }, expectGas: false, expectTags: '["고무"]' },
+    { id: 'C22', name: 'FORBIDDEN이 31초에 옴 → 넘기지 않음(원래도 안 넘김)', o: { delayMs: 31000, remote: { status: 200, json: { ok: false, error: 'FORBIDDEN' } } }, expectGas: false, expectBtn: '⚠️ 추천 실패 - 다시 시도' }
+  ];
+  for (const cs of slowCases) {
+    const fx = makeFront(cs.o);
+    await fx.ctx.__form();
+    const okGas = cs.expectGas ? fx.apiCalls.length === 1 && J(fx.ctx.itemsState.selectedMaterials) === '["GAS결과"]' : fx.apiCalls.length === 0;
+    const okTags = cs.expectTags ? J(fx.ctx.itemsState.selectedMaterials) === cs.expectTags : true;
+    const okBtn = cs.expectBtn ? fx.btn.textContent === cs.expectBtn && fx.btn.disabled === false : true;
+    const okLog = (cs.id === 'C15' || cs.id === 'C16' || cs.id === 'C17' || cs.id === 'C18' || cs.id === 'C19') ? fx.logs.some(l => /no fallback \(slow\)/.test(l)) : true;
+    check(cs.id + ' ' + cs.name, okGas && okTags && okBtn && okLog, { api: fx.apiCalls.length, btn: fx.btn.textContent, tags: fx.ctx.itemsState.selectedMaterials, logs: fx.logs });
+  }
+
+  console.log('── T그룹: 서버 시간 예산(가짜 시계로 엔진 실행) ──');
+  // 가짜 시계 환경: 시트 읽기·쓰기·잠금은 즉시(또는 지정 시간), AI는 시나리오대로 걸린 시간만큼 시계를 진행
+  async function runTimed(sc) {
+    const clock = { now: 0 };
+    const sh = makeFakeSheets({});
+    const io = ms.makeSheetsIO(sh.client, 'SHEET');
+    const ioTimed = Object.assign({}, io, { readRawRows: async () => { clock.now += sc.readMs || 0; return io.readRawRows(); } });
+    const calls = [];
+    const ai = async (prompt, timeoutMs) => {
+      const step = sc.ai[calls.length] || { ms: 999999 };
+      calls.push({ timeoutMs, at: clock.now });
+      if (step.ms > timeoutMs) { clock.now += timeoutMs; return { text: null, httpStatus: 0, ms: timeoutMs, error: 'TIMEOUT' }; }
+      clock.now += step.ms;
+      if (step.http) return { text: null, httpStatus: step.http, ms: step.ms, error: 'HTTP_' + step.http };
+      return { text: step.text || J({ materials: [{ isNew: false, korean: '고무', keyword: '고무' }] }), httpStatus: 200, ms: step.ms, error: null };
+    };
+    let lockWaitAsked = null;
+    const lock = { acquire: async w => { lockWaitAsked = w; if (sc.lockBusy) { clock.now += w; return false; } return true; }, release: async () => {} };
+    const opts = Object.assign(ms.readOptions(sc.settings || {}), { deadlineMs: (sc.requestStartMs || 0) + ms.REQUEST_BUDGET_MS });
+    const log = {};
+    const res = await ms.suggestForItemName({ io: ioTimed, lock, ai, now: () => clock.now }, '시험품목', opts, log);
+    return { res, calls, log, end: clock.now, lockWaitAsked };
+  }
+  let tr;
+  tr = await runTimed({ ai: [{ ms: 20500 }] });
+  check('T1(D) 시험 1 재현: 1차가 20.5초 걸려도 40초 대기라 끊기지 않고 1회로 성공(총 20.5초)', tr.res.ok && tr.calls.length === 1 && tr.calls[0].timeoutMs === 40000 && tr.end === 20500, tr);
+  tr = await runTimed({ ai: [{ ms: 60000 }, { ms: 1000 }] });
+  check('T2(A) 1차가 40초에 끊김 → 남은 AI 시간 5초(<10초) → 다시 부르지 않고 AI_FAILED(40초에 종료)', !tr.res.ok && tr.res.error === 'AI_FAILED' && tr.calls.length === 1 && tr.log.aiStop === 'RETRY_SKIPPED_LOW_TIME' && tr.end === 40000, tr);
+  tr = await runTimed({ ai: [{ ms: 1500, http: 503 }, { ms: 15000 }] });
+  check('T3(A) 1차가 1.5초 만에 서버 오류 → 남은 43.5초 → 2차는 40초 대기로 다시 불러 성공', tr.res.ok && tr.calls.length === 2 && tr.calls[1].timeoutMs === 40000 && tr.end === 16500, tr);
+  tr = await runTimed({ ai: [{ ms: 30000, text: '형식오류' }, { ms: 20000 }] });
+  check('T4(A) 1차가 30초에 형식 오류 → 남은 15초 → 2차는 15초만 기다리고 끊김 → AI 합계 정확히 45초에서 종료', !tr.res.ok && tr.calls.length === 2 && tr.calls[1].timeoutMs === 15000 && tr.end === 45000 && tr.log.aiTotalMs === 45000, tr);
+  tr = await runTimed({ ai: [{ ms: 36000, text: '형식오류' }, { ms: 1000 }] });
+  check('T5(A) 1차가 36초에 형식 오류 → 남은 9초(<10초) → 다시 부르지 않음', !tr.res.ok && tr.calls.length === 1 && tr.log.aiStop === 'RETRY_SKIPPED_LOW_TIME', tr);
+  tr = await runTimed({ ai: [{ ms: 999999 }], readMs: 8000 });
+  check('T6(A) AI 전 단계가 8초 걸린 경우: AI 마감 = 요청 50초 - 쓰기 여유 4초 = 46초 → 1차 대기는 38초로 줄어듦', !tr.res.ok && tr.calls[0].timeoutMs === 38000 && tr.end === 46000, tr);
+  tr = await runTimed({ ai: [{ ms: 44000 }], readMs: 500, settings: { '원자재추천AI대기초': 45 } });
+  check('T7(A) (설정 45초) AI가 44.5초에 끝남 → 잠금 대기를 10초 대신 2.5초로 줄여 50초 안에 끝냄', tr.res.ok && tr.lockWaitAsked === 2500, tr);
+  tr = await runTimed({ ai: [{ ms: 44000 }], readMs: 500, lockBusy: true, settings: { '원자재추천AI대기초': 45 } });
+  check('T8(A·E) 최악(설정 45초): AI 44.5초 + 잠금 못 잡음 → LOCK_TIMEOUT, 서버 종료 47초(50초 이내)', tr.res.error === 'LOCK_TIMEOUT' && tr.end === 47000, tr);
+  tr = await runTimed({ ai: [{ ms: 999999 }], settings: { '원자재추천AI대기초': 45 } });
+  check('T9 설정 45초(상한)여도 AI 전체 45초 예산 안에서 끝남', !tr.res.ok && tr.calls[0].timeoutMs === 45000 && tr.end === 45000, tr);
+  // E: 여러 최악 조합에서 서버 종료 시각이 50초를 넘지 않는지
+  let worst = 0;
+  for (const sec of [40, 45]) for (const readMs of [0, 2000, 8000, 15000]) for (const a1 of [1000, 20000, 39000, 44000, 999999]) for (const busy of [false, true]) {
+    const r2 = await runTimed({ readMs, lockBusy: busy, settings: { '원자재추천AI대기초': sec }, ai: [{ ms: a1, http: a1 === 1000 ? 500 : undefined }, { ms: 999999 }] });
+    worst = Math.max(worst, r2.end);
+  }
+  check('T10(E) 80가지 최악 조합(설정 40·45초 × AI 전 단계 0~15초 × AI 지연 5종 × 잠금 실패 여부)에서 서버 종료 최대 ' + (worst / 1000) + '초 ≤ 50초(시트 쓰기 시간 제외, 아래 설명)', worst <= 50000, worst);
 
   // 전체 문법 확인
   // <script ...src...> 태그(외부 파일)와 주석 속 "<script src>" 글자는 제외
