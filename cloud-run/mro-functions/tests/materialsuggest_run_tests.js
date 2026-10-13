@@ -60,7 +60,12 @@ function runAppsScript(rawRows, aiTexts, itemName) {
     SpreadsheetApp: { openById: () => ({ getSheetByName: () => fakeSheet }), flush() {} },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     callAI_: p => { prompts.push(p); return aiTexts[aiIdx++] || null; },
-    console: { log() {}, error() {} }
+    console: { log() {}, error() {} },
+    // 2026-10-14 단계 2: 원자재마스터 공용 잠금(Firestore)은 이 비교 시험의 대상이 아니라 "잡힘"으로 고정
+    // (잠금 자체는 tests/stage2_appsscript_tests.js에서 따로 시험)
+    Utilities: { getUuid: () => 'holder' },
+    acquireRawMaterialFsLock_: () => 'acquired',
+    releaseRawMaterialFsLock_: () => {}
   };
   vm.runInNewContext(gasSuggestSrc + '\n;__out = suggestRawMaterials(__name);', Object.assign(ctx, { __name: itemName }));
   return { result: ctx.__out, prompts, rows: sheet.rows.slice(1), aiCalls: aiIdx };
@@ -230,8 +235,9 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
     const ai = [J({ materials: [{ isNew: true, korean: '요소', keyword: '요소' }] })];
     const g = runAppsScript(raw, ai, '요소비료');
     const c = await runCloudRun(raw, ai, '요소비료');
-    check('A9 비정형 코드(X-01) 섞임: Apps Script는 ' + g.rows[g.rows.length - 1][0] + ', Cloud Run은 RM079(설계 2-7 개선)',
-      g.rows[g.rows.length - 1][0] === 'RMNaN' && c.rows[c.rows.length - 1][0] === 'RM079', { g: g.rows.slice(-1), c: c.rows.slice(-1) });
+    // 2026-10-14 단계 2: Apps Script도 같은 번호 규칙(RM숫자만)으로 바꿔서 이제 양쪽 모두 RM079(이전엔 Apps Script만 RMNaN)
+    check('A9 비정형 코드(X-01) 섞임: Apps Script·Cloud Run 모두 RM079(단계 2에서 번호 규칙 통일)',
+      g.rows[g.rows.length - 1][0] === 'RM079' && c.rows[c.rows.length - 1][0] === 'RM079', { g: g.rows.slice(-1), c: c.rows.slice(-1) });
   }
 
   console.log('── A그룹 보충: Cloud Run 시트 쓰기 세부 ──');
