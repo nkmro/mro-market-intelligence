@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (AI 원자재 추천 대기시간 20초→60초, 2026-10-12) -->
+<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (AI 원자재 추천 Cloud Run 연결 + 자동 폴백 + 30초 넘은 실패는 폴백 안 함, 2026-10-13) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -812,6 +812,13 @@ const CLOUD_RUN_UNREGISTER_PUSH_SUBSCRIPTION_URL = 'https://asia-northeast3-mro-
 const CLOUD_RUN_GET_PINNED_COMMENTS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getPinnedCommentsTest';
 const CLOUD_RUN_PIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/pinCommentTest';
 const CLOUD_RUN_UNPIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/unpinCommentTest';
+// 2026-10-12: AI 원자재 추천 Cloud Run 배선(MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md 2-1·3-1, 단계 1).
+// 채워져 있으면 suggestMaterialsRemote_()가 Cloud Run을 먼저 부르고, 아래 경우에만 기존 Apps Script
+// (callApi('suggestMaterials'))로 자동으로 넘긴다: 연결 실패, 5xx, JSON이 아닌 응답, AI_FAILED,
+// LOCK_TIMEOUT. 60초 무응답은 넘기지 않고 "추천 실패 - 다시 시도"만 띄운다(서버가 이미 원자재를
+// 추가했을 수 있어서 — 2026-09-04 hedge 제거와 같은 이유). 빈 문자열로 바꾸면 즉시 기존 경로로만
+// 동작한다(다른 CLOUD_RUN_*_URL과 같은 롤백 스위치).
+const CLOUD_RUN_SUGGEST_MATERIALS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/suggestMaterialsTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -4358,6 +4365,64 @@ clearTimeout(itemNameDebounceTimer);
 itemNameDebounceTimer = setTimeout(function () { suggestMaterialsForForm(); }, 800);
 }
 
+// 2026-10-12: AI 원자재 추천 Cloud Run 호출(설계 3-1). 반환값:
+//   null      → 호출부가 기존 Apps Script 경로(callApi)로 다시 보낸다
+//               (URL 비어 있음 / 연결 실패 / 5xx / JSON 아님 / AI_FAILED / LOCK_TIMEOUT)
+//   응답 객체 → 그대로 화면에 반영(성공, FORBIDDEN·MISSING_FIELDS·세션 오류 등 명확한 실패,
+//               60초 무응답 = { ok:false, error:'TIMEOUT' })
+// 재시도는 하지 않는다(AI 중복 호출 방지, 2026-09-04 결정 유지). 요청 번호는 매번 새로 만든다.
+// 2026-10-13: 위 "넘길 수 있는 실패"라도, 이 화면에서 요청을 보낸 뒤 30초 이상 지나서 받은 실패면
+// Apps Script로 넘기지 않고 { ok:false, error:'SLOW_FAILURE' }("추천 실패 - 다시 시도")로 끝낸다.
+// Apps Script 경로도 AI를 다시 불러 15~30초가 걸리므로, 넘기면 사용자가 1분 넘게 기다리게 되기 때문.
+// 성공 응답은 몇 초가 걸렸든 그대로 쓴다. 측정 위치 = 이 화면(Cloud Run 시동·네트워크 시간 포함).
+const SUGGEST_FALLBACK_ERRORS_ = { AI_FAILED: true, LOCK_TIMEOUT: true };
+const SUGGEST_NO_FALLBACK_AFTER_MS = 30000;
+async function suggestMaterialsRemote_(itemName) {
+  if (!CLOUD_RUN_SUGGEST_MATERIALS_URL) return null;
+  const controller = new AbortController();
+  const timeoutMs = API_REQUEST_TIMEOUT_MS_BY_ACTION.suggestMaterials || DEFAULT_API_REQUEST_TIMEOUT_MS;
+  const timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
+  const startedAt = Date.now();
+  // 넘김 조건에 해당할 때 호출: 30초 안이면 null(넘김), 넘었으면 실패로 끝냄
+  function fallbackOrSlowFailure_(reason) {
+    const waited = Date.now() - startedAt;
+    if (waited >= SUGGEST_NO_FALLBACK_AFTER_MS) {
+      console.log('[suggestMaterials] source=cloud-run ' + reason + ' after ' + waited + 'ms -> no fallback (slow)');
+      return { ok: false, error: 'SLOW_FAILURE' };
+    }
+    console.log('[suggestMaterials] source=cloud-run ' + reason + ' after ' + waited + 'ms -> apps-script fallback');
+    return null;
+  }
+  try {
+    const res = await fetch(CLOUD_RUN_SUGGEST_MATERIALS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'app',
+        sessionToken: session ? session.sessionToken : null,
+        idempotencyKey: generateIdempotencyKey_(),
+        itemName: itemName
+      }),
+      signal: controller.signal
+    });
+    if (res.status >= 500) return fallbackOrSlowFailure_('http=' + res.status);
+    let json = null;
+    try { json = await res.json(); } catch (parseErr) { json = null; }
+    if (!json || typeof json.ok !== 'boolean') return fallbackOrSlowFailure_('http=' + res.status + ' non-json');
+    if (!json.ok && SUGGEST_FALLBACK_ERRORS_[json.error]) return fallbackOrSlowFailure_('error=' + json.error);
+    console.log('[suggestMaterials] source=cloud-run ok=' + json.ok + (json.ok ? '' : ' error=' + json.error));
+    return json;
+  } catch (err) {
+    if (controller.signal.aborted) {
+      console.log('[suggestMaterials] source=cloud-run timeout ' + timeoutMs + 'ms -> no fallback');
+      return { ok: false, error: 'TIMEOUT' };
+    }
+    return fallbackOrSlowFailure_('network error');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 2026-10-12: 대기시간을 60초로 늘리면서, 앞선(느린) 추천 응답이 나중 요청보다 늦게 도착해 최신 결과를
 // 덮어쓰는 일을 막는다 — 가장 마지막에 보낸 요청의 응답만 화면에 반영한다.
 let suggestMaterialsSeq_ = 0;
@@ -4370,7 +4435,11 @@ const btn = document.getElementById('ai-suggest-btn');
 if (btn) { btn.disabled = true; btn.textContent = '⏳ 추천 받는 중...'; }
 const mySeq = ++suggestMaterialsSeq_;
 try {
-const res = await callApi('suggestMaterials', { itemName: itemName });
+// 2026-10-12: Cloud Run 먼저, null이면(설계 3-1의 넘김 조건) 기존 Apps Script 경로. 그 사이 더 최근
+// 요청이 생겼으면 Apps Script로 넘기지 않는다(쓸모없는 AI 호출 방지).
+const remoteRes = await suggestMaterialsRemote_(itemName);
+if (mySeq !== suggestMaterialsSeq_) return;
+const res = remoteRes || await callApi('suggestMaterials', { itemName: itemName });
 if (mySeq !== suggestMaterialsSeq_) return; // 더 최근 요청이 있으면 이 응답은 버린다
 if (res.ok && res.materials) {
 itemsState.selectedMaterials = res.materials;
