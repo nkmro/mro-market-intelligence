@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-09-27 품목 원자재수정일 I열 stamping 추가 - 태그 변경 시 과거 게시물 소급매칭 방지)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-14 AI 원자재 추천 단계 2: suggestRawMaterials 동결·원자재마스터 공용 잠금(Firestore)·[suggest] 로그·자동 F 채우기 I열 규칙 v2)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -753,9 +753,13 @@ const dCell2 = sheet.getRange(r2, 4);
 if (!dCell2.getValue()) autofillManagerFromCustomer_(sheet, r2);
 const fCell2 = sheet.getRange(r2, 6);
 if (!fCell2.getValue()) {
-const aiResult2 = suggestRawMaterials(c2);
+const aiResult2 = suggestRawMaterials(c2, 'sheet_fill');
 if (aiResult2 && aiResult2.korean && aiResult2.korean.length) {
 fCell2.setValue(aiResult2.korean.join(', '));
+// 2026-10-14 (단계 2, 설계 2-5 I열 규칙 v2): 빈 F를 자동으로 채운 것도 "원자재 변경"이므로 I열을 찍는다.
+// (이전엔 I를 안 찍어 기준선이 H(등록일)로 남아, 과거 뉴스가 이 품목에 소급 노출될 수 있었다.)
+sheet.getRange(r2, 9).setValue(new Date());
+sheet.getRange(r2, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 }
 }
 const gCell2 = sheet.getRange(r2, 7);
@@ -801,7 +805,7 @@ if (!itemName) return;
 const existingF = sheet.getRange(row, 6).getValue();
 if (existingF !== '' && !isSingleCellEdit) return;
 
-const result = suggestRawMaterials(itemName);
+const result = suggestRawMaterials(itemName, 'sheet_edit');
 if (!result) return;
 
 const newMaterials2 = result.korean.join(', ');
@@ -939,7 +943,26 @@ changed = true;
 if (changed) deRange.setValues(deValues);
 }
 
-function suggestRawMaterials(itemName) {
+// ┌─────────────────────────────────────────────────────────────────────────────┐
+// │ [동결 — 2026-10-14, AI 원자재 추천 Cloud Run 이전 단계 2]                    │
+// │ 이 함수의 추천 규칙(프롬프트)은 수정 금지. 규칙 변경은 Cloud Run             │
+// │ cloud-run/mro-functions/lib/materialSuggest.js 에서만 한다(프롬프트 유일본). │
+// │ 이 함수는 Cloud Run이 안 될 때 쓰는 비상용(폴백)으로 남겨 두며, 단계 3·4 뒤    │
+// │ 관찰 기간(2~4주)이 끝나면 삭제한다(설계서 2-4). 폐기 예정일: 단계 4 완료 후 확정. │
+// │ 단계 2에서 바뀐 것: ① 원자재마스터 공용 잠금(Firestore writeLocks/           │
+// │ rawMaterialMaster — Cloud Run과 같은 잠금) ② RM 번호는 RM숫자 형식만 계산     │
+// │ ③ [suggest] 로그 1줄 ④ 호출 경로(caller) 인자. 프롬프트는 한 글자도 안 바뀜.  │
+// └─────────────────────────────────────────────────────────────────────────────┘
+// caller: 'app'(앱 폴백) | 'sheet_fill'(②-a 빈 F 채우기) | 'sheet_edit'(②-b 품목명 수정) | 'sweep'(15분 점검)
+function suggestRawMaterials(itemName, caller) {
+const sgT0 = new Date().getTime();
+const sgLog = { mode: caller || 'unknown', source: 'apps-script', itemName: String(itemName || '').slice(0, 100), provider: String(PropertiesService.getScriptProperties().getProperty('AI_PROVIDER') || 'GEMINI').toUpperCase(), attempts: [] };
+const sgDone = function (ret, error) {
+sgLog.ok = !!ret; if (error) sgLog.error = error;
+sgLog.totalMs = new Date().getTime() - sgT0;
+console.log('[suggest] ' + JSON.stringify(sgLog));
+return ret;
+};
 const props = PropertiesService.getScriptProperties();
 const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
 const rmSheet = ss.getSheetByName('원자재마스터');
@@ -988,39 +1011,62 @@ korean(한글명) 필드는 관용명을 유지해도 되지만, keyword만큼�
 let parsed = null;
 let lastRawText = '';
 for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+const aiT0 = new Date().getTime();
 const text = callAI_(prompt);
+const sgAttempt = { aiMs: new Date().getTime() - aiT0, parseOk: false, error: text ? null : 'NO_RESPONSE' };
+sgLog.attempts.push(sgAttempt);
 if (!text) continue;
 lastRawText = text;
 try {
 const cleaned = text.replace(/```json|```/g, '').trim();
 const p = JSON.parse(cleaned);
-if (p.materials && p.materials.length > 0) parsed = p;
+if (p.materials && p.materials.length > 0) { parsed = p; sgAttempt.parseOk = true; } else { sgAttempt.error = 'PARSE'; }
 } catch (err) {
+sgAttempt.error = 'PARSE';
 console.error('suggestRawMaterials JSON parse error (attempt ' + (attempt + 1) + '): ' + err + ' / raw: ' + text);
 }
 }
 if (!parsed) {
 console.error('suggestRawMaterials: no valid result after retries for ' + itemName + ' / lastRaw: ' + lastRawText);
-return null;
+return sgDone(null, 'AI_FAILED');
 }
 const koreanNames = [];
 
-const lock = LockService.getScriptLock();
-const gotLock = lock.tryLock(10000);
-if (!gotLock) {
-console.error('suggestRawMaterials: could not acquire lock for ' + itemName);
-return null;
+// 2026-10-14 (단계 2, 설계 2-7): 원자재마스터 공용 잠금을 먼저 잡는다(Cloud Run과 같은 Firestore 문서).
+// 그다음 기존 스크립트 잠금. 스크립트 잠금은 로그인 등과 같이 쓰는 잠금이라 쥐고 있는 시간을 짧게 하려고
+// Firestore 잠금을 먼저 잡는다. Firestore에 접속이 안 되면(권한·장애) 기존처럼 스크립트 잠금만으로 진행한다.
+const lockT0 = new Date().getTime();
+const fsHolder = Utilities.getUuid();
+const fsLock = acquireRawMaterialFsLock_(fsHolder, 10000);
+sgLog.fsLock = fsLock;
+if (fsLock === 'timeout') {
+console.error('suggestRawMaterials: 원자재마스터 공용 잠금(Firestore) 대기 초과 for ' + itemName);
+sgLog.lockMs = new Date().getTime() - lockT0;
+return sgDone(null, 'LOCK_TIMEOUT');
 }
 
+const lock = LockService.getScriptLock();
+const gotLock = lock.tryLock(10000);
+sgLog.lockMs = new Date().getTime() - lockT0;
+if (!gotLock) {
+console.error('suggestRawMaterials: could not acquire lock for ' + itemName);
+if (fsLock === 'acquired') releaseRawMaterialFsLock_(fsHolder);
+return sgDone(null, 'LOCK_TIMEOUT');
+}
+
+const sgNewRM = [];
 try {
 // AI 호출 중 다른 실행이 원자재를 추가했을 수 있으므로, 락 안에서 최신 데이터를 다시 읽는다.
 const freshData = rmSheet.getDataRange().getValues();
 const freshRows = freshData.slice(1).filter(r => r[0]);
 const normalize = s => String(s || '').replace(/\s/g, '').toLowerCase();
 const freshNames = new Set(freshRows.map(r => normalize(r[1])));
-let nextCodeNum = freshRows.length
-? Math.max.apply(null, freshRows.map(r => parseInt(String(r[0]).replace('RM', '')))) + 1
-: 1;
+// 2026-10-14 (단계 2, 설계 2-7): Cloud Run과 같은 번호 규칙 — 'RM숫자' 형식만 읽어 최댓값 + 1.
+// (예전 parseInt 방식은 형식이 다른 코드가 섞이면 RMNaN을 만들 수 있었다.)
+let nextCodeNum = freshRows.reduce(function (mx, r) {
+const m = /^RM(\d+)$/.exec(String(r[0] || '').trim());
+return m ? Math.max(mx, parseInt(m[1], 10)) : mx;
+}, 0) + 1;
 
 const appendedRows = []; // 이번 실행이 실제로 추가한 행 기록 (사후 자가검증용)
 
@@ -1036,6 +1082,7 @@ rmSheet.getRange('D2').getDataValidation(); if (dRule) dRange.setDataValidation(
 nextCodeNum++;
 freshNames.add(key);
 appendedRows.push({ row: newRow, key: key });
+sgNewRM.push(newCode);
 } else if (m.isNew && freshNames.has(key)) {
 console.log('suggestRawMaterials: skipped duplicate append for ' + m.korean + ' (already exists)');
 }
@@ -1065,9 +1112,86 @@ SpreadsheetApp.flush();
 }
 } finally {
 lock.releaseLock();
+if (fsLock === 'acquired') releaseRawMaterialFsLock_(fsHolder);
 }
 
-return { korean: koreanNames };
+sgLog.newRM = sgNewRM;
+sgLog.materials = koreanNames;
+return sgDone({ korean: koreanNames });
+}
+
+// ===== 원자재마스터 공용 잠금 (2026-10-14, AI 원자재 추천 이전 단계 2, 설계서 2-7) =====
+// Cloud Run lib/writeLock.js(acquireLock/releaseLock)와 같은 Firestore 문서 writeLocks/rawMaterialMaster와
+// 같은 규칙을 Firestore REST로 구현한다: 문서가 없으면 만들어서 잡고, 있으면 30초가 지난 "죽은 잠금"만
+// 빼앗는다(동시에 빼앗으려 하면 updateTime 조건으로 한쪽만 성공). 놓을 때는 내가 잡은 것만 지운다.
+// 반환: 'acquired'(잡음) | 'timeout'(waitMs 안에 못 잡음) | 'error'(Firestore 접속 실패 — 호출부는 기존
+// 스크립트 잠금만으로 진행). 문서 필드: lockedAt(timestamp), holderId(string) — Cloud Run과 동일.
+function rawMaterialFsLockUrl_() {
+return 'https://firestore.googleapis.com/v1/projects/' + GCP_PROJECT_ID + '/databases/(default)/documents/writeLocks/rawMaterialMaster';
+}
+function acquireRawMaterialFsLock_(holderId, waitMs) {
+const STALE_MS = 30000, POLL_MS = 200;
+const docUrl = rawMaterialFsLockUrl_();
+const collUrl = docUrl.replace(/\/rawMaterialMaster$/, '');
+const deadline = new Date().getTime() + waitMs;
+try {
+for (;;) {
+const token = ScriptApp.getOAuthToken();
+const headers = { Authorization: 'Bearer ' + token };
+const body = JSON.stringify({ fields: { lockedAt: { timestampValue: new Date().toISOString() }, holderId: { stringValue: holderId } } });
+// 1) 문서가 없으면 새로 만들어서 잡는다(이미 있으면 409)
+const created = UrlFetchApp.fetch(collUrl + '?documentId=rawMaterialMaster', { method: 'post', contentType: 'application/json', headers: headers, payload: body, muteHttpExceptions: true });
+const cCode = created.getResponseCode();
+if (cCode === 200) return 'acquired';
+if (cCode !== 409) { console.error('acquireRawMaterialFsLock_ 생성 실패 HTTP ' + cCode + ': ' + created.getContentText().slice(0, 200)); return 'error'; }
+// 2) 이미 있으면 30초 지난 죽은 잠금인지 보고, 그렇다면 updateTime 조건부로 빼앗는다
+const got = UrlFetchApp.fetch(docUrl, { headers: headers, muteHttpExceptions: true });
+const gCode = got.getResponseCode();
+if (gCode === 200) {
+const doc = JSON.parse(got.getContentText());
+const lockedAtStr = doc.fields && doc.fields.lockedAt && doc.fields.lockedAt.timestampValue;
+const lockedAtMs = lockedAtStr ? new Date(lockedAtStr).getTime() : 0;
+if (new Date().getTime() - lockedAtMs >= STALE_MS) {
+const patchUrl = docUrl + '?currentDocument.updateTime=' + encodeURIComponent(doc.updateTime) + '&updateMask.fieldPaths=lockedAt&updateMask.fieldPaths=holderId';
+const patched = UrlFetchApp.fetch(patchUrl, { method: 'patch', contentType: 'application/json', headers: headers, payload: body, muteHttpExceptions: true });
+if (patched.getResponseCode() === 200) return 'acquired';
+// 다른 쪽이 먼저 빼앗음(조건 불일치) → 아래에서 다시 시도
+}
+} else if (gCode !== 404) { // 404 = 그 사이 풀림 → 바로 다시 시도
+console.error('acquireRawMaterialFsLock_ 조회 실패 HTTP ' + gCode);
+return 'error';
+}
+if (new Date().getTime() >= deadline) return 'timeout';
+Utilities.sleep(POLL_MS);
+}
+} catch (e) {
+console.error('acquireRawMaterialFsLock_ 예외: ' + e);
+return 'error';
+}
+}
+// 단계 2 배포 직후 1회 확인용(편집기에서 이 함수를 골라 ▶실행): Apps Script 계정으로 공용 잠금을 실제로
+// 잡고 놓을 수 있는지 본다. 실행 기록에 'stage2CheckFsLock: acquired → released'가 나오면 정상.
+// 'error'가 나오면 Firestore 쓰기 권한이 없는 것이므로, 추천은 예전처럼 스크립트 잠금만으로 동작한다.
+function stage2CheckFsLock() {
+const holder = 'stage2-check-' + Utilities.getUuid();
+const r = acquireRawMaterialFsLock_(holder, 5000);
+if (r === 'acquired') releaseRawMaterialFsLock_(holder);
+console.log('stage2CheckFsLock: ' + r + (r === 'acquired' ? ' → released' : ''));
+return r;
+}
+function releaseRawMaterialFsLock_(holderId) {
+try {
+const docUrl = rawMaterialFsLockUrl_();
+const headers = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+const got = UrlFetchApp.fetch(docUrl, { headers: headers, muteHttpExceptions: true });
+if (got.getResponseCode() !== 200) return;
+const doc = JSON.parse(got.getContentText());
+const holder = doc.fields && doc.fields.holderId && doc.fields.holderId.stringValue;
+if (holder !== holderId) return; // 이미 다른 쪽이 빼앗은 잠금은 건드리지 않는다
+UrlFetchApp.fetch(docUrl + '?currentDocument.updateTime=' + encodeURIComponent(doc.updateTime), { method: 'delete', headers: headers, muteHttpExceptions: true });
+} catch (e) {
+console.error('releaseRawMaterialFsLock_ 실패(무시, 30초 뒤 죽은 잠금으로 자동 회수): ' + e);
+}
 }
 
 function installOnEditTrigger() {
@@ -3679,7 +3803,7 @@ const itemName = body.itemName;
 if (!itemName) {
 return jsonResponse_({ ok: false, error: 'MISSING_FIELDS' });
 }
-const result = suggestRawMaterials(itemName);
+const result = suggestRawMaterials(itemName, 'app');
 if (!result) {
 return jsonResponse_({ ok: false, error: 'AI_SUGGEST_FAILED' });
 }
@@ -4319,9 +4443,12 @@ if (!sheet.getRange(rowNum, 4).getValue()) autofillManagerFromCustomer_(sheet, r
 
 const fCell = sheet.getRange(rowNum, 6);
 if (!fCell.getValue()) {
-const aiResult = suggestRawMaterials(c);
+const aiResult = suggestRawMaterials(c, 'sweep');
 if (aiResult && aiResult.korean && aiResult.korean.length) {
 fCell.setValue(aiResult.korean.join(', '));
+// 2026-10-14 (단계 2, 설계 2-5 I열 규칙 v2 — "모든 자동 F 쓰기에서 I 갱신"): 15분 점검이 F를 채울 때도 I를 찍는다.
+sheet.getRange(rowNum, 9).setValue(new Date());
+sheet.getRange(rowNum, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 }
 }
 
