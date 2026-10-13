@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 신규 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-12 AI 원자재 추천 Cloud Run 이전 단계 1)
+// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-13 AI 대기 방식 수정: 1회 40초·전체 45초·재시도는 남은 10초 이상일 때만·요청 전체 50초)
 // cloud-run/mro-functions/lib/materialSuggest.js
 //
 // AI 원자재 추천 엔진 (MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md 2-0·2-1·2-4·2-7·3-2·3-4).
@@ -33,8 +33,24 @@ const SETTING_KEYS = {
   aiTimeoutSec: '원자재추천AI대기초',
   aiAttempts: '원자재추천AI시도횟수'
 };
-const DEFAULTS = { aiTimeoutSec: 20, aiAttempts: 2 };
-const LIMITS = { aiTimeoutSec: [5, 20], aiAttempts: [1, 2] }; // 앱 대기 60초 안에 끝나도록 상한을 둔다(20초×2 + 잠금 10초 + 시트 읽기·쓰기)
+const DEFAULTS = { aiTimeoutSec: 40, aiAttempts: 2 };
+const LIMITS = { aiTimeoutSec: [10, 45], aiAttempts: [1, 2] };
+
+// ── 시간 예산 (2026-10-13 실측 반영: DeepSeek 응답 12~17초, 20초 초과 1건) ──
+// 아래 4개는 설정값이 아니라 코드 상수다. 앱(feed.html)의 60초 대기와 맞물려 있어서, 설정 화면에서
+// 바꾸면 앱이 먼저 포기하는 문제가 다시 생길 수 있기 때문이다.
+//   REQUEST_BUDGET_MS : 요청 1건 전체(로그인 확인~시트 쓰기)를 이 안에 끝낸다. index.js가 요청 시작
+//                       시각 + 이 값을 deadlineMs로 넘긴다. 앱 대기 60초 - 50초 = 10초는 Cloud Run 시동·
+//                       네트워크 여유.
+//   AI_TOTAL_BUDGET_MS: AI 호출(1·2차 합계)은 첫 호출 시작부터 이 안에 끝낸다.
+//   AI_RETRY_MIN_MS   : 2차 호출은 AI 예산이 이만큼 이상 남았을 때만 한다. 느려서 끊긴 경우(40초)엔
+//                       남은 시간이 5초뿐이라 다시 부르지 않고, 빨리 실패한 경우(서버 오류·형식 오류)만
+//                       다시 부른다.
+//   WRITE_RESERVE_MS  : AI가 끝난 뒤 잠금·시트 쓰기·사후 검증에 남겨 두는 최소 시간.
+const REQUEST_BUDGET_MS = 50000;
+const AI_TOTAL_BUDGET_MS = 45000;
+const AI_RETRY_MIN_MS = 10000;
+const WRITE_RESERVE_MS = 4000;
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash'; // Code.gs callDeepSeek_와 동일
@@ -236,29 +252,48 @@ function rmCode(n) { return 'RM' + String(n).padStart(3, '0'); }
 
 // deps = {
 //   io: makeSheetsIO(...) 결과,
-//   lock: { acquire: async () => boolean, release: async () => void },
+//   lock: { acquire: async (waitMs) => boolean, release: async () => void },
 //   ai: async (prompt, timeoutMs) => { text, httpStatus, ms, error },
 //   now: () => ms
 // }
-// opts = readOptions(settings) 결과
+// opts = readOptions(settings) 결과 + deadlineMs(요청 마감 시각, index.js가 요청 시작 + REQUEST_BUDGET_MS로 넣음)
 // log  = 호출부가 넘긴 로그 객체(이 함수가 필드를 채운다)
 // 반환: { ok:true, materials:[...] } | { ok:false, error:'AI_FAILED'|'LOCK_TIMEOUT' }
+// AI 시도 계획(시간 예산). 순수 계산이라 시험에서 그대로 확인한다.
+//   aiDeadline = min(AI 첫 호출 시작 + 45초, 요청 마감 - 쓰기 여유 4초)
+//   n번째 시도 직전: remaining = aiDeadline - 지금
+//     - remaining <= 0                          → 시도하지 않음(예산 소진)
+//     - 2차 이상이고 remaining < 10초           → 시도하지 않음(느린 실패 뒤 재시도 금지)
+//     - 그 외: 이번 시도 대기 = min(설정 1회 대기, remaining)  → 예산을 절대 넘지 않음
+function planAttempt(nowMs, aiDeadlineMs, attemptIndex, aiTimeoutSec) {
+  const remaining = aiDeadlineMs - nowMs;
+  if (remaining <= 0) return { go: false, why: 'AI_BUDGET_USED', remaining: remaining };
+  if (attemptIndex > 0 && remaining < AI_RETRY_MIN_MS) return { go: false, why: 'RETRY_SKIPPED_LOW_TIME', remaining: remaining };
+  return { go: true, timeoutMs: Math.min(aiTimeoutSec * 1000, remaining), remaining: remaining };
+}
+
 async function suggestForItemName(deps, itemName, opts, log) {
   log = log || {};
   log.attempts = [];
+  const deadlineMs = opts.deadlineMs || (deps.now() + REQUEST_BUDGET_MS);
 
   // 1) 프롬프트용 목록 (잠금 밖, Code.gs와 같은 순서)
   const initialRows = await deps.io.readRawRows();
   const prompt = buildPrompt(initialRows, itemName);
 
-  // 2) AI 최대 N회
+  // 2) AI 최대 N회 — 시간 예산 안에서만(planAttempt)
+  const aiStart = deps.now();
+  const aiDeadline = Math.min(aiStart + AI_TOTAL_BUDGET_MS, deadlineMs - WRITE_RESERVE_MS);
   let parsed = null;
   for (let attempt = 0; attempt < opts.aiAttempts && !parsed; attempt++) {
-    const r = await deps.ai(prompt, opts.aiTimeoutSec * 1000);
+    const plan = planAttempt(deps.now(), aiDeadline, attempt, opts.aiTimeoutSec);
+    if (!plan.go) { log.aiStop = plan.why; break; }
+    const r = await deps.ai(prompt, plan.timeoutMs);
     const p = parseAIText(r.text);
-    log.attempts.push({ aiMs: r.ms, httpStatus: r.httpStatus, parseOk: !!p, error: r.error || (p ? null : (r.text ? 'PARSE' : null)) });
+    log.attempts.push({ aiMs: r.ms, timeoutMs: plan.timeoutMs, httpStatus: r.httpStatus, parseOk: !!p, error: r.error || (p ? null : (r.text ? 'PARSE' : null)) });
     if (p) parsed = p;
   }
+  log.aiTotalMs = deps.now() - aiStart;
   if (!parsed) return { ok: false, error: 'AI_FAILED' };
 
   // AI가 korean 없는 항목을 주면 건너뛴다(Code.gs는 undefined를 그대로 넣었음 — 차이 기록).
@@ -266,8 +301,11 @@ async function suggestForItemName(deps, itemName, opts, log) {
   if (materials.length === 0) { log.attempts.push({ error: 'NO_KOREAN' }); return { ok: false, error: 'AI_FAILED' }; }
 
   // 3) 원자재마스터 잠금
+  // 잠금 대기: 기본 10초지만 요청 마감까지 남은 시간(쓰기용 3초 제외)을 넘지 않게 줄인다(최소 1초).
   const l0 = deps.now();
-  const gotLock = await deps.lock.acquire();
+  const lockWaitMs = Math.max(1000, Math.min(RAW_LOCK_OPTS.waitMs, deadlineMs - l0 - 3000));
+  log.lockWaitMs = lockWaitMs;
+  const gotLock = await deps.lock.acquire(lockWaitMs);
   log.lockMs = deps.now() - l0;
   if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
 
@@ -350,6 +388,7 @@ async function suggestForItemName(deps, itemName, opts, log) {
 
 module.exports = {
   RAW_SHEET_NAME, RAW_LOCK_NAME, RAW_LOCK_OPTS, PROMPT_TEMPLATE_SHA256, SETTING_KEYS, DEFAULTS, LIMITS,
+  REQUEST_BUDGET_MS, AI_TOTAL_BUDGET_MS, AI_RETRY_MIN_MS, WRITE_RESERVE_MS, planAttempt,
   promptTemplate_, buildPrompt, parseAIText, readOptions,
   callDeepSeek, makeAiCaller, makeSheetsIO, msToSheetSerial,
   normalizeName, nextRmNumber, rmCode,
