@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-12 AI 원자재 추천 suggestMaterialsTest 추가(단계 1, mode=app) — 기존 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-13 suggestMaterialsTest 시간 예산(요청 50초) 연결 — 기존 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3402,7 +3402,8 @@ function suggestDeps_(writeClient) {
   return {
     io: materialSuggest.makeSheetsIO(writeClient, SPREADSHEET_ID),
     lock: {
-      acquire: function () { return acquireLock(firestore, materialSuggest.RAW_LOCK_NAME, holderId, materialSuggest.RAW_LOCK_OPTS); },
+      // waitMs: 엔진이 요청 마감에 맞춰 줄인 잠금 대기(최대 10초)
+      acquire: function (waitMs) { return acquireLock(firestore, materialSuggest.RAW_LOCK_NAME, holderId, Object.assign({}, materialSuggest.RAW_LOCK_OPTS, { waitMs: waitMs || materialSuggest.RAW_LOCK_OPTS.waitMs })); },
       release: function () { return releaseLock(firestore, materialSuggest.RAW_LOCK_NAME, holderId); }
     },
     ai: materialSuggest.makeAiCaller(process.env.AI_PROVIDER || 'DEEPSEEK', fetch, process.env),
@@ -3453,6 +3454,8 @@ exports.suggestMaterialsTest = async (req, res) => {
     }
 
     const opts = materialSuggest.readOptions(settings);
+    // 2026-10-13: 요청 전체 마감 = 요청 시작 + 50초(앱 60초 대기 안에 응답하기 위함, lib 주석 참고)
+    opts.deadlineMs = t0 + materialSuggest.REQUEST_BUDGET_MS;
     log.aiTimeoutSec = opts.aiTimeoutSec;
     log.aiAttempts = opts.aiAttempts;
 
