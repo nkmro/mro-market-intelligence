@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-08 회원가입·비밀번호 찾기 authCodeTest 추가 — 기존 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-12 AI 원자재 추천 suggestMaterialsTest 추가(단계 1, mode=app) — 기존 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3371,6 +3371,112 @@ exports.authCodeTest = async (req, res) => {
     res.status(200).json(Object.assign({ serverMs: Date.now() - t0 }, result));
   } catch (err) {
     console.error('[authCode] ' + JSON.stringify({ action: action, email: email, ok: false, error: 'SERVER_ERROR', detail: String((err && err.message) || err).slice(0, 300), ms: Date.now() - t0 }));
+    res.status(500).json({ ok: false, error: 'SERVER_ERROR', serverMs: Date.now() - t0 });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-10-12: AI 원자재 추천 Cloud Run 이전 — 단계 1(mode=app)
+// (MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md 2-0·2-1·3-1·3-4, 재홍님 승인 설계)
+//
+// 앱의 "✨ AI 추천 다시 받기"(feed.html suggestMaterialsForForm)가 부르는 함수. Code.gs
+// handleSuggestMaterials_(팀장만) + suggestRawMaterials를 포팅했다. 추천 + 원자재마스터 추가만
+// 하고 품목마스터 F열은 쓰지 않는다(저장은 기존 upsertItemTest가 하며 그때 I열도 찍힌다).
+//   - mode=sheet(시트 편집 프록시)·mode=sweep(15분 점검)은 단계 3·4에서 이 함수에 추가한다.
+//     지금은 UNSUPPORTED_MODE로 거절한다.
+//   - AI 키는 Secret ai-deepseek-api-key → 환경변수 DEEPSEEK_API_KEY(배포 시 --set-secrets).
+//   - 오류 코드: FORBIDDEN, MISSING_FIELDS, AI_FAILED(쓰기 전 실패), LOCK_TIMEOUT,
+//     SERVER_ERROR(500). 화면은 AI_FAILED·LOCK_TIMEOUT·5xx·연결 실패일 때만 Apps Script로 넘긴다.
+//   - 로그: 요청마다 [suggest] {JSON} 1줄. AI 키·프롬프트 전문·AI 응답 전문은 남기지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+const materialSuggest = require('./lib/materialSuggest');
+
+// 최소 권한 원칙(다른 쓰기 함수와 동일): 이 함수 안에서만 쓰기 스코프 클라이언트를 만든다.
+async function getRawMaterialWriteClient_() {
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  return auth.getClient();
+}
+
+function suggestDeps_(writeClient) {
+  const holderId = crypto.randomUUID();
+  return {
+    io: materialSuggest.makeSheetsIO(writeClient, SPREADSHEET_ID),
+    lock: {
+      acquire: function () { return acquireLock(firestore, materialSuggest.RAW_LOCK_NAME, holderId, materialSuggest.RAW_LOCK_OPTS); },
+      release: function () { return releaseLock(firestore, materialSuggest.RAW_LOCK_NAME, holderId); }
+    },
+    ai: materialSuggest.makeAiCaller(process.env.AI_PROVIDER || 'DEEPSEEK', fetch, process.env),
+    now: function () { return Date.now(); }
+  };
+}
+
+exports.suggestMaterialsTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  const body = req.body || {};
+  const mode = String(body.mode || 'app');
+  const itemName = body.itemName;
+  const log = {
+    mode: mode, source: 'cloud-run',
+    itemName: String(itemName === undefined || itemName === null ? '' : itemName).slice(0, 100),
+    provider: String(process.env.AI_PROVIDER || 'DEEPSEEK').toUpperCase()
+  };
+  try {
+    if (mode !== 'app') {
+      log.error = 'UNSUPPORTED_MODE';
+      console.log('[suggest] ' + JSON.stringify(log));
+      res.status(400).json({ ok: false, error: 'UNSUPPORTED_MODE', serverMs: Date.now() - t0 });
+      return;
+    }
+    const auth = await authenticateSession(firestore, body.sessionToken);
+    if (!auth.ok) {
+      log.error = auth.error;
+      console.log('[suggest] ' + JSON.stringify(log));
+      res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth));
+      return;
+    }
+    log.email = auth.email;
+
+    const client = await getSheetsClient();
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE, POLL_SETTINGS_RANGE], { unformatted: true });
+    const allUsers = rowsToUsers((valueRanges[0] && valueRanges[0].values) || []);
+    const settings = parseSettings((valueRanges[1] && valueRanges[1].values) || []);
+    const viewer = allUsers.find(function (u) {
+      return String(u.email || '').trim().toLowerCase() === String(auth.email).trim().toLowerCase();
+    });
+    if (!viewer) {
+      log.error = 'USER_NOT_FOUND';
+      console.log('[suggest] ' + JSON.stringify(log));
+      res.status(200).json({ ok: false, error: 'USER_NOT_FOUND', serverMs: Date.now() - t0 });
+      return;
+    }
+
+    const opts = materialSuggest.readOptions(settings);
+    log.aiTimeoutSec = opts.aiTimeoutSec;
+    log.aiAttempts = opts.aiAttempts;
+
+    // 같은 요청 번호로 다시 와도 AI·원자재마스터 추가를 두 번 하지 않는다(설계 2-1)
+    const idemKey = body.idempotencyKey ? 'suggest_' + body.idempotencyKey : null;
+    const result = await withIdempotency(firestore, idemKey, 'suggestMaterials', async function () {
+      // Code.gs handleSuggestMaterials_와 같은 순서: 역할 → 품목명
+      if (viewer.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
+      if (!itemName) return { ok: false, error: 'MISSING_FIELDS' };
+      const writeClient = await getRawMaterialWriteClient_();
+      return materialSuggest.suggestForItemName(suggestDeps_(writeClient), String(itemName), opts, log);
+    });
+
+    log.ok = !!result.ok;
+    if (!result.ok) log.error = result.error;
+    log.totalMs = Date.now() - t0;
+    console.log('[suggest] ' + JSON.stringify(log));
+    res.status(200).json(Object.assign({ serverMs: Date.now() - t0 }, result));
+  } catch (err) {
+    log.ok = false;
+    log.error = 'SERVER_ERROR';
+    log.detail = String((err && err.message) || err).slice(0, 300);
+    log.totalMs = Date.now() - t0;
+    console.error('[suggest] ' + JSON.stringify(log));
     res.status(500).json({ ok: false, error: 'SERVER_ERROR', serverMs: Date.now() - t0 });
   }
 };
