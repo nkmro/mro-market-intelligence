@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-14 AI 원자재 추천 단계 2: suggestRawMaterials 동결·원자재마스터 공용 잠금(Firestore)·[suggest] 로그·자동 F 채우기 I열 규칙 v2)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-14 AI 원자재 추천 단계 3: 시트 편집 F 추천을 Cloud Run 1회 호출로(②-a·②-b 합침, AI 2회 호출 제거)·스위치 SUGGEST_PROXY_URL·동결본 폴백)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -741,6 +741,14 @@ return;
 }
 
 if (sheetName !== '품목마스터') return;
+// 2026-10-14 (단계 3, 설계 2-2): F(원자재) 추천 방식.
+//  - 스위치 켜짐(스크립트 속성 SUGGEST_PROXY_URL·SUGGEST_PROXY_TOKEN 둘 다 있음): F가 필요한 행을 모아 맨 끝에서
+//    dispatchSheetSuggest_가 Cloud Run에 "1번" 보낸다. 같은 행이 ②-a(빈 F)와 ②-b(C 직접 수정)에 둘 다 해당하면
+//    하나로 합쳐 AI는 1번만 불린다(부록 D-3 문제 해결). F·I 쓰기는 Cloud Run이 한다.
+//  - 스위치 꺼짐: 아래 applyFrozenFill_/applyFrozenEdit_가 단계 2와 같은 자리·같은 순서로 동결본을 부른다(동작 동일).
+const sgProxy = sheetSuggestProxyConfig_();
+const sgFill = [];   // ②-a: A·B·C 있고 F 빈 행
+let sgEdit = null;   // ②-b: C열 편집 1건
 const startRow2 = Math.max(2, row);
 const endRow2 = e.range.getLastRow();
 for (let r2 = startRow2; r2 <= endRow2; r2++) {
@@ -753,14 +761,8 @@ const dCell2 = sheet.getRange(r2, 4);
 if (!dCell2.getValue()) autofillManagerFromCustomer_(sheet, r2);
 const fCell2 = sheet.getRange(r2, 6);
 if (!fCell2.getValue()) {
-const aiResult2 = suggestRawMaterials(c2, 'sheet_fill');
-if (aiResult2 && aiResult2.korean && aiResult2.korean.length) {
-fCell2.setValue(aiResult2.korean.join(', '));
-// 2026-10-14 (단계 2, 설계 2-5 I열 규칙 v2): 빈 F를 자동으로 채운 것도 "원자재 변경"이므로 I열을 찍는다.
-// (이전엔 I를 안 찍어 기준선이 H(등록일)로 남아, 과거 뉴스가 이 품목에 소급 노출될 수 있었다.)
-sheet.getRange(r2, 9).setValue(new Date());
-sheet.getRange(r2, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-}
+if (sgProxy) sgFill.push({ itemId: String(a2).trim(), rowNumber: r2, itemName: String(c2).trim() });
+else applyFrozenFill_(sheet, r2, c2);
 }
 const gCell2 = sheet.getRange(r2, 7);
 if (!gCell2.getValue()) gCell2.setValue('활성');
@@ -774,12 +776,12 @@ console.error('ensureItemRowComplete row ' + r2 + ' error: ' + rowErr2);
 }
 }
 
-if (col === 2) { autofillManagerFromCustomer_(sheet, row); return; } // B열(고객사) 선택 시 D/E 연쇄 자동입력 (신규 행용)
-
+if (col === 2) {
+autofillManagerFromCustomer_(sheet, row); // B열(고객사) 선택 시 D/E 연쇄 자동입력 (신규 행용)
+} else if (col === 6) {
 // 시트에서 F열(주요원자재)을 사람이 직접 타이핑해 수정한 경우도 태그 변경으로 간주해
 // I열(원자재수정일)을 갱신한다. 단일 셀 편집이고 이전 값(e.oldValue)을 알 수 있는 경우만
 // 처리 - 여러 셀 붙여넣기 등은 대상에서 제외한다 (2026-09-23).
-if (col === 6) {
 const isSingleCellEditF = e.range.getNumRows() === 1 && e.range.getNumColumns() === 1;
 if (isSingleCellEditF && typeof e.oldValue !== 'undefined') {
 const newF = e.range.getValue();
@@ -788,26 +790,53 @@ sheet.getRange(row, 9).setValue(new Date());
 sheet.getRange(row, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 }
 }
-return;
-}
-
-if (col !== 3) return; // C열(품목명)만 반응
-
+} else if (col === 3) { // C열(품목명)
 // v19: 단일 셀(1x1) 편집인지 판별 - 붙여넣기(여러 행/열 동시 편집)와 구분해서 처리
 const isSingleCellEdit = e.range.getNumRows() === 1 && e.range.getNumColumns() === 1;
-
 const itemName = sheet.getRange(row, 3).getValue();
-if (!itemName) return;
-
 // F열(주요원자재 한글)에 이미 값이 있으면 건드리지 않음 - 수동 입력 우선 원칙
 // 단, 사람이 단일 셀을 직접 수정(확정)한 경우엔 F값 유무와 무관하게 무조건 재추천한다.
 // (품목명을 잘못 입력했다가 고친 경우 F가 옛 값으로 남는 문제 방지 - 붙여넣기 경로는 기존대로 F가 비어있을 때만 채움)
-const existingF = sheet.getRange(row, 6).getValue();
-if (existingF !== '' && !isSingleCellEdit) return;
+const existingF = itemName ? sheet.getRange(row, 6).getValue() : '';
+if (itemName && (existingF === '' || isSingleCellEdit)) {
+if (sgProxy) sgEdit = { rowNumber: row, itemName: String(itemName).trim(), isSingleCellEdit: isSingleCellEdit };
+else applyFrozenEdit_(sheet, row, itemName, existingF);
+}
+}
 
+if (sgProxy) dispatchSheetSuggest_(sheet, sgProxy, sgFill, sgEdit);
+} catch (err) {
+// 실패해도 시트 편집 자체는 막지 않음
+console.error('onEditInstallable error: ' + err);
+}
+
+}
+// ===================== 2026-10-14 단계 3: 시트 편집 F 추천 — Cloud Run 프록시 + 동결본 폴백 =====================
+// 스위치: 스크립트 속성 SUGGEST_PROXY_URL(Cloud Run 주소)·SUGGEST_PROXY_TOKEN(Secret material-suggest-proxy-token과 같은 값).
+// 둘 중 하나라도 비어 있으면 null → onEditInstallable이 단계 2와 똑같이 동결본을 부른다(되돌리기 = URL 값 지우기).
+// ※ 이 아래 함수들은 onEditInstallable(시트 편집 트리거)에서만 불린다. 웹앱 doPost는 부르지 않는다.
+const SHEET_PROXY_NO_FALLBACK_AFTER_MS = 30000; // 요청 후 30초 넘어 받은 실패는 동결본으로 넘기지 않음(앱 feed.html과 같은 규칙)
+const STAGE3_PROXY_CHECK_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/suggestMaterialsTest';
+function sheetSuggestProxyConfig_() {
+const props = PropertiesService.getScriptProperties();
+const url = String(props.getProperty('SUGGEST_PROXY_URL') || '').trim();
+const token = String(props.getProperty('SUGGEST_PROXY_TOKEN') || '').trim();
+return (url && token) ? { url: url, token: token } : null;
+}
+// 단계 2의 ②-a F 채우기 코드 그대로(자리만 함수로 옮김)
+function applyFrozenFill_(sheet, r2, c2) {
+const aiResult2 = suggestRawMaterials(c2, 'sheet_fill');
+if (aiResult2 && aiResult2.korean && aiResult2.korean.length) {
+sheet.getRange(r2, 6).setValue(aiResult2.korean.join(', '));
+// 2026-10-14 (단계 2, 설계 2-5 I열 규칙 v2): 빈 F를 자동으로 채운 것도 "원자재 변경"이므로 I열을 찍는다.
+sheet.getRange(r2, 9).setValue(new Date());
+sheet.getRange(r2, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+}
+}
+// 단계 2의 ②-b 품목명 수정 재추천 코드 그대로(자리만 함수로 옮김)
+function applyFrozenEdit_(sheet, row, itemName, existingF) {
 const result = suggestRawMaterials(itemName, 'sheet_edit');
 if (!result) return;
-
 const newMaterials2 = result.korean.join(', ');
 const materialsChanged2 = normalizeMaterialsForCompare_(existingF) !== normalizeMaterialsForCompare_(newMaterials2);
 sheet.getRange(row, 6).setValue(newMaterials2);
@@ -815,11 +844,93 @@ if (materialsChanged2) {
 sheet.getRange(row, 9).setValue(new Date());
 sheet.getRange(row, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 }
-} catch (err) {
-// 실패해도 시트 편집 자체는 막지 않음
-console.error('onEditInstallable error: ' + err);
 }
-
+// 모은 행을 하나로 합쳐 Cloud Run에 1번 보낸다. 실패하면(빠른 실패만) 그 행들을 동결본으로 처리.
+function dispatchSheetSuggest_(sheet, proxy, sgFill, sgEdit) {
+const rows = [];
+const byRow = {};
+sgFill.forEach(function (f) {
+const r = { itemId: f.itemId, rowNumber: f.rowNumber, itemName: f.itemName, reason: 'fill_empty' };
+byRow[f.rowNumber] = r;
+rows.push(r);
+});
+if (sgEdit) {
+const reason = sgEdit.isSingleCellEdit ? 'single_edit' : 'fill_empty';
+const same = byRow[sgEdit.rowNumber];
+if (same) { // ②-a와 ②-b가 같은 행 → 1건으로 합침(사람이 직접 고친 것이면 single_edit)
+if (reason === 'single_edit') same.reason = 'single_edit';
+same.itemName = sgEdit.itemName;
+} else {
+rows.push({ itemId: String(sheet.getRange(sgEdit.rowNumber, 1).getValue()).trim(), rowNumber: sgEdit.rowNumber, itemName: sgEdit.itemName, reason: reason });
+}
+}
+if (rows.length === 0) return;
+const t0 = new Date().getTime();
+const pLog = { rows: rows.map(function (r) { return r.rowNumber + ':' + r.reason; }) };
+let results = null, failReason = null;
+try {
+const resp = UrlFetchApp.fetch(proxy.url, {
+method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+headers: { 'X-Suggest-Proxy-Token': proxy.token },
+payload: JSON.stringify({ mode: 'sheet', rows: rows })
+});
+const code = resp.getResponseCode();
+pLog.http = code;
+let json = null;
+try { json = JSON.parse(resp.getContentText()); } catch (parseErr) { json = null; }
+if (code === 200 && json && json.ok === true && Array.isArray(json.results)) results = json.results;
+else failReason = 'http=' + code + (json ? (json.error ? ' ' + json.error : '') : ' non-json');
+} catch (fetchErr) {
+failReason = 'fetch: ' + String(fetchErr).slice(0, 150); // 연결 실패·대기 초과
+}
+const waited = new Date().getTime() - t0;
+pLog.waitedMs = waited;
+let fallbackRows = [];
+if (failReason) {
+pLog.error = failReason;
+if (waited < SHEET_PROXY_NO_FALLBACK_AFTER_MS) fallbackRows = rows;
+else pLog.noFallback = 'slow'; // Cloud Run이 이미 일부 썼을 수 있음 → F가 비어 있으면 15분 점검이 채움
+} else {
+pLog.results = results.map(function (r) { return r.rowNumber + ':' + r.status + (r.why ? '(' + r.why + ')' : ''); });
+// 행 단위로는 원자재마스터 잠금 대기 초과(lock_timeout)만, 그리고 빨리 끝났을 때만 동결본으로 넘긴다.
+if (waited < SHEET_PROXY_NO_FALLBACK_AFTER_MS) {
+fallbackRows = rows.filter(function (row) {
+return results.some(function (r) { return r.rowNumber === row.rowNumber && r.status === 'lock_timeout'; });
+});
+}
+}
+pLog.fallback = fallbackRows.map(function (r) { return r.rowNumber; });
+console.log('[suggest-proxy] ' + JSON.stringify(pLog));
+fallbackRows.forEach(function (row) {
+try {
+if (row.reason === 'single_edit') {
+applyFrozenEdit_(sheet, row.rowNumber, row.itemName, sheet.getRange(row.rowNumber, 6).getValue());
+} else if (!sheet.getRange(row.rowNumber, 6).getValue()) {
+applyFrozenFill_(sheet, row.rowNumber, row.itemName);
+}
+} catch (fbErr) {
+console.error('dispatchSheetSuggest_ 폴백 row ' + row.rowNumber + ' error: ' + fbErr);
+}
+});
+}
+// 단계 3 연결 확인용(편집기에서 이 함수를 골라 ▶실행): 비밀값이 Cloud Run과 맞는지만 본다(행 0개 요청 → AI·시트 쓰기 없음).
+// 기록에 'stage3CheckProxy: 인증 OK (HTTP 200)'가 나오면 정상. 비밀값 자체는 출력하지 않는다(길이만).
+function stage3CheckProxy() {
+const props = PropertiesService.getScriptProperties();
+const switchUrl = String(props.getProperty('SUGGEST_PROXY_URL') || '').trim();
+const token = String(props.getProperty('SUGGEST_PROXY_TOKEN') || '').trim();
+if (!token) { console.log('stage3CheckProxy: SUGGEST_PROXY_TOKEN 없음'); return 'no_token'; }
+const resp = UrlFetchApp.fetch(switchUrl || STAGE3_PROXY_CHECK_URL, {
+method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+headers: { 'X-Suggest-Proxy-Token': token },
+payload: JSON.stringify({ mode: 'sheet', rows: [] })
+});
+const code = resp.getResponseCode();
+let json = null;
+try { json = JSON.parse(resp.getContentText()); } catch (parseErr) { json = null; }
+const ok = code === 200 && json && json.ok === true;
+console.log('stage3CheckProxy: ' + (ok ? '인증 OK' : '실패') + ' (HTTP ' + code + (json && json.error ? ', ' + json.error : '') + ') · 비밀값 길이 ' + token.length + ' · 스위치 SUGGEST_PROXY_URL ' + (switchUrl ? '켜짐' : '꺼짐'));
+return ok ? 'ok' : 'fail';
 }
 // ===================== 담당소장/팀 자동입력 (고객사 → 소장 → 팀 연쇄) =====================
 
