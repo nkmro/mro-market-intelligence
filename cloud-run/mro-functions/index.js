@@ -3156,8 +3156,8 @@ exports.unpinCommentTest = async (req, res) => {
 
 // ===== [2026-10-07 신규] 이슈 댓글 메일 (설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4) =====
 // Cloud Scheduler가 매시 정각에 호출(비공개 배포 + OIDC 토큰). 설정 '이슈댓글메일발송시각'(기본 17시)이
-// 지난 첫 실행에서 하루 한 번, "오늘 고정된 이슈 댓글"을 고정한 사람 기준(팀장→그 팀 담당·일반,
-// 임원→전사)으로 회사 메일 서버(lib/mailer.js)를 통해 jhjoo@nkmro.com 명의로 발송한다.
+// 지난 첫 실행에서 하루 한 번, "오늘 고정된 이슈 댓글"을 고정한 사람 기준(팀장→그 팀 담당·일반 + 그 팀장 본인 +
+// 임원 전원(2026-10-14 변경), 임원→전사)으로 회사 메일 서버(lib/mailer.js)를 통해 jhjoo@nkmro.com 명의로 발송한다.
 // - 기존 함수/시트/컬렉션은 읽기만 한다. 새로 쓰는 곳: Firestore issueMailRuns, issueMailDeliveries.
 // - 끄기: 설정 '이슈댓글메일사용' = FALSE (또는 Scheduler 작업 일시중지).
 // - 시험: 설정 '이슈댓글메일테스트수신자'에 주소를 넣으면 그 주소 한 곳에만 보낸다.
