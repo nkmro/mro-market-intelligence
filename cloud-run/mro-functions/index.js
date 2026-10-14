@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-13 suggestMaterialsTest 시간 예산(요청 50초) 연결 — 기존 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 suggestMaterialsTest에 mode=sheet(시트 편집 경로, 단계 3) 추가 — mode=app·다른 함수 변경 없음)
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3411,6 +3411,148 @@ function suggestDeps_(writeClient) {
   };
 }
 
+// ═════════════ 2026-10-14 단계 3: 시트 편집 경로 mode=sheet (설계 2-2·2-5·2-6, 단계 3 계획서) ═════════════
+// 호출자: Apps Script onEditInstallable → dispatchSheetSuggest_ (헤더 X-Suggest-Proxy-Token)
+// 요청: { mode:'sheet', rows:[{ itemId(A열, 없으면 ''), rowNumber, itemName(C열), reason:'fill_empty'|'single_edit' }] }
+// 응답: { ok:true, results:[{ itemId, rowNumber, status, why?, materials? }] }
+//   status: written | stale(재확인에서 쓰지 않음) | busy(다른 처리 중) | ai_failed | lock_timeout(원자재마스터 잠금)
+//           | write_lock_timeout(품목 쓰기 잠금) | deferred(행 수·시간 한도 — 15분 점검이 채움) | error
+// 행마다 [suggest] 로그 1줄(reqId로 같은 요청끼리 묶임). AI 키·비밀값·프롬프트 전문은 남기지 않는다.
+const rowClaim = require('./lib/rowClaim');
+
+// 프록시 비밀값 비교. 길이가 달라도 비교 시간이 같도록 SHA-256끼리 timingSafeEqual.
+// 반환: 'ok' | 'not_configured'(이 함수에 Secret이 연결 안 됨) | 'bad'
+function checkProxyToken_(req) {
+  const expected = String(process.env.SUGGEST_PROXY_TOKEN || '');
+  if (!expected) return 'not_configured';
+  const got = String((req.headers && req.headers['x-suggest-proxy-token']) || '');
+  if (!got) return 'bad';
+  const a = crypto.createHash('sha256').update(got).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b) ? 'ok' : 'bad';
+}
+
+async function sheetSuggestAction_(req, res, t0) {
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const provider = String(process.env.AI_PROVIDER || 'DEEPSEEK').toUpperCase();
+  const tok = checkProxyToken_(req);
+  if (tok !== 'ok') {
+    const code = tok === 'not_configured' ? 503 : 401;
+    const error = tok === 'not_configured' ? 'PROXY_NOT_CONFIGURED' : 'UNAUTHORIZED';
+    console.log('[suggest] ' + JSON.stringify({ mode: 'sheet', source: 'cloud-run', reqId: reqId, ok: false, error: error, totalMs: Date.now() - t0 }));
+    res.status(code).json({ ok: false, error: error, serverMs: Date.now() - t0 });
+    return;
+  }
+  const body = req.body || {};
+  const norm = materialSuggest.normalizeSheetRows(body.rows);
+  if (norm.rows.length === 0) {
+    // 행 없음 = 연결 확인(Apps Script stage3CheckProxy)
+    console.log('[suggest] ' + JSON.stringify({ mode: 'sheet', source: 'cloud-run', reqId: reqId, rows: 0, invalid: norm.invalid.length, ok: true, totalMs: Date.now() - t0 }));
+    res.status(200).json({ ok: true, results: [], serverMs: Date.now() - t0 });
+    return;
+  }
+
+  const readClient = await getSheetsClient();
+  const vr = await batchGetValues(readClient, SPREADSHEET_ID, [POLL_SETTINGS_RANGE], { unformatted: true });
+  const opts = materialSuggest.readOptions(parseSettings((vr[0] && vr[0].values) || []));
+  const deadlineMs = t0 + materialSuggest.REQUEST_BUDGET_MS; // 앱과 같은 50초(Apps Script 대기 약 60초 안)
+  opts.deadlineMs = deadlineMs;
+  const writeClient = await getRawMaterialWriteClient_();
+  const ctx = { reqId: reqId, provider: provider, opts: opts, deadlineMs: deadlineMs, writeClient: writeClient,
+    itemIO: materialSuggest.makeItemSheetIO(writeClient, SPREADSHEET_ID) };
+
+  const work = norm.rows.slice(0, materialSuggest.SHEET_MAX_ROWS);
+  const over = norm.rows.slice(materialSuggest.SHEET_MAX_ROWS);
+  // [검증 포인트 2] 행마다 sheetRowProcess_가 따로 돈다: 행 처리권(문서 키 = 그 행), 원자재마스터 잠금 holder
+  // (suggestDeps_가 행마다 새 UUID) 모두 행별로 독립. 동시 실행은 최대 SHEET_CONCURRENCY(5)개.
+  const results = await materialSuggest.runPool(work, materialSuggest.SHEET_CONCURRENCY, function (row) {
+    return sheetRowProcess_(ctx, row).catch(function (err) {
+      const r = { itemId: row.itemId, rowNumber: row.rowNumber, status: 'error' };
+      console.error('[suggest] ' + JSON.stringify({ mode: 'sheet', source: 'cloud-run', reqId: reqId, itemId: row.itemId, rowNumber: row.rowNumber,
+        itemName: row.itemName.slice(0, 100), reason: row.reason, ok: false, error: 'SERVER_ERROR', detail: String((err && err.message) || err).slice(0, 300) }));
+      return r;
+    });
+  });
+  over.forEach(function (row) {
+    console.log('[suggest] ' + JSON.stringify({ mode: 'sheet', source: 'cloud-run', reqId: reqId, itemId: row.itemId, rowNumber: row.rowNumber,
+      itemName: row.itemName.slice(0, 100), reason: row.reason, sheetWrite: 'deferred', why: 'ROW_LIMIT', ok: false }));
+    results.push({ itemId: row.itemId, rowNumber: row.rowNumber, status: 'deferred', why: 'ROW_LIMIT' });
+  });
+  res.status(200).json({ ok: true, results: results, serverMs: Date.now() - t0 });
+}
+
+// 행 1개: 처리권 → 추천(AI + 원자재마스터, 단계 1 엔진 그대로) → 쓰기(writeSheetRowResult_) → 처리권 해제
+async function sheetRowProcess_(ctx, row) {
+  const rowT0 = Date.now();
+  const log = { mode: 'sheet', source: 'cloud-run', reqId: ctx.reqId, itemId: row.itemId, rowNumber: row.rowNumber,
+    itemName: row.itemName.slice(0, 100), reason: row.reason, provider: ctx.provider };
+  const result = { itemId: row.itemId, rowNumber: row.rowNumber };
+  function finish(status, why) {
+    result.status = status;
+    if (why) result.why = why;
+    log.sheetWrite = status;
+    if (why) log.why = why;
+    log.ok = status === 'written';
+    log.totalMs = Date.now() - rowT0;
+    console.log('[suggest] ' + JSON.stringify(log));
+    return result;
+  }
+  if (Date.now() > ctx.deadlineMs - materialSuggest.SHEET_MIN_START_MS) return finish('deferred', 'TIME_LIMIT');
+
+  const key = rowClaim.claimKey(row);
+  const holder = crypto.randomUUID();
+  // 사람이 품목명을 직접 고친 행(single_edit)은 처리권을 넘겨받고, 빈 F 채우기(fill_empty)는 비어 있을 때만 잡는다.
+  const c = await rowClaim.claim(firestore, key, holder, row.reason === 'single_edit' ? 'take' : 'try', { reason: row.reason, itemName: row.itemName });
+  log.claim = c.ok ? (c.tookOver ? 'took_over' : 'acquired') : 'busy';
+  if (!c.ok) return finish('busy', 'CLAIMED_BY_OTHER');
+  try {
+    const opts = Object.assign({}, ctx.opts);
+    const r = await materialSuggest.suggestForItemName(suggestDeps_(ctx.writeClient), row.itemName, opts, log);
+    if (!r.ok) { log.error = r.error; return finish(r.error === 'LOCK_TIMEOUT' ? 'lock_timeout' : 'ai_failed', r.error); }
+    result.materials = r.materials;
+    const w = await writeSheetRowResult_(ctx, row, key, holder, r.materials, log);
+    return finish(w.status, w.why);
+  } finally {
+    await rowClaim.release(firestore, key, holder);
+  }
+}
+
+// [검증 포인트 1] 쓰기 직전 재확인과 쓰기의 순서. 아래 ①~⑤는 품목 쓰기 잠금(앱 품목 저장 upsertItemAction_과
+// 같은 UPSERT_LOCK_NAME) 안에서 이 순서로만 일어난다. 다른 시트 경로 요청·앱 저장도 같은 잠금을 잡아야 F를
+// 쓸 수 있으므로, ①~⑤ 사이에 다른 쓰기가 끼어들지 못한다.
+//   ① 처리권이 아직 내 것인가(rowClaim.isMine) — 사람이 품목명을 다시 고쳐 새 요청이 넘겨받았으면 false → stale(CLAIM_LOST)
+//   ② 품목마스터를 지금 다시 읽음
+//   ③ 행 찾기(locateItemRow: A 1개 일치 / A 없으면 같은 행 번호의 A가 여전히 빈칸) — 실패 → stale
+//   ④ C가 요청 당시 품목명과 같은가, fill_empty면 F가 아직 빈칸인가(decideSheetWrite) — 실패 → stale
+//   ⑤ F 쓰기(+ 바뀌었으면 I) — 요청 1번(values:batchUpdate)
+// 넘겨받은 새 요청은 AI를 거쳐 나중에 같은 잠금을 잡고 쓰므로, 어떤 순서로 끝나든 마지막에 남는 F는 새 품목명 기준이다.
+async function writeSheetRowResult_(ctx, row, key, holder, materials, log) {
+  const lockHolder = crypto.randomUUID();
+  const waitMs = Math.max(1000, Math.min(UPSERT_LOCK_WAIT_MS, ctx.deadlineMs - Date.now()));
+  const w0 = Date.now();
+  const got = await acquireLock(firestore, UPSERT_LOCK_NAME, lockHolder, { waitMs: waitMs, staleMs: UPSERT_LOCK_STALE_MS, pollMs: UPSERT_LOCK_POLL_MS });
+  log.itemLockMs = Date.now() - w0;
+  if (!got) return { status: 'write_lock_timeout' };
+  try {
+    if (!(await rowClaim.isMine(firestore, key, holder))) return { status: 'stale', why: 'CLAIM_LOST' };          // ①
+    const itemRows = await ctx.itemIO.readItemRows();                                                              // ②
+    const loc = materialSuggest.locateItemRow(itemRows, row);                                                      // ③
+    if (!loc.ok) { if (loc.rows) log.duplicateRows = loc.rows; return { status: 'stale', why: loc.why }; }
+    const d = materialSuggest.decideSheetWrite(loc.values, row, materials);                                        // ④
+    if (!d.write) return { status: 'stale', why: d.why };
+    const iSerial = d.iUpdate ? msToSheetSerialForItem_(Date.now()) : null;
+    await ctx.itemIO.writeFI(loc.sheetRow, d.newF, iSerial);                                                       // ⑤
+    log.sheetRow = loc.sheetRow;
+    log.iUpdated = d.iUpdate;
+    if (d.iUpdate) {
+      try { await ctx.itemIO.formatICell(loc.sheetRow); } catch (fmtErr) { log.formatError = String((fmtErr && fmtErr.message) || fmtErr).slice(0, 200); }
+    }
+    return { status: 'written' };
+  } finally {
+    await releaseLock(firestore, UPSERT_LOCK_NAME, lockHolder);
+  }
+}
+
 exports.suggestMaterialsTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -3424,6 +3566,8 @@ exports.suggestMaterialsTest = async (req, res) => {
     provider: String(process.env.AI_PROVIDER || 'DEEPSEEK').toUpperCase()
   };
   try {
+    // 2026-10-14 단계 3: 시트 편집 경로(Apps Script onEditInstallable → 여기). 앱 경로(mode=app) 코드는 아래 그대로.
+    if (mode === 'sheet') { await sheetSuggestAction_(req, res, t0); return; }
     if (mode !== 'app') {
       log.error = 'UNSUPPORTED_MODE';
       console.log('[suggest] ' + JSON.stringify(log));
