@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 신규 파일 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-07 이슈 댓글 메일: 대상 선정 + 메일 본문 생성 — 3차: Outlook 도형(VML) 제거하고 서식만, 맑은 고딕 우선 / 4차: 버튼·카드 간격을 빈 줄로)
+// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 받는 사람 규칙 변경: 팀장이 고정한 댓글도 그 팀장 본인과 임원 전원이 받음)
 // cloud-run/mro-functions/lib/issueMail.js
 //
 // 이슈 댓글 메일(설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4)의 "계산" 부분만 모은 모듈. 시트/Firestore/메일
@@ -6,7 +6,8 @@
 // 가짜 데이터로 그대로 시험할 수 있다.
 //
 // 1) planIssueMail(): 오늘 고정된 이슈 댓글 → 받는 사람별 메일 내용 목록
-//    - 팀장이 고정 → 그 팀의 담당·일반(활성)  / 임원이 고정 → 활성 사용자 전원(재홍님 확정 2026-10-07)
+//    - 팀장이 고정 → 그 팀의 담당·일반 + 고정한 팀장 본인 + 임원 전원(활성, 2026-10-14 재홍님 변경 — 이전엔 그 팀 담당·일반만)
+//    - 임원이 고정 → 활성 사용자 전원(재홍님 확정 2026-10-07)
 //    - 받는 사람은 "누가 고정했느냐"로만 정한다(앱 열람 권한은 다시 적용하지 않음, 확정)
 // 2) buildSubject/buildHtml/buildText(): 메일 제목·본문(앱 화면 디자인 차용, 시안 v3 + 2026-10-07 Outlook 대응·댓글 바로가기)
 
@@ -166,7 +167,13 @@ function planIssueMail(input) {
     let targets;
     if (pinner.role === '팀장') {
       const team = String(pinner.team || '').trim();
-      targets = active.filter(function (u) { return String(u.team || '').trim() === team && (u.role === '담당' || u.role === '일반'); });
+      const pinnerEmail = lower(pinner.email);
+      // 2026-10-14: 고정한 팀장 본인과 임원(팀 무관)도 받는다. 다른 팀의 담당·일반, 다른 팀장은 받지 않는다.
+      targets = active.filter(function (u) {
+        if (String(u.team || '').trim() === team && (u.role === '담당' || u.role === '일반')) return true;
+        if (lower(u.email) === pinnerEmail) return true;
+        return u.role === '임원';
+      });
     } else if (pinner.role === '임원') {
       targets = active;
     } else {
