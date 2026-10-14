@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-13 AI 대기 방식 수정: 1회 40초·전체 45초·재시도는 남은 10초 이상일 때만·요청 전체 50초)
+// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 단계 3: 시트 경로용 함수 추가(행 찾기·재확인·I 규칙·품목마스터 F/I 쓰기·동시 처리) — 기존 엔진 변경 없음)
 // cloud-run/mro-functions/lib/materialSuggest.js
 //
 // AI 원자재 추천 엔진 (MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md 2-0·2-1·2-4·2-7·3-2·3-4).
@@ -386,11 +386,140 @@ async function suggestForItemName(deps, itemName, opts, log) {
   return { ok: true, materials: koreanNames };
 }
 
+// ───────────────────────── 단계 3: 시트 경로(mode=sheet) ─────────────────────────
+// (2026-10-14, 설계 2-2·2-5·3-3, 단계 3 계획서 변경 #2·#4)
+// 아래 함수들은 시트·Firestore를 직접 만지지 않는 순수 계산이거나(규칙 → 시험으로 확인),
+// 품목마스터 F·I 쓰기만 하는 얇은 입출력이다. 처리 순서는 index.js sheetSuggestAction_에 있다.
+
+const ITEM_SHEET_NAME = '품목마스터';
+const SHEET_MAX_ROWS = 10;        // 요청 1건에서 처리할 최대 행 수(넘는 행은 deferred → 15분 점검이 채움)
+const SHEET_CONCURRENCY = 5;      // 동시에 처리할 행 수(계획서 변경 #2)
+const SHEET_MIN_START_MS = 15000; // 새 행을 시작하려면 요청 마감까지 이만큼은 남아 있어야 함(AI 1회 + 쓰기)
+const ITEM_WRITE_LOCK_OPTS = { staleMs: 15000, pollMs: 200 }; // index.js UPSERT_LOCK_*와 같은 값(앱 품목 저장과 같은 잠금)
+
+// Code.gs·index.js normalizeMaterialsForCompare_와 같은 규칙(쉼표로 나눠 공백 제거·정렬 후 비교).
+// 세 벌이 같은지 시험 S3-N1에서 확인한다.
+function normalizeMaterialsForCompare(s) {
+  return String(s || '').split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t; }).sort().join(',');
+}
+
+function cellText_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+
+// Apps Script가 보낸 행 목록을 정리한다.
+//  - itemName이 비었거나 rowNumber가 2 미만인 행은 버린다(invalid로 돌려줌)
+//  - 같은 행(같은 claim 대상)이 두 번 오면 하나로 합치고, 하나라도 single_edit면 single_edit
+// 반환: { rows:[...], invalid:[...] }  (rows 순서 = 처음 나온 순서)
+function normalizeSheetRows(input) {
+  const out = [], invalid = [], byKey = {};
+  (Array.isArray(input) ? input : []).forEach(function (r) {
+    r = r || {};
+    const row = {
+      itemId: cellText_(r.itemId),
+      rowNumber: parseInt(r.rowNumber, 10),
+      itemName: cellText_(r.itemName),
+      reason: r.reason === 'single_edit' ? 'single_edit' : 'fill_empty'
+    };
+    if (!row.itemName || !(row.rowNumber >= 2)) { invalid.push(r); return; }
+    const k = row.itemId ? 'id:' + row.itemId : 'row:' + row.rowNumber;
+    if (byKey[k]) {
+      if (row.reason === 'single_edit') { byKey[k].reason = 'single_edit'; byKey[k].itemName = row.itemName; byKey[k].rowNumber = row.rowNumber; }
+      return;
+    }
+    byKey[k] = row; out.push(row);
+  });
+  return { rows: out, invalid: invalid };
+}
+
+// [검증 포인트 3 — A열 중복 판정 위치] 품목마스터 값(A2:I, index 0 == 2행)에서 요청 행을 찾는다.
+//  - A(itemId)가 있으면: A가 같은 행이 정확히 1개일 때만 그 행. 0개 → ROW_NOT_FOUND, 2개 이상 → DUPLICATE_ID(쓰지 않음, 설계 3-3)
+//  - A가 없으면(새로 입력 중인 행, 계획서 변경 #4): 요청한 행 번호의 A가 여전히 비어 있을 때만 그 행. 아니면 ROW_MOVED
+// 반환: { ok:true, sheetRow, values } | { ok:false, why }
+function locateItemRow(itemRows, req) {
+  if (req.itemId) {
+    const hits = [];
+    itemRows.forEach(function (r, i) { if (cellText_(r[0]) === req.itemId) hits.push(i); });
+    if (hits.length === 0) return { ok: false, why: 'ROW_NOT_FOUND' };
+    if (hits.length > 1) return { ok: false, why: 'DUPLICATE_ID', rows: hits.map(function (i) { return i + 2; }) };
+    return { ok: true, sheetRow: hits[0] + 2, values: itemRows[hits[0]] };
+  }
+  const v = itemRows[req.rowNumber - 2];
+  if (!v || cellText_(v[0]) !== '') return { ok: false, why: 'ROW_MOVED' };
+  return { ok: true, sheetRow: req.rowNumber, values: v };
+}
+
+// 쓰기 직전 재확인(설계 2-2 3번) + I 규칙 v2(설계 2-5). values = 그 행의 A~I(방금 다시 읽은 값).
+// 반환: { write:true, newF, iUpdate } | { write:false, why }
+function decideSheetWrite(values, req, materials) {
+  if (cellText_(values[2]) !== req.itemName) return { write: false, why: 'NAME_CHANGED' };
+  const oldF = values[5];
+  if (req.reason === 'fill_empty' && cellText_(oldF) !== '') return { write: false, why: 'F_ALREADY_FILLED' };
+  const newF = materials.join(', ');
+  const iUpdate = normalizeMaterialsForCompare(oldF) !== normalizeMaterialsForCompare(newF);
+  return { write: true, newF: newF, iUpdate: iUpdate };
+}
+
+// 품목마스터 입출력(Sheets REST v4). client는 쓰기 스코프.
+function makeItemSheetIO(client, spreadsheetId) {
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + spreadsheetId;
+  let sheetIdPromise = null;
+  function a1(x) { return ITEM_SHEET_NAME + '!' + x; }
+  return {
+    readItemRows: async function () {
+      const resp = await client.request({ url: base + '/values/' + encodeURIComponent(a1('A2:I')) + '?valueRenderOption=UNFORMATTED_VALUE' });
+      return (resp.data && resp.data.values) || [];
+    },
+    // F 한 칸(+ 바뀐 경우 I 한 칸)을 요청 1번으로 쓴다. I는 시트 시리얼 숫자(앱 저장 upsertItemAction_과 같은 방식).
+    writeFI: async function (sheetRow, newF, iSerial) {
+      const data = [{ range: a1('F' + sheetRow), values: [[newF]] }];
+      if (iSerial !== null && iSerial !== undefined) data.push({ range: a1('I' + sheetRow), values: [[iSerial]] });
+      await client.request({ url: base + '/values:batchUpdate', method: 'POST', data: { valueInputOption: 'RAW', data: data } });
+    },
+    // I 칸 표시 형식을 Apps Script 경로와 같게(yyyy-mm-dd hh:mm:ss). 값만 쓰면 새 행에서는 숫자로 보일 수 있어서.
+    formatICell: async function (sheetRow) {
+      if (!sheetIdPromise) {
+        sheetIdPromise = client.request({ url: base + '?fields=sheets.properties(sheetId,title)' }).then(function (resp) {
+          const s = ((resp.data && resp.data.sheets) || []).find(function (x) { return x.properties && x.properties.title === ITEM_SHEET_NAME; });
+          if (!s) throw new Error('ITEM_SHEET_NOT_FOUND');
+          return s.properties.sheetId;
+        });
+        sheetIdPromise.catch(function () { sheetIdPromise = null; });
+      }
+      const sheetId = await sheetIdPromise;
+      await client.request({
+        url: base + ':batchUpdate', method: 'POST',
+        data: { requests: [{ repeatCell: {
+          range: { sheetId: sheetId, startRowIndex: sheetRow - 1, endRowIndex: sheetRow, startColumnIndex: 8, endColumnIndex: 9 },
+          cell: { userEnteredFormat: { numberFormat: { type: 'DATE_TIME', pattern: 'yyyy-mm-dd hh:mm:ss' } } },
+          fields: 'userEnteredFormat.numberFormat' } }] }
+      });
+    }
+  };
+}
+
+// 동시 처리 도우미: items를 최대 limit개씩 동시에 worker로 처리. 결과 순서 = items 순서.
+async function runPool(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function lane() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  const lanes = [];
+  for (let k = 0; k < Math.min(limit, items.length); k++) lanes.push(lane());
+  await Promise.all(lanes);
+  return results;
+}
+
 module.exports = {
   RAW_SHEET_NAME, RAW_LOCK_NAME, RAW_LOCK_OPTS, PROMPT_TEMPLATE_SHA256, SETTING_KEYS, DEFAULTS, LIMITS,
   REQUEST_BUDGET_MS, AI_TOTAL_BUDGET_MS, AI_RETRY_MIN_MS, WRITE_RESERVE_MS, planAttempt,
   promptTemplate_, buildPrompt, parseAIText, readOptions,
   callDeepSeek, makeAiCaller, makeSheetsIO, msToSheetSerial,
   normalizeName, nextRmNumber, rmCode,
-  suggestForItemName
+  suggestForItemName,
+  // 단계 3
+  ITEM_SHEET_NAME, SHEET_MAX_ROWS, SHEET_CONCURRENCY, SHEET_MIN_START_MS, ITEM_WRITE_LOCK_OPTS,
+  normalizeMaterialsForCompare, normalizeSheetRows, locateItemRow, decideSheetWrite, makeItemSheetIO, runPool
 };
