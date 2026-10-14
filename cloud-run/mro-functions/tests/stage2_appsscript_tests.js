@@ -23,8 +23,11 @@ function extractFn(name) {
   const m = rest.slice(1).search(/\nfunction [\w$]+\s*\(/);
   return rest.slice(0, m + 1);
 }
+// 2026-10-14 단계 3: onEditInstallable의 F 처리가 보조 함수로 옮겨져 같이 잘라 온다. 이 파일의 시험은 스위치(SUGGEST_PROXY_URL)가
+// 꺼진 상태(가짜 PropertiesService가 null)라 단계 2와 같은 동결본 경로를 그대로 확인한다. 스위치 켜짐은 stage3_sheet_tests.js.
 const SRC = ['rawMaterialFsLockUrl_', 'acquireRawMaterialFsLock_', 'releaseRawMaterialFsLock_', 'suggestRawMaterials',
-  'onEditInstallable', 'ensureAllItemRowsComplete', 'normalizeMaterialsForCompare_'].map(extractFn).join('\n');
+  'onEditInstallable', 'sheetSuggestProxyConfig_', 'applyFrozenFill_', 'applyFrozenEdit_', 'dispatchSheetSuggest_',
+  'ensureAllItemRowsComplete', 'normalizeMaterialsForCompare_'].map(extractFn).join('\n');
 
 // ───────── 가짜 Firestore(REST + Cloud Run SDK 흉내가 같은 저장소를 씀) ─────────
 function makeFsStore() {
