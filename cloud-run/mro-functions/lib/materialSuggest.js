@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 단계 3: 시트 경로용 함수 추가(행 찾기·재확인·I 규칙·품목마스터 F/I 쓰기·동시 처리) — 기존 엔진 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/lib/materialSuggest.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-15 단계 4: 15분 점검(materialSweepTest)용 순수 함수 추가(대상 고르기·한도·하루 실패 한도·요약) — 기존 엔진·단계 3 함수 변경 없음)
 // cloud-run/mro-functions/lib/materialSuggest.js
 //
 // AI 원자재 추천 엔진 (MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md 2-0·2-1·2-4·2-7·3-2·3-4).
@@ -512,6 +512,74 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
+// ───────────────────────── 단계 4: 15분 점검(materialSweepTest) ─────────────────────────
+// (2026-10-15, 설계 2-3·3-2, 단계 4 계획서 결정 1-B·4)
+// 처리 순서는 index.js materialSweepTest에 있고, 여기는 시트·Firestore를 만지지 않는 순수 계산만 둔다.
+// 행 1개 처리(처리권 try → 엔진 → 재확인·쓰기)는 단계 3 시트 경로(fill_empty)와 같은 함수를 쓴다.
+
+const SWEEP_SETTING_KEYS = {
+  maxRows: '원자재점검1회처리한도',
+  dailyFailLimit: '원자재추천일일실패한도'
+};
+const SWEEP_DEFAULTS = { maxRows: 10, dailyFailLimit: 3 };       // 설정 탭에 행이 없으면 이 값(결정 4)
+const SWEEP_LIMITS = { maxRows: [1, 30], dailyFailLimit: [1, 10] };
+const SWEEP_BUDGET_MS = 240000;            // 1회차 시간 한도 4분(함수 제한시간 300초 안). 새 행 시작은 마감 15초 전까지(SHEET_MIN_START_MS)
+const SWEEP_CONCURRENCY = 3;               // 점검은 급하지 않으므로 시트 경로(5)보다 적게
+const SWEEP_RUN_STALE_MS = 6 * 60 * 1000;  // 회차 겹침 방지 표시가 6분 넘게 남아 있으면 비정상 종료로 보고 무시(Apps Script 점검과 같은 값)
+const SWEEP_FAIL_LOOKUP_MAX = 200;         // 하루 실패 횟수를 확인할 최대 행 수(빈 F가 아주 많을 때 Firestore 읽기 상한)
+// 하루 실패 횟수에 세는 결과. busy(다른 처리 중)·stale(재확인에서 안 씀)·deferred(시간 한도)는 실패가 아니다.
+const SWEEP_FAIL_STATUSES = ['ai_failed', 'lock_timeout', 'write_lock_timeout', 'error'];
+
+function readSweepOptions(settings) {
+  settings = settings || {};
+  return {
+    maxRows: clampInt_(settings[SWEEP_SETTING_KEYS.maxRows], SWEEP_LIMITS.maxRows[0], SWEEP_LIMITS.maxRows[1], SWEEP_DEFAULTS.maxRows),
+    dailyFailLimit: clampInt_(settings[SWEEP_SETTING_KEYS.dailyFailLimit], SWEEP_LIMITS.dailyFailLimit[0], SWEEP_LIMITS.dailyFailLimit[1], SWEEP_DEFAULTS.dailyFailLimit)
+  };
+}
+
+// 점검 대상: 품목마스터 값(A2:I, index 0 == 2행)에서 A·B·C가 모두 있고 F가 빈 행.
+// (Apps Script ensureAllItemRowsComplete가 F를 채우던 조건과 같다: !a || !b || !c 면 건너뜀, F 빈칸이면 추천)
+// 같은 A가 여러 행이면 첫 행만 대상에 넣는다(쓰기 직전 locateItemRow가 DUPLICATE_ID로 걸러 어느 행에도 안 씀 — 단계 3과 같음).
+function pickSweepTargets(itemRows) {
+  const list = [];
+  (itemRows || []).forEach(function (r, i) {
+    r = r || [];
+    if (!cellText_(r[0]) || !cellText_(r[1]) || !cellText_(r[2])) return;
+    if (cellText_(r[5]) !== '') return;
+    list.push({ itemId: cellText_(r[0]), rowNumber: i + 2, itemName: cellText_(r[2]), reason: 'fill_empty' });
+  });
+  return normalizeSheetRows(list).rows;
+}
+
+function isSweepFailure(status) { return SWEEP_FAIL_STATUSES.indexOf(status) >= 0; }
+
+// 서울 날짜(YYYY-MM-DD). 하루 실패 한도의 "하루" 기준.
+function kstDateStr(ms) { return new Date(ms + SPREADSHEET_UTC_OFFSET_MS).toISOString().slice(0, 10); }
+
+// 하루 실패 기록 문서 ID: 날짜_행키(rowClaim.claimKey). 예: 2026-10-15_id:TEST-003
+function sweepFailDocId(dateStr, key) { return dateStr + '_' + key; }
+
+// 이번 회차에 처리할 행 고르기.
+//  failCounts: { 행키: 오늘 실패 횟수 }, keyFn: rowClaim.claimKey
+// 반환: { batch:[행...], skippedFailLimit:[행...], remaining: 한도 때문에 다음 회차로 넘긴 행 수 }
+function planSweepBatch(targets, failCounts, sweepOpts, keyFn) {
+  failCounts = failCounts || {};
+  const eligible = [], skipped = [];
+  (targets || []).forEach(function (row) {
+    if ((failCounts[keyFn(row)] || 0) >= sweepOpts.dailyFailLimit) skipped.push(row); else eligible.push(row);
+  });
+  const batch = eligible.slice(0, sweepOpts.maxRows);
+  return { batch: batch, skippedFailLimit: skipped, remaining: eligible.length - batch.length };
+}
+
+// 결과 상태별 개수. 예: { written: 3, busy: 1 }
+function summarizeSweep(results) {
+  const out = {};
+  (results || []).forEach(function (r) { const k = (r && r.status) || 'unknown'; out[k] = (out[k] || 0) + 1; });
+  return out;
+}
+
 module.exports = {
   RAW_SHEET_NAME, RAW_LOCK_NAME, RAW_LOCK_OPTS, PROMPT_TEMPLATE_SHA256, SETTING_KEYS, DEFAULTS, LIMITS,
   REQUEST_BUDGET_MS, AI_TOTAL_BUDGET_MS, AI_RETRY_MIN_MS, WRITE_RESERVE_MS, planAttempt,
@@ -521,5 +589,8 @@ module.exports = {
   suggestForItemName,
   // 단계 3
   ITEM_SHEET_NAME, SHEET_MAX_ROWS, SHEET_CONCURRENCY, SHEET_MIN_START_MS, ITEM_WRITE_LOCK_OPTS,
-  normalizeMaterialsForCompare, normalizeSheetRows, locateItemRow, decideSheetWrite, makeItemSheetIO, runPool
+  normalizeMaterialsForCompare, normalizeSheetRows, locateItemRow, decideSheetWrite, makeItemSheetIO, runPool,
+  // 단계 4
+  SWEEP_SETTING_KEYS, SWEEP_DEFAULTS, SWEEP_LIMITS, SWEEP_BUDGET_MS, SWEEP_CONCURRENCY, SWEEP_RUN_STALE_MS, SWEEP_FAIL_LOOKUP_MAX, SWEEP_FAIL_STATUSES,
+  readSweepOptions, pickSweepTargets, isSweepFailure, kstDateStr, sweepFailDocId, planSweepBatch, summarizeSweep
 };
