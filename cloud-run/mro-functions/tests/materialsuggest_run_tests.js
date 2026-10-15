@@ -345,7 +345,7 @@ const resp = obj => '```json\n' + J(obj) + '\n```';
   let r = await e.call({}, 'OPTIONS');
   check('B1 OPTIONS(브라우저 사전 확인) → 204', r.httpStatus === 204);
   r = await e.call({ mode: 'sweep', itemName: 'x' });
-  check('B2 mode=sweep(단계 4 예정) → 400 UNSUPPORTED_MODE (2026-10-14: mode=sheet는 단계 3에서 생겨 sweep으로 바꿈)', r.httpStatus === 400 && r.error === 'UNSUPPORTED_MODE', r);
+  check('B2 mode=sweep → 400 UNSUPPORTED_MODE (점검은 단계 4에서 별도 비공개 함수 materialSweepTest로 — 이 공개 함수에는 안 생김)', r.httpStatus === 400 && r.error === 'UNSUPPORTED_MODE', r);
   r = await e.call({ mode: 'app', itemName: 'x' });
   check('B3 세션 없음 → 400 MISSING_SESSION_TOKEN', r.httpStatus === 400 && r.error === 'MISSING_SESSION_TOKEN', r);
   r = await e.call({ mode: 'app', sessionToken: 'TOK_OLD', itemName: 'x' });

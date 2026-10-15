@@ -4,7 +4,7 @@
 //   L그룹: 원자재마스터 공용 잠금(Firestore REST) — 잡기·대기 초과·죽은 잠금 빼앗기·동시 빼앗기·접속 오류·내 것만 풀기
 //   X그룹: Cloud Run lib/writeLock.js와 같은 잠금 문서를 정말 같이 쓰는지(교차 시험)
 //   S그룹: suggestRawMaterials — 프롬프트 불변, 번호 규칙, 잠금 순서, [suggest] 로그
-//   I그룹: I열 규칙 v2 — ②-a(빈 F 자동 채우기)·15분 점검이 I를 찍는지, ②-b는 기존대로인지
+//   I그룹: I열 규칙 v2 — ②-a(빈 F 자동 채우기)가 I를 찍는지, ②-b는 기존대로인지, (단계 4부터) Apps Script 15분 점검은 F·I를 안 건드리는지
 // 실행: (cloud-run/mro-functions 폴더에서) node tests/stage2_appsscript_tests.js
 const fs = require('fs'), vm = require('vm'), path = require('path'), crypto = require('crypto');
 const dir = path.resolve(__dirname, '..');
@@ -229,7 +229,9 @@ const OKAI = J({ materials: [{ isNew: true, korean: '리튬망간', keyword: '�
   e = makeGas({ ai: [J({ materials: [{ isNew: false, korean: '니트릴고무', keyword: 'NBR' }] })] });
   e.items[2] = ['TEST-002', '반도코리아(주)', '테스트용 니트릴장갑', '박태영', '동부', '', '활성', 'd', ''];
   e.ctx.ensureAllItemRowsComplete();
-  check('I3 15분 점검이 빈 F를 채우면 I도 찍음(설계 7-2 "모든 자동 F 쓰기에서 I 갱신") + 로그 mode=sweep', e.items[2][5] === '니트릴고무' && e.cellWrites.some(w => w.r === 3 && w.c === 9 && w.v === 'DATE') && e.suggestLog().mode === 'sweep', e.cellWrites);
+  // 2026-10-15 단계 4: 빈 F 채우기는 Cloud Run 점검(materialSweepTest)으로 넘어가 Apps Script 점검은 F·I를 안 건드린다(기대값 변경).
+  // Cloud Run 점검의 F·I 쓰기는 tests/stage4_sweep_tests.js W그룹에서 확인한다.
+  check('I3 (단계 4부터) Apps Script 15분 점검은 빈 F를 채우지 않음 — AI 0회, F·I 그대로', e.items[2][5] === '' && !e.cellWrites.some(w => w.r === 3 && (w.c === 6 || w.c === 9)) && e.suggestLog() === null, e.cellWrites);
   e = makeGas({ ai: [null, null] });
   e.ctx.onEditInstallable({ range: { getSheet: () => e.itemSheet, getRow: () => 3, getColumn: () => 1, getLastRow: () => 3, getNumRows: () => 1, getNumColumns: () => 1, getValue: () => 'TEST-002' } });
   check('I4 AI가 실패해서 F를 못 채우면 I도 안 찍음', e.items[2][5] === '' && !e.cellWrites.some(w => w.c === 9), e.cellWrites);

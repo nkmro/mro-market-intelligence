@@ -419,7 +419,7 @@ const NEW_ROW = ['TEST-003', '반도코리아(주)', '테스트용 면장갑', '
   check('R36 같은 행이 두 번 오면 1건으로(single_edit 우선), 행 번호 2 미만·품목명 빈 행은 버림 → AI 1회', r.results.length === 1 && e.rowLogs()[0].reason === 'single_edit' && e.ai.length === 1, r.results);
   e = makeEnv({ items: ITEMS3() });
   r = await e.call({ mode: 'sweep' }, {});
-  check('R37 mode=sweep은 아직 없음(단계 4) → 400 UNSUPPORTED_MODE', r.httpStatus === 400 && r.error === 'UNSUPPORTED_MODE');
+  check('R37 mode=sweep은 이 공개 함수에 없음(단계 4는 별도 비공개 함수 materialSweepTest, 결정 1-B) → 400 UNSUPPORTED_MODE', r.httpStatus === 400 && r.error === 'UNSUPPORTED_MODE');
 
   // ═════════════════════════ N그룹 ═════════════════════════
   console.log('── N그룹: 비교 규칙 세 벌 일치 ──');
