@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-14 AI 원자재 추천 단계 3: 시트 편집 F 추천을 Cloud Run 1회 호출로(②-a·②-b 합침, AI 2회 호출 제거)·스위치 SUGGEST_PROXY_URL·동결본 폴백)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-15 AI 원자재 추천 단계 4: 15분 점검의 F 채우기를 Cloud Run(materialSweepTest)으로 넘김 — ensureAllItemRowsComplete는 D·E·G·H만 · 시험용 stage4ClearTestF 추가)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -1064,7 +1064,7 @@ if (changed) deRange.setValues(deValues);
 // │ rawMaterialMaster — Cloud Run과 같은 잠금) ② RM 번호는 RM숫자 형식만 계산     │
 // │ ③ [suggest] 로그 1줄 ④ 호출 경로(caller) 인자. 프롬프트는 한 글자도 안 바뀜.  │
 // └─────────────────────────────────────────────────────────────────────────────┘
-// caller: 'app'(앱 폴백) | 'sheet_fill'(②-a 빈 F 채우기) | 'sheet_edit'(②-b 품목명 수정) | 'sweep'(15분 점검)
+// caller: 'app'(앱 폴백) | 'sheet_fill'(②-a 빈 F 채우기) | 'sheet_edit'(②-b 품목명 수정) | 'sweep'(15분 점검 — 2026-10-15 단계 4부터 Cloud Run이 맡아 여기서는 더 안 씀)
 function suggestRawMaterials(itemName, caller) {
 const sgT0 = new Date().getTime();
 const sgLog = { mode: caller || 'unknown', source: 'apps-script', itemName: String(itemName || '').slice(0, 100), provider: String(PropertiesService.getScriptProperties().getProperty('AI_PROVIDER') || 'GEMINI').toUpperCase(), attempts: [] };
@@ -4547,21 +4547,13 @@ const row = data[r];
 const rowNum = r + 1;
 const a = row[0], b = row[1], c = row[2], d = row[3], e = row[4], f = row[5], g = row[6], h = row[7];
 if (!a || !b || !c) { continue; }
-if (d && e && f && g && h) { continue; } // 이미 완성됨
+// 2026-10-15 (AI 원자재 추천 단계 4, 설계 2-3): 빈 F(주요원자재) 채우기는 Cloud Run 점검(materialSweepTest,
+// Cloud Scheduler material-sweep-15m)이 맡는다. 여기서는 D·E·G·H만 채우므로 "이미 완성" 판정에서도 F를 뺀다.
+// (되돌리기: GitHub 2d5dd1a 미러 = 편집기 해시 035b3c59f0c21e99 코드로 교체 후 저장)
+if (d && e && g && h) { continue; } // 이미 완성됨(F 제외)
 
 try {
 if (!sheet.getRange(rowNum, 4).getValue()) autofillManagerFromCustomer_(sheet, rowNum);
-
-const fCell = sheet.getRange(rowNum, 6);
-if (!fCell.getValue()) {
-const aiResult = suggestRawMaterials(c, 'sweep');
-if (aiResult && aiResult.korean && aiResult.korean.length) {
-fCell.setValue(aiResult.korean.join(', '));
-// 2026-10-14 (단계 2, 설계 2-5 I열 규칙 v2 — "모든 자동 F 쓰기에서 I 갱신"): 15분 점검이 F를 채울 때도 I를 찍는다.
-sheet.getRange(rowNum, 9).setValue(new Date());
-sheet.getRange(rowNum, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-}
-}
 
 const gCell = sheet.getRange(rowNum, 7);
 if (!gCell.getValue()) gCell.setValue('활성');
@@ -4583,6 +4575,25 @@ Logger.log('전체 완료. 처리된 행: ' + processed + ' | 오류로 스킵�
 } finally {
 props.deleteProperty(RUN_FLAG_KEY);
 }
+}
+// 2026-10-15 AI 원자재 추천 단계 4 시험용(편집기에서 이 함수를 골라 ▶실행): A열이 'TEST-'로 시작하는 행만 F·I를 비운다.
+// 시트에서 F를 직접 지우면 시트 편집 경로가 바로 다시 채워 버려서, 15분 점검이 채울 빈 F를 만들 수 없기 때문(부록 D-3·E-6).
+// 스크립트가 바꾼 값은 시트 편집 트리거(onEditInstallable)를 부르지 않는다(구글 문서 기준 — 시험 때 실행 목록으로 확인).
+// 다른 행은 절대 건드리지 않는다. 비운 행 번호·품목명만 기록에 남긴다.
+function stage4ClearTestF() {
+const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+const sheet = ss.getSheetByName('품목마스터');
+const data = sheet.getDataRange().getValues();
+const cleared = [];
+for (let r = 1; r < data.length; r++) {
+const a = String(data[r][0] || '').trim();
+if (a.indexOf('TEST-') !== 0) continue;
+sheet.getRange(r + 1, 6).setValue('');
+sheet.getRange(r + 1, 9).setValue('');
+cleared.push((r + 1) + '행 ' + a + ' ' + String(data[r][2] || ''));
+}
+console.log('stage4ClearTestF: ' + cleared.length + '행 F·I 비움 — ' + cleared.join(' | '));
+return cleared.length;
 }
 function diagRecheckIncomplete() {
 const props = PropertiesService.getScriptProperties();
