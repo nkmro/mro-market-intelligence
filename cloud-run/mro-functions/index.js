@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 suggestMaterialsTest에 mode=sheet(시트 편집 경로, 단계 3) 추가 — mode=app·다른 함수 변경 없음)
+// [DELIVERY] cloud-run/mro-functions/index.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-15 AI 원자재 추천 단계 4: 15분 점검 materialSweepTest 신규(별도 비공개 함수) — suggestMaterialsTest 동작 변경 없음(행 로그의 mode 표기만 ctx에서 받도록))
 const {GoogleAuth} = require('google-auth-library');
 // 2026-08-21 (postComment 1단계): Code.gs의 Utilities.getUuid()(v4 UUID)에 대응하는
 // commentId 생성용. Node 22 표준 모듈, 별도 설치 불필요.
@@ -3382,8 +3382,8 @@ exports.authCodeTest = async (req, res) => {
 // 앱의 "✨ AI 추천 다시 받기"(feed.html suggestMaterialsForForm)가 부르는 함수. Code.gs
 // handleSuggestMaterials_(팀장만) + suggestRawMaterials를 포팅했다. 추천 + 원자재마스터 추가만
 // 하고 품목마스터 F열은 쓰지 않는다(저장은 기존 upsertItemTest가 하며 그때 I열도 찍힌다).
-//   - mode=sheet(시트 편집 프록시)·mode=sweep(15분 점검)은 단계 3·4에서 이 함수에 추가한다.
-//     지금은 UNSUPPORTED_MODE로 거절한다.
+//   - mode=sheet(시트 편집 프록시)는 단계 3에서 이 함수에 추가했다(아래). 15분 점검은 단계 4에서
+//     별도 비공개 함수 materialSweepTest로 만들었다(계획서 결정 1-B, 파일 맨 아래). mode=sweep 등은 UNSUPPORTED_MODE.
 //   - AI 키는 Secret ai-deepseek-api-key → 환경변수 DEEPSEEK_API_KEY(배포 시 --set-secrets).
 //   - 오류 코드: FORBIDDEN, MISSING_FIELDS, AI_FAILED(쓰기 전 실패), LOCK_TIMEOUT,
 //     SERVER_ERROR(500). 화면은 AI_FAILED·LOCK_TIMEOUT·5xx·연결 실패일 때만 Apps Script로 넘긴다.
@@ -3484,7 +3484,8 @@ async function sheetSuggestAction_(req, res, t0) {
 // 행 1개: 처리권 → 추천(AI + 원자재마스터, 단계 1 엔진 그대로) → 쓰기(writeSheetRowResult_) → 처리권 해제
 async function sheetRowProcess_(ctx, row) {
   const rowT0 = Date.now();
-  const log = { mode: 'sheet', source: 'cloud-run', reqId: ctx.reqId, itemId: row.itemId, rowNumber: row.rowNumber,
+  // 2026-10-15 단계 4: 15분 점검(materialSweepTest)도 이 함수를 그대로 쓴다. 로그의 mode만 ctx.mode('sweep')로 표기(시트 경로는 그대로 'sheet').
+  const log = { mode: ctx.mode || 'sheet', source: 'cloud-run', reqId: ctx.reqId, itemId: row.itemId, rowNumber: row.rowNumber,
     itemName: row.itemName.slice(0, 100), reason: row.reason, provider: ctx.provider };
   const result = { itemId: row.itemId, rowNumber: row.rowNumber };
   function finish(status, why) {
@@ -3625,5 +3626,151 @@ exports.suggestMaterialsTest = async (req, res) => {
     log.totalMs = Date.now() - t0;
     console.error('[suggest] ' + JSON.stringify(log));
     res.status(500).json({ ok: false, error: 'SERVER_ERROR', serverMs: Date.now() - t0 });
+  }
+};
+
+// ═════════════ 2026-10-15 단계 4: 15분 점검 materialSweepTest (설계 2-3·3-2, 단계 4 계획서 결정 1-B) ═════════════
+// 호출자: Cloud Scheduler material-sweep-15m (매시 2·17·32·47분, 서울). 비공개 함수(--no-allow-unauthenticated)라
+//   호출자 확인은 Google이 한다(issueMailBatchTest와 같은 방식). 함수 안에서 따로 비밀값을 보지 않는다.
+// 하는 일: 품목마스터에서 "A·B·C가 있고 F가 빈" 행을 골라 F(+I)를 채운다. 행 1개 처리는 단계 3 시트 경로와
+//   같은 함수(sheetRowProcess_: 처리권 try → 엔진 → 품목 쓰기 잠금 안에서 재확인·쓰기, fill_empty 규칙)를 그대로 쓴다.
+//   → 시트 편집 경로가 같은 행을 처리 중이면 busy로 건너뛰고(부록 E-4 겹침 해소), 그 사이 F가 채워졌으면 stale로 안 쓴다.
+// 한도: 1회 최대 N행(설정 '원자재점검1회처리한도', 기본 10) 또는 4분(먼저 닿는 쪽). 남은 행은 다음 회차.
+//       같은 행이 하루 N번(설정 '원자재추천일일실패한도', 기본 3) 실패하면 그날(서울 날짜)은 건너뜀(AI 비용 제한, 설계 3-2).
+// 기록: Firestore sweepRuns/material = 회차 겹침 방지 표시 + 마지막 회차 요약(lastRun)
+//       sweepRuns/material_{서울시각}_{runId} = 처리한 행이 있던 회차만 1건씩
+//       materialSweepFails/{날짜}_{행키} = 그날 실패 횟수
+//       로그: 행마다 [suggest] mode=sweep 1줄, 회차마다 [sweep] 1줄. AI 키·프롬프트 전문은 남기지 않는다.
+// 시험: 요청 본문 { "dryRun": true } → 대상 행 목록만 돌려줌(AI·시트 쓰기·Firestore 기록 없음).
+const SWEEP_RUNS = 'sweepRuns';
+const SWEEP_RUN_DOC = 'material';
+const SWEEP_FAILS = 'materialSweepFails';
+
+// 회차 겹침 방지: 이전 회차가 아직 도는 중(6분 이내)이면 이번 회차는 건너뜀.
+async function acquireSweepRun_(runId, nowMs) {
+  const ref = firestore.collection(SWEEP_RUNS).doc(SWEEP_RUN_DOC);
+  return firestore.runTransaction(async function (tx) {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : {};
+    if (d.running && nowMs - Number(d.startedAtMs || 0) < materialSuggest.SWEEP_RUN_STALE_MS) {
+      return { ok: false, runningRunId: d.runId || null, runningSinceMs: Number(d.startedAtMs || 0) };
+    }
+    tx.set(ref, Object.assign({}, d, { running: true, runId: runId, startedAtMs: nowMs }));
+    return { ok: true };
+  });
+}
+
+// 내 회차 표시일 때만 끝 표시 + 마지막 회차 요약 저장(다른 회차가 이미 넘겨받았으면 건드리지 않음).
+async function finishSweepRun_(runId, summary) {
+  const ref = firestore.collection(SWEEP_RUNS).doc(SWEEP_RUN_DOC);
+  await firestore.runTransaction(async function (tx) {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : {};
+    if (d.runId !== runId) return;
+    tx.set(ref, Object.assign({}, d, { running: false, finishedAtMs: Date.now(), lastRun: summary }));
+  });
+}
+
+// 오늘 실패 횟수 +1 (행 하나에 한 문서)
+async function recordSweepFailure_(dateStr, key, row, status, why) {
+  const ref = firestore.collection(SWEEP_FAILS).doc(materialSuggest.sweepFailDocId(dateStr, key));
+  await firestore.runTransaction(async function (tx) {
+    const snap = await tx.get(ref);
+    const prev = snap.exists ? Number(snap.data().count || 0) : 0;
+    tx.set(ref, { date: dateStr, key: key, itemId: row.itemId, rowNumber: row.rowNumber, itemName: row.itemName.slice(0, 100),
+      count: prev + 1, lastStatus: status, lastWhy: why || null, updatedAtMs: Date.now() });
+  });
+}
+
+function kstStamp_(ms) { return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-'); }
+
+exports.materialSweepTest = async (req, res) => {
+  const t0 = Date.now();
+  const runId = crypto.randomUUID().slice(0, 8);
+  const body = req.body || {};
+  const dryRun = body.dryRun === true;
+  const provider = String(process.env.AI_PROVIDER || 'DEEPSEEK').toUpperCase();
+  const sum = { runId: runId, dryRun: dryRun, startedAt: kstStamp_(t0) };
+  let acquired = false;
+  try {
+    if (!dryRun) {
+      const g = await acquireSweepRun_(runId, t0);
+      if (!g.ok) {
+        Object.assign(sum, { skipped: true, reason: 'ALREADY_RUNNING', runningRunId: g.runningRunId, totalMs: Date.now() - t0 });
+        console.log('[sweep] ' + JSON.stringify(sum));
+        res.status(200).json(Object.assign({ ok: true }, sum));
+        return;
+      }
+      acquired = true;
+    }
+
+    const readClient = await getSheetsClient();
+    const vr = await batchGetValues(readClient, SPREADSHEET_ID, [POLL_SETTINGS_RANGE], { unformatted: true });
+    const settings = parseSettings((vr[0] && vr[0].values) || []);
+    const opts = materialSuggest.readOptions(settings);
+    const sweepOpts = materialSuggest.readSweepOptions(settings);
+    const deadlineMs = t0 + materialSuggest.SWEEP_BUDGET_MS;
+    opts.deadlineMs = deadlineMs;
+    const writeClient = await getRawMaterialWriteClient_();
+    const itemIO = materialSuggest.makeItemSheetIO(writeClient, SPREADSHEET_ID);
+
+    const targets = materialSuggest.pickSweepTargets(await itemIO.readItemRows());
+    const today = materialSuggest.kstDateStr(t0);
+    const failCounts = {};
+    for (const row of targets.slice(0, materialSuggest.SWEEP_FAIL_LOOKUP_MAX)) {
+      const key = rowClaim.claimKey(row);
+      const snap = await firestore.collection(SWEEP_FAILS).doc(materialSuggest.sweepFailDocId(today, key)).get();
+      if (snap.exists) failCounts[key] = Number(snap.data().count || 0);
+    }
+    const plan = materialSuggest.planSweepBatch(targets, failCounts, sweepOpts, rowClaim.claimKey);
+    Object.assign(sum, { maxRows: sweepOpts.maxRows, dailyFailLimit: sweepOpts.dailyFailLimit, targets: targets.length,
+      batch: plan.batch.length, skippedFailLimit: plan.skippedFailLimit.length, remaining: plan.remaining });
+
+    if (dryRun) {
+      sum.totalMs = Date.now() - t0;
+      console.log('[sweep] ' + JSON.stringify(sum));
+      res.status(200).json(Object.assign({ ok: true }, sum, {
+        rows: plan.batch.map(function (r) { return { itemId: r.itemId, rowNumber: r.rowNumber, itemName: r.itemName }; }),
+        skippedRows: plan.skippedFailLimit.map(function (r) { return { itemId: r.itemId, rowNumber: r.rowNumber, itemName: r.itemName }; })
+      }));
+      return;
+    }
+
+    const ctx = { mode: 'sweep', reqId: runId, provider: provider, opts: opts, deadlineMs: deadlineMs, writeClient: writeClient, itemIO: itemIO };
+    const results = await materialSuggest.runPool(plan.batch, materialSuggest.SWEEP_CONCURRENCY, function (row) {
+      return sheetRowProcess_(ctx, row).catch(function (err) {
+        console.error('[suggest] ' + JSON.stringify({ mode: 'sweep', source: 'cloud-run', reqId: runId, itemId: row.itemId, rowNumber: row.rowNumber,
+          itemName: row.itemName.slice(0, 100), reason: row.reason, ok: false, error: 'SERVER_ERROR', detail: String((err && err.message) || err).slice(0, 300) }));
+        return { itemId: row.itemId, rowNumber: row.rowNumber, status: 'error' };
+      });
+    });
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (!materialSuggest.isSweepFailure(r.status)) continue;
+      try { await recordSweepFailure_(today, rowClaim.claimKey(plan.batch[i]), plan.batch[i], r.status, r.why); }
+      catch (fe) { console.error('[sweep] 실패 횟수 기록 실패(무시): ' + fe); }
+    }
+    sum.counts = materialSuggest.summarizeSweep(results);
+    sum.totalMs = Date.now() - t0;
+    if (plan.batch.length > 0) {
+      try {
+        await firestore.collection(SWEEP_RUNS).doc('material_' + sum.startedAt + '_' + runId).set(Object.assign({}, sum, {
+          rows: results.map(function (r) { return { itemId: r.itemId, rowNumber: r.rowNumber, status: r.status, why: r.why || null }; })
+        }));
+      } catch (he) { console.error('[sweep] 회차 기록 실패(무시): ' + he); }
+    }
+    console.log('[sweep] ' + JSON.stringify(sum));
+    res.status(200).json(Object.assign({ ok: true }, sum, { results: results }));
+  } catch (err) {
+    sum.ok = false;
+    sum.error = 'SERVER_ERROR';
+    sum.detail = String((err && err.message) || err).slice(0, 300);
+    sum.totalMs = Date.now() - t0;
+    console.error('[sweep] ' + JSON.stringify(sum));
+    res.status(500).json({ ok: false, error: 'SERVER_ERROR', runId: runId, serverMs: Date.now() - t0 });
+  } finally {
+    if (acquired) {
+      try { await finishSweepRun_(runId, sum); } catch (fe) { console.error('[sweep] 회차 끝 표시 실패(6분 뒤 자동 무시): ' + fe); }
+    }
   }
 };
