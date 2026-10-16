@@ -3,7 +3,7 @@
 - 작성일: 2026-10-12 (v1 → v2: 재홍님 결정 5건 + 검토 지적 3건 반영)
 - 기준 코드: GitHub `nkmro/mro-market-intelligence` 커밋 `637c5e1` (Code.gs는 편집기의 미러 사본)
 - 상태: 설계 확정본(2026-10-12 재홍님 승인). 실제 구현은 단계별 승인을 받아 진행한다.
-- 진행: **단계 0 완료(2026-10-12, 부록 B) · 단계 1 완료(2026-10-13, 부록 C) · 단계 2 완료(2026-10-13, 부록 D) · 단계 3 완료(2026-10-14, 부록 E)** · 단계 4 대기
+- 진행: **단계 0 완료(2026-10-12, 부록 B) · 단계 1 완료(2026-10-13, 부록 C) · 단계 2 완료(2026-10-13, 부록 D) · 단계 3 완료(2026-10-14, 부록 E) · 단계 4 완료(2026-10-16, 부록 F)** · 단계 5(관찰) 진행 중
 - 목적: 이 문서만 읽고 다음 작업자(사람/AI)가 단계 0부터 시작할 수 있게 한다.
 
 ### 표기 규칙
@@ -97,6 +97,7 @@
   - `sheet`: 프록시 비밀값 헤더
   - `sweep`: **Google 서명 OIDC 토큰** 확인. 함수 안에서 `Authorization: Bearer` 토큰을 google-auth-library로 검증하고, 발급 대상(audience)이 이 함수 URL이며 이메일이 위 서비스 계정일 때만 허용한다.
   - [추정] 공개 함수에서도 이 방식으로 Scheduler 호출만 걸러낼 수 있다. 단계 4에서 실제 동작을 확인하고, 안 되면 sweep만 비공개 별도 함수로 분리하는 것을 대안으로 둔다.
+  - **→ 단계 4에서 대안을 채택했다(재홍님 결정 10/15, 부록 F-1):** 15분 점검은 같은 소스의 **별도 비공개 함수 `materialSweepTest`**로 배포하고, 호출자 확인은 Google이 한다(이슈 메일 `issueMailBatchTest`와 같은 방식). `suggestMaterialsTest`에는 `mode=sweep`이 없다(400 `UNSUPPORTED_MODE`).
 
 ### 2-1. ① 앱 버튼 → Cloud Run 완전 이전
 - 요청 `{ mode:'app', sessionToken, idempotencyKey, itemName }`.
@@ -132,6 +133,7 @@
 
 **Cloud Run sweep**
 - Scheduler 작업 `material-sweep-15m`: `*/15 * * * *`(Asia/Seoul), OIDC(위 서비스 계정), POST `{ mode:'sweep' }`. 이슈 메일 `issue-mail-hourly`와 같은 방식이다.
+  - **실제 구현(부록 F-1):** 매시 **2·17·32·47분**(정각 작업·Apps Script 점검과 시각을 떼어 놓음), 비공개 함수 `materialSweepTest`에 POST `{}`, 기다리는 시간 320초.
 - 처리
   1. `sweepRuns/material`로 중복 실행을 막는다(만료 6분).
   2. 품목마스터를 1번 읽어 **A·B·C가 있고 F가 빈 행**을 고른다.
@@ -341,7 +343,7 @@ done
 7. D열 데이터 확인 규칙을 Sheets API로 재현한 결과
 8. ~~I열 규칙 의도~~ → **해결: 2-5로 확정**(2026-10-12 코드 검증 후 재홍님 결정)
 9. ~~예비 공급자 품질 차이~~ → 예비 공급자 미사용으로 보류
-10. **(신규)** 공개 함수 안에서 Scheduler OIDC 토큰을 검증하는 방식의 실제 동작(2-0). 안 되면 sweep 전용 비공개 함수로 분리
+10. ~~**(신규)** 공개 함수 안에서 Scheduler OIDC 토큰을 검증하는 방식의 실제 동작(2-0). 안 되면 sweep 전용 비공개 함수로 분리~~ → **해소(단계 4, 부록 F-1)**: 확인 대신 처음부터 비공개 함수로 분리해 이 항목이 필요 없어짐
 11. ~~**(신규)** "F 있음 + I 빈칸" 기존 품목 수와 실제 소급 노출 여부~~ → **해결: 93건, (i) 그대로 두기 확정(부록 B ⑤)**
 12. **(신규, 해결)** 품목마스터 A열 중복 1건(A1000995427: 50행 스팟타방지제 / 51행 목장갑) → **재홍님 수정 완료**(51행 → 1000252867). 2026-10-12 시트 재확인: 중복 0건. 기존 댓글 73건·댓글확인이력은 모두 부탄·나프타·실리콘 게시물 대상이라 50행(코드 유지)에 그대로 연결됨 — 51행(목장갑, F=면) 대상 기록은 0건 [확인]
 
@@ -561,7 +563,7 @@ done
 | 원자재마스터 | 81 | RM080 | 가소제(키워드 가소제) | 활성 | 시험 (b) |
 - 97행 TEST-002는 품목명이 `테스트용 라텍스장갑`(F 고무, 첨가제)으로 바뀐 상태다(D-4 목록 행).
 
-### E-6. 현재 상태 (2026-10-14 기준 — 다음 세션은 여기서 이어받는다)
+### E-6. 현재 상태 (2026-10-14 기준) — **지난 기록. 단계 4는 10/16 완료, 현재 상태는 부록 F-8**
 - **운영**
   - 앱 추천: Cloud Run `suggestMaterialsTest`(리비전 00003-joq, `mode=app`) → 실패 시 Apps Script 웹앱 **버전 89**
   - 시트 편집(F 추천): **Cloud Run `mode=sheet`**. 스위치 **켜짐**(스크립트 속성 `SUGGEST_PROXY_URL`·`SUGGEST_PROXY_TOKEN`). D·E·G·H는 Apps Script
@@ -588,3 +590,87 @@ done
 - **다음 세션 시작 시 재홍님이 하실 일:** "단계 4 시작" 또는 "보류"만 알려 주시면 된다.
   - 작업자는 먼저 이 문서(E-6)와 `stage3_plan.md`를 읽는다.
   - 그다음 Cloud Run 리비전(00003-joq)과 편집기 해시(035b3c59f0c21e99)가 그대로인지 확인한 뒤 단계 4 계획서부터 만든다.
+
+## 부록 F. 단계 4 결과 기록 — **단계 4 완료 (2026-10-16)**
+
+### F-1. 결정 4가지 (재홍님 "권장대로" 10/15, 계획서 `stage4_plan.md`)
+| # | 정할 것 | 결정 |
+|---|---|---|
+| 1 | 점검을 어느 함수에 둘지 | **별도 비공개 함수 `materialSweepTest`**(같은 소스). 설계 원안(공개 함수 + 함수 안 OIDC 검증, 7-1 10번 미확인)은 쓰지 않음. 행 처리(처리권 try → 엔진 → 재확인·쓰기)는 단계 3 시트 경로 함수(`sheetRowProcess_`, `fill_empty`)를 그대로 씀 |
+| 2 | 시험 방법 | 편집기 시험용 함수 **`stage4ClearTestF()`**: A열이 `TEST-`로 시작하는 행만 F·I를 비움(스크립트가 바꾼 값은 편집 트리거를 깨우지 않음 → F-3에서 확인) |
+| 3 | 점검 시각 | 매시 **2·17·32·47분**(서울). 정각 작업(이슈 메일·리마인더)·Apps Script 점검(14·29·44·59분 53초)과 겹치지 않게 |
+| 4 | 새 설정 2개 | `원자재점검1회처리한도`(기본 10, 1~30)·`원자재추천일일실패한도`(기본 3, 1~10). 설정 탭에 행이 없어도 기본값으로 동작. **앱 설정 화면 노출은 단계 5에서 결정** |
+
+### F-2. 반영 내역
+| 구분 | 내용 |
+|---|---|
+| 커밋 2571579 · 8bd9cb4 · 707b7c8 · 0d0e274 | lib(점검용 순수 함수 7개) · `index.js`(`exports.materialSweepTest` 신규. 기존 코드는 설명 주석 1곳과 행 로그 `mode` 표기 1줄만) · Code.gs 미러(`ensureAllItemRowsComplete`에서 F 채우기 삭제, "완성" 판정에서 F 제외, `stage4ClearTestF` 추가) · 시험(38건 신규 + stage2 I3 기대값 변경·설명 2건). 7개 파일 해시 일치 |
+| 시험 | 가짜 데이터 94/94 · 25/25 · 61/61 · **38/38**(합계 218). 일부러 망가뜨린 3곳(옛 F 채우기 남김, 동시 5, 실패 한도 무시)을 6건이 잡아냄 |
+| Cloud Run 배포 | `materialSweepTest` 리비전 **materialsweeptest-00001-sam**(10/16 09:17). 비공개(`--no-allow-unauthenticated`), Node 22, 300초, 256Mi, **`--max-instances=1 --concurrency=1`**(describe: `maxInstanceCount: 1`, `maxInstanceRequestConcurrency: 1`), 서비스 계정 771006650918-compute, Secret `ai-deepseek-api-key` → `DEEPSEEK_API_KEY`, `AI_PROVIDER=DEEPSEEK`. 호출 권한(`roles/run.invoker`)은 그 서비스 계정 1개만 [확인: describe·get-iam-policy] |
+| Scheduler | `material-sweep-15m`: `2,17,32,47 * * * *` Asia/Seoul, POST `{}`, OIDC(위 서비스 계정, audience = 함수 run.app 주소), 기다리는 시간 320초. 만든 즉시 **PAUSED** → 시험 후 09:49 **ENABLED** |
+| 기존 함수 | `suggestMaterialsTest`는 다시 배포하지 않음 → **00003-joq 그대로**(앱·시트 편집 경로 무변경) [확인] |
+| 편집기 | 붙여넣기(제가) → 저장(재홍님). 저장 내용 해시 **8b6fd3817c7acf2e·4,724줄**(미러 6838dbb22a43에서 배너만 뺀 것) [확인: 페이지 새로고침 후] |
+| 배포 명령 전문 | `stage4_deploy_commands.md`(⓪~⑥ + 403 대안 + 되돌리기) |
+
+### F-3. 확인된 사실 [확인: 실행 기록·Cloud Run 로그 원문, 시트 직접 읽기]
+- **스크립트가 바꾼 값은 시트 편집 트리거를 깨우지 않는다.** `stage4ClearTestF`(10/16 09:36:41, 1.7초) 기록: `stage4ClearTestF: 6행 F·I 비움 — 96행 TEST-001 … 101행 TEST-006`. 이후 실행 목록에 `onEditInstallable` 0건, F는 빈 채로 남음(단계 4 계획서의 [추정] → [확인]).
+- **Apps Script 15분 점검은 이제 F를 채우지 않는다.** 바뀐 코드의 첫 실행 `ensureAllItemRowsComplete`(시간 기반, 10/16 09:44:53, 2.441초) 기록 원문: `오전 9:44:55 정보 전체 완료. 처리된 행: 0 | 오류로 스킵된 행: 0`. AI 호출(`[suggest]`) 없음. 실행 뒤 96~101행 F 빈칸 그대로.
+- **Cloud Run 점검이 빈 F를 채운다.** 09:46 수동 1회 → 6행 모두 `written`(F-4).
+- **할 일이 없으면 아무것도 안 한다.** 09:48 다시 실행 → 대상 0행, AI 0회, 1.5초, 회차 기록 추가 없음(`sweepRuns/material`의 lastRun만 갱신).
+- **Scheduler 자동 실행 정상.** 10:02:00 Google-Cloud-Scheduler 호출 → HTTP 200, `[sweep] {"runId":"b6810d2b",…,"targets":0,…,"totalMs":1769}`.
+- **dryRun**(`{"dryRun":true}`)은 재홍님 계정(프로젝트 owner) 인증 토큰으로 바로 통했다(HTTP 200). 403 대안(임시 호출 권한)은 쓰지 않음.
+- 배포 전 dryRun(09:24) 대상 **0행** → 운영 품목 중 "A·B·C 있고 F 빈(공백만 있는 F 포함)" 행은 없었다.
+
+### F-4. 시험 결과 — Cloud Run 점검 1회 (10/16 09:46, runId 36bbaeba, 44.1초, `counts: {written: 6}`)
+| 행 | 품목명 | F (원자재) | I (원자재수정일) | AI | 행 처리 시간 |
+|---|---|---|---|---|---|
+| 96 | 테스트용 고무장갑 | 고무 | 09:46:37 | 1회 | 23.0초 |
+| 97 | 테스트용 라텍스장갑 | 고무 | 09:46:39 | 1회 | 25.4초 |
+| 98 | 테스트용 면장갑 | 면 | 09:46:23 | 1회 | 11.4초 |
+| 99 | 테스트용 비닐장갑 | PVC, 가소제 | 09:46:31 | 1회 | 5.9초 |
+| 100 | 테스트용 목장갑 | 면 | 09:46:51 | 1회 | 19.0초 |
+| 101 | 테스트용 코팅장갑 | PVC, 면 | 09:46:56 | 1회 | 18.3초 |
+- 로그: 행마다 `[suggest]` `mode=sweep`·`reason=fill_empty`·`claim=acquired`·`sheetWrite=written`·`iUpdated=true` 6줄 + `[sweep]` 요약 1줄.
+- 원자재마스터에 **새 원자재 없음**(마지막 RM080 가소제 그대로).
+- 끝난 뒤 행 처리권(`materialRowClaims`) 0건, 실패 기록(`materialSweepFails`) 0건.
+- Firestore: `sweepRuns/material`(running=false, lastRun) + 회차 기록 `sweepRuns/material_20261016-094612_36bbaeba` 1건.
+- 동시 3행 처리 → 행 시간 합 103초가 전체 44초에 끝남.
+
+### F-5. AI 응답 편차 (참고, 문제 아님)
+| 행 | 품목명 | 단계 3 결과(10/14) | 단계 4 결과(10/16) |
+|---|---|---|---|
+| 97 | 테스트용 라텍스장갑 | 고무, 첨가제 | 고무 |
+| 101 | 테스트용 코팅장갑 | 고무, 면 | PVC, 면 |
+- 같은 프롬프트·같은 품목명인데 답이 달랐다. AI 답이 매번 조금씩 다를 수 있는 특성으로 보며, 코드 문제는 아니다 **[추정]**. 나머지 4행은 같은 답. 실사용에서 같은 품목의 답이 자주 바뀌는지는 단계 5에서 관찰한다(필요하면 AI 설정 조정 검토).
+
+### F-6. 정리 대상 (단계 6에서 한 번에, C-4·D-4·E-5 포함 전체)
+| 시트·저장소 | 대상 | 상태 | 생긴 이유 |
+|---|---|---|---|
+| 품목마스터 | 96~101행 TEST-001~006 (현재 F: 고무 / 고무 / 면 / PVC, 가소제 / 면 / PVC, 면) | 비활성 | 단계 1~4 시험 행 |
+| 원자재마스터 | 80행 RM079 리튬 | 활성 | 단계 1 시험(C-4) |
+| 원자재마스터 | 81행 RM080 가소제 | 활성 | 단계 3 시험 (b)(E-5) |
+| Firestore | `sweepRuns`(회차 기록)·`materialSweepFails`(실패 기록) | — | 단계 4 운영 기록 |
+| 편집기 | `stage4ClearTestF`(시험 전용 함수) | — | 단계 4 시험 |
+- 원자재마스터 행 삭제는 RM 번호 규칙(다음 번호 = 가장 큰 번호 + 1)에 영향이 없는지 정리 때 확인한다.
+
+### F-7. Firestore 기록 보관
+- `sweepRuns/material`: 1건(회차 겹침 방지 표시 + 마지막 회차 요약). 계속 덮어씀.
+- `sweepRuns/material_{서울시각}_{runId}`: **처리한 행이 있던 회차만** 1건. 최대 하루 96건이지만 실제로는 빈 F가 생긴 회차만 남는다(시트 편집 경로가 대부분 바로 채우므로 적을 것 **[추정]**). → **단계 5 관찰 뒤 보관 기간·정리 방법 결정.**
+- `materialSweepFails/{서울날짜}_{행키}`: 실패한 행만, 하루 1건/행. 양 적음. 날짜가 바뀌면 다시 시도하므로 지난 날짜 문서는 동작에 쓰이지 않는다.
+
+### F-8. 현재 상태 (2026-10-16 기준 — 다음 세션은 여기서 이어받는다)
+- **운영**
+  - 앱 추천: Cloud Run `suggestMaterialsTest`(리비전 00003-joq, `mode=app`) → 실패 시 Apps Script 웹앱 버전 89
+  - 시트 편집(F 추천): Cloud Run `suggestMaterialsTest` `mode=sheet`, 스위치 **켜짐**(`SUGGEST_PROXY_URL`)
+  - 15분 점검(빈 F): **Cloud Run `materialSweepTest`**(리비전 00001-sam), Scheduler `material-sweep-15m` **ENABLED**(매시 2·17·32·47분)
+  - Apps Script `ensureAllItemRowsComplete`(15분 트리거): **D·E·G·H만** 채움, F는 안 건드림
+  - 세 경로 모두 행 처리권(`materialRowClaims`)과 원자재마스터 잠금(`writeLocks/rawMaterialMaster`)을 같이 씀 → E-4 겹침 해소
+- **되돌리기** (위에서부터 필요한 만큼)
+  1. 자동 점검 멈추기: `gcloud scheduler jobs pause material-sweep-15m --location=asia-northeast3 --project=mro-market-intelligence` (지우려면 `delete … --quiet`)
+  2. Apps Script 점검이 다시 F를 채우게: 편집기에 단계 3 코드(해시 **035b3c59f0c21e99**, GitHub 2d5dd1a 미러에서 배너만 뺀 것)를 붙여넣고 저장
+  3. 함수 삭제: `gcloud functions delete materialSweepTest --region=asia-northeast3 --project=mro-market-intelligence --quiet`
+  - 앱·시트 편집 경로는 단계 4와 무관하게 그대로 동작한다.
+- **다음: 단계 5 (2~4주 관찰)** — 【5】 단계 5
+  - 볼 것: `[sweep]` 회차별 대상·처리·실패 수, `busy`(시트 편집과 겹침) 빈도, `materialSweepFails` 발생 여부, 시트 편집·앱 경로 실패율·시간·폴백 횟수, AI 응답 편차(F-5), 50초 넘는 요청(E-4)
+  - 정할 것: Firestore 기록 보관(F-7), 새 설정 2개 앱 설정 화면 노출(F-1 #4)
+  - 그 뒤 단계 6(정리): F-6 목록, 동결본·폴백 경로 삭제
