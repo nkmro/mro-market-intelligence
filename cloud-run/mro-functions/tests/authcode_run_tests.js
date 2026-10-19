@@ -97,7 +97,7 @@ const USERS = [
   check('S4 이미 가입(대소문자 무시) -> ALREADY_REGISTERED', (await e.call({ action: 'requestSignup', email: 'KIM@nkmro.com', name: '김', team: '동부', password: 'abcdef' })).error === 'ALREADY_REGISTERED');
   let r = await e.call({ action: 'requestSignup', email: ' New@NKMRO.com ', name: '신입<b>', team: '동부', password: 'secret1' });
   check('S5 정상 요청 -> ok, 메일 1통', r.ok === true && e.sent.length === 1 && e.sent[0].to === 'new@nkmro.com', r);
-  check('S6 메일 제목·본문 = Apps Script와 같은 문구', e.sent[0].subject === '[MRO 시황] 회원가입 인증코드' && /신입<b>님, 회원가입 인증코드는 \[\d{6}\] 입니다\. 10분 이내에 입력해주세요\./.test(e.sent[0].text));
+  check('S6 메일 제목·본문 = Apps Script와 같은 문구', e.sent[0].subject === '[MRO 워크허브] 회원가입 인증코드' && /신입<b>님, 회원가입 인증코드는 \[\d{6}\] 입니다\. 10분 이내에 입력해주세요\./.test(e.sent[0].text));
   check('S7 메일 HTML에서 이름이 안전하게 바뀜(<b> 그대로 안 들어감)', e.sent[0].html.includes('신입&lt;b&gt;님') && !e.sent[0].html.includes('신입<b>님'));
   const code1 = e.lastCode();
   const wrong = code1 === '111111' ? '222222' : '111111';
@@ -172,7 +172,7 @@ const USERS = [
   check('P1 빈 이메일 -> MISSING_FIELDS', (await e.call({ action: 'requestPasswordReset', email: '' })).error === 'MISSING_FIELDS');
   check('P2 없는 사용자 -> USER_NOT_FOUND', (await e.call({ action: 'requestPasswordReset', email: 'ghost@nkmro.com' })).error === 'USER_NOT_FOUND');
   r = await e.call({ action: 'requestPasswordReset', email: 'JHJOO@nkmro.com' });
-  check('P3 정상 요청 -> ok, 메일 제목·이름 = Apps Script와 동일', r.ok && e.sent[0].subject === '[MRO 시황] 비밀번호 재설정 인증코드' && e.sent[0].text.startsWith('주재홍님, 비밀번호 재설정 인증코드는 ['), r);
+  check('P3 정상 요청 -> ok, 메일 제목·이름 = Apps Script와 동일', r.ok && e.sent[0].subject === '[MRO 워크허브] 비밀번호 재설정 인증코드' && e.sent[0].text.startsWith('주재홍님, 비밀번호 재설정 인증코드는 ['), r);
   const pc = e.lastCode(), pw = pc === '111111' ? '222222' : '111111';
   check('P4 새 비밀번호 5자 -> PASSWORD_TOO_SHORT', (await e.call({ action: 'confirmPasswordReset', email: 'jhjoo@nkmro.com', code: pc, newPassword: 'abc' })).error === 'PASSWORD_TOO_SHORT');
   r = await e.call({ action: 'confirmPasswordReset', email: 'jhjoo@nkmro.com', code: pw, newPassword: 'newpass1' });
