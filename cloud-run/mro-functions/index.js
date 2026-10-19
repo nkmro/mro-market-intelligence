@@ -3798,6 +3798,11 @@ exports.getCompetencyTest = async (req, res) => {
       return;
     }
     const timings = Object.assign({}, auth.timings);
+    // 1단계-나: 보기 기능은 별도 처리 함수로 (ping 경로는 아래 그대로 유지)
+    if (view === 'mine' || view === 'team' || view === 'criteria') {
+      await competencyView_(req, res, auth, t0, timings, view, year);
+      return;
+    }
     if (view !== 'ping') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
@@ -3859,3 +3864,80 @@ exports.getCompetencyTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
   }
 };
+
+// =====================================================================
+// 역량평가 1단계-나: getCompetencyTest 보기 기능 (view = mine / team / criteria)
+// 설계서 v1.5 2-2(보기 권한)·3장(화면 ①②⑤)·⑫(퇴사자). 읽기만 한다.
+//   mine     : 활성 사용자 누구나 — 본인 기록 + 우리 팀 건수표(건수만)
+//   team     : 팀장(자기 팀 일반·담당) / 임원(전체 일반·담당). 그 외 FORBIDDEN
+//              includeLeft=true면 퇴사(비활성) 포함, 작성자 판정 불가 기록은 임원·관리자에게만
+//   criteria : 활성 사용자 누구나 — 평가 기준 탭 값 그대로
+//   badge    : 3단계(NEW·확인 대기)에서 만든다 — 지금은 NOT_IMPLEMENTED (위 분기)
+// 인코딩 규약: batchGetValues는 받은 문자열을 그대로 URL에 붙인다(lib/sheetsClient.js 23행 주석).
+//   MRO 쪽은 이미 인코딩된 상수(POLL_SETTINGS_RANGE, COMPETENCY_USER_RANGE)를 그대로,
+//   인사평가 파일 쪽은 날 문자열을 .map(encodeURIComponent)로 한 번만 인코딩한다(ping과 같음).
+// A1 규약: 탭 이름은 항상 작은따옴표로 감싼다(competency.quoteTab) — ping에서 실제 동작 확인됨.
+// =====================================================================
+const COMPETENCY_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:J'); // J = 사무소(4-5절)
+
+async function competencyView_(req, res, auth, t0, timings, view, year) {
+  const body = req.body || {};
+  const client = await getSheetsClient();
+  const m0 = Date.now();
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  timings.mroSheetMs = Date.now() - m0;
+  const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+  });
+  const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
+  if (!viewer) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'USER_NOT_FOUND' }); return; }
+  if (viewer.status !== '활성') { res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'FORBIDDEN' }); return; }
+  if (view === 'team' && viewer.role !== '팀장' && viewer.role !== '임원') {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'FORBIDDEN' }); return;
+  }
+  const targetYear = Number(year) || competency.seoulYear();
+  const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+  if (!fileId) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear }); return;
+  }
+  // v1.6 (설계서 4-4·⑱): 기준 보기만 탭 목록을 먼저 읽어 팀별 기준 탭(선택)이 있는지 본다.
+  // 탭 목록을 못 읽으면 기본 기준 탭으로 진행(기준 탭 접근 실패는 아래 batchGet에서 따로 잡힘).
+  let criteriaTab = competency.CRITERIA_TAB;
+  if (view === 'criteria') {
+    const k0 = Date.now();
+    try {
+      const meta = await client.request({ url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '?fields=sheets.properties.title' });
+      const titles = ((meta.data && meta.data.sheets) || []).map(function (sh) { return sh && sh.properties && sh.properties.title; });
+      criteriaTab = competency.pickCriteriaTab(titles, viewer.team);
+    } catch (e) {
+      console.error('[getCompetencyTest] 탭 목록 읽기 실패(무시, 기본 기준 탭 사용): ' + String((e && e.message) || e).slice(0, 200));
+    }
+    timings.tabListMs = Date.now() - k0;
+  }
+  const ranges = (view === 'criteria'
+    ? [competency.quoteTab(criteriaTab) + '!A1:H60']
+    : competency.RECORD_TABS.map(function (t) { return competency.quoteTab(t.tab) + '!A1:Z'; })
+  ).map(encodeURIComponent);
+  const c0 = Date.now();
+  let vr;
+  try {
+    vr = await batchGetValues(client, fileId, ranges);
+  } catch (e) {
+    const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus, year: targetYear }); return;
+  }
+  timings.competencySheetMs = Date.now() - c0;
+  const base = { ok: true, view: view, year: targetYear,
+    viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
+  if (view === 'criteria') {
+    res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, criteriaTab: criteriaTab, rows: competency.criteriaRows((vr[0] && vr[0].values) || []) }));
+    return;
+  }
+  const recordsByTab = {};
+  competency.RECORD_TABS.forEach(function (t, i) { recordsByTab[t.key] = competency.parseTab(t.key, (vr[i] && vr[i].values) || []); });
+  const isAdmin = String(viewer.email || '').trim().toLowerCase() === ADMIN_EMAIL;
+  const result = view === 'mine'
+    ? competency.buildMine(viewer, users, recordsByTab)
+    : competency.buildTeam(viewer, users, recordsByTab, { includeLeft: body.includeLeft === true, isAdmin: isAdmin });
+  res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings }, result));
+}
