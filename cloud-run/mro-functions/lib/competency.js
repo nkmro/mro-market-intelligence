@@ -58,3 +58,120 @@ module.exports = {
   RECORD_TABS, CRITERIA_TAB, SETTINGS_TAB, EXTRA_HEADERS, FILE_KEY_PREFIX,
   seoulYear, findFileId, quoteTab, checkHeaderRow
 };
+
+// =====================================================================
+// 1단계-나 (보기 기능) — 순수 함수. 설계서 v1.5 2-2(보기 권한)·4-3(백필 매칭)·⑫(퇴사자) 기준.
+// =====================================================================
+// 탭별 "작성자 이름" 칸 (추가매출만 '담당', 나머지는 '이름') — 2026-10-19 머리글 [확인]
+const NAME_HEADER = { addSales: '담당' };
+const MEMBER_ROLES = ['일반', '담당'];
+
+function normName(s) { return String(s === undefined || s === null ? '' : s).replace(/\s+/g, ''); }
+function normEmail(s) { return String(s || '').trim().toLowerCase(); }
+
+// 시트 한 탭(1행=머리글)을 기록 객체 배열로. 이름 칸이 빈 줄은 건너뜀(4-2절).
+function parseTab(tabKey, values) {
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  const nameCol = header.indexOf(NAME_HEADER[tabKey] || '이름');
+  const col = function (n) { return header.indexOf(n); };
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const name = nameCol >= 0 ? String(row[nameCol] === undefined ? '' : row[nameCol]).trim() : '';
+    if (!name) continue;
+    const fields = {};
+    header.forEach(function (h, i) { if (h) fields[h] = row[i] === undefined ? '' : row[i]; });
+    out.push({
+      tab: tabKey, row: r + 1, name: name,
+      recordId: String(fields['기록ID'] || ''), authorEmail: normEmail(fields['작성자이메일']),
+      recordedAt: String(fields['기록일시'] || ''), office: String(fields['사무소'] || ''),
+      leaderOpinion: String(fields['팀장 의견'] || fields['팀장 의견 (상중하)'] || ''),
+      fields: fields
+    });
+  }
+  return out;
+}
+
+// 작성자 판정: 작성자이메일이 있으면 그것으로, 없으면 이름(띄어쓰기 무시)이 정확히 1명일 때만.
+// 반환 user 또는 null. 동명이인(2명 이상)·미등록은 null → "판정 불가"(퇴사 처리 대상과 같이 취급하지 않고 별도 표시).
+function resolveAuthor(rec, users) {
+  if (rec.authorEmail) {
+    return users.find(function (u) { return normEmail(u.email) === rec.authorEmail; }) || null;
+  }
+  const hits = users.filter(function (u) { return normName(u.name) && normName(u.name) === normName(rec.name); });
+  return hits.length === 1 ? hits[0] : null;
+}
+function authorStatus(user) { return !user ? 'unresolved' : (user.status === '활성' ? 'active' : 'left'); }
+
+function publicRecord(rec, user) {
+  return { tab: rec.tab, row: rec.row, recordId: rec.recordId, name: rec.name,
+    authorEmail: user ? normEmail(user.email) : (rec.authorEmail || ''), authorStatus: authorStatus(user),
+    office: rec.office, recordedAt: rec.recordedAt, leaderOpinion: rec.leaderOpinion, fields: rec.fields };
+}
+
+function monthOf(recordedAt) {
+  const m = String(recordedAt || '').match(/^\d{4}-(\d{2})/);
+  return m ? Number(m[1]) : 0; // 0 = 기록일시 없음(기존 기록, ⑤)
+}
+
+// view=mine: 본인 기록 전체 + 우리 팀 건수표(활성 일반·담당, 건수만 — 내용·팀장 의견 없음)
+function buildMine(viewer, users, recordsByTab) {
+  const mine = {}; const counts = {};
+  const team = users.filter(function (u) { return u.status === '활성' && MEMBER_ROLES.indexOf(u.role) >= 0 && String(u.team || '').trim() === String(viewer.team || '').trim(); });
+  team.forEach(function (u) { counts[normEmail(u.email)] = { name: u.name, office: u.office || '', byTab: {} }; });
+  Object.keys(recordsByTab).forEach(function (tab) {
+    mine[tab] = [];
+    recordsByTab[tab].forEach(function (rec) {
+      const user = resolveAuthor(rec, users);
+      if (user && normEmail(user.email) === normEmail(viewer.email)) mine[tab].push(publicRecord(rec, user));
+      if (user && counts[normEmail(user.email)]) {
+        const c = counts[normEmail(user.email)].byTab; c[tab] = (c[tab] || 0) + 1;
+      }
+    });
+  });
+  return { records: mine, teamCounts: Object.keys(counts).map(function (k) { return counts[k]; }) };
+}
+
+// view=team: 팀장=자기 팀 일반·담당 / 임원=전체 일반·담당. 그 외 역할은 호출부에서 FORBIDDEN.
+// 퇴사(비활성)·판정 불가 기록은 includeLeft=true일 때만. 판정 불가(팀을 알 수 없음)는 임원·관리자에게만.
+function buildTeam(viewer, users, recordsByTab, opts) {
+  opts = opts || {};
+  const isExec = viewer.role === '임원';
+  const inScope = function (u) {
+    return MEMBER_ROLES.indexOf(u.role) >= 0 && (isExec || String(u.team || '').trim() === String(viewer.team || '').trim());
+  };
+  const members = {};
+  users.filter(function (u) { return inScope(u) && (u.status === '활성' || opts.includeLeft); }).forEach(function (u) {
+    members[normEmail(u.email)] = { name: u.name, email: normEmail(u.email), team: u.team, office: u.office || '', status: u.status === '활성' ? 'active' : 'left', byTab: {}, byMonth: {}, pendingReview: 0 };
+  });
+  const records = []; const unresolved = [];
+  Object.keys(recordsByTab).forEach(function (tab) {
+    recordsByTab[tab].forEach(function (rec) {
+      const user = resolveAuthor(rec, users);
+      if (!user) { if (opts.includeLeft && (isExec || opts.isAdmin)) unresolved.push(publicRecord(rec, null)); return; }
+      const m = members[normEmail(user.email)];
+      if (!m) return;
+      records.push(publicRecord(rec, user));
+      m.byTab[tab] = (m.byTab[tab] || 0) + 1;
+      const mo = monthOf(rec.recordedAt); m.byMonth[mo] = (m.byMonth[mo] || 0) + 1;
+      if (!rec.leaderOpinion && m.status === 'active') m.pendingReview++;
+    });
+  });
+  return { members: Object.keys(members).map(function (k) { return members[k]; }), records: records, unresolved: unresolved };
+}
+
+// 기준 탭: 값이 있는 줄만 원본 그대로(화면에서 그림). 시트 구조 해석은 화면 단계에서.
+function criteriaRows(values) {
+  return (values || []).map(function (r) { return (r || []).map(function (v) { return String(v === undefined ? '' : v).trim(); }); })
+    .filter(function (r) { return r.join('') !== ''; });
+}
+
+module.exports.NAME_HEADER = NAME_HEADER;
+module.exports.MEMBER_ROLES = MEMBER_ROLES;
+module.exports.parseTab = parseTab;
+module.exports.resolveAuthor = resolveAuthor;
+module.exports.buildMine = buildMine;
+module.exports.buildTeam = buildTeam;
+module.exports.criteriaRows = criteriaRows;
+module.exports.monthOf = monthOf;
