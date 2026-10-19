@@ -1,4 +1,4 @@
-// MRO 자재 시황 관리 시스템 - 서비스워커
+// MRO 워크허브 - 서비스워커
 // PWA 설치 가능성 + 알림 표시를 위한 최소 구현
 
 self.addEventListener('install', function (event) {
@@ -89,7 +89,7 @@ const messaging = firebase.messaging();
 // 발생시키므로, 별도 핸들러가 필요 없다).
 messaging.onBackgroundMessage(function (payload) {
   const data = payload.data || {};
-  const title = data.title || 'MRO 시황관리';
+  const title = data.title || 'MRO 워크허브';
   self.registration.showNotification(title, {
     body: data.body || '',
     icon: './icon-192.png'

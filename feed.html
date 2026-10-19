@@ -632,7 +632,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <body>
 
 <div id="auth-loading-overlay" style="display:none;">
-  <div class="auth-center-logo">MRO NEWS</div>
+  <div class="auth-center-logo">MRO WORK HUB</div>
   <div class="auth-caption">시황 뉴스를 <b>모으는 중</b>이에요...</div>
 </div>
 
@@ -3019,7 +3019,7 @@ function evaluateLocalNotification_(count) {
   }
   if (lastNotifCount !== null && count > lastNotifCount && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     const diff = count - lastNotifCount;
-    showLocalNotification('MRO 자재 시황', '새 알림이 ' + diff + '건 있어요.');
+    showLocalNotification('MRO 워크허브', '새 알림이 ' + diff + '건 있어요.');
   }
   setLastNotifCount_(count);
 }
