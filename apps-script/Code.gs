@@ -4467,6 +4467,20 @@ DriveApp.getFileById(SHEET_ID).makeCopy('DB_' + todayStr, dateFolder);
 Logger.log('DB 백업 실패: ' + e);
 }
 
+// 1-2) 인사평가 파일 사본 (2026-10-19 추가, 역량평가 설계서 v1.5 8장 ⑮)
+// 파일 ID는 하드코딩하지 않고 '설정' 탭의 인사평가파일_{연도} 키에서 읽는다(getSetting_, 키 이름 기준).
+// 올해 + 작년 파일을 대상으로 한다(1월 전년도 입력 기간에도 빠짐없이). 키가 없으면 그 해만 건너뛴다.
+// 저장 위치·보관 기간은 기존 백업과 같다(오늘 날짜 폴더, 아래 6) 회전으로 15일 뒤 함께 삭제).
+[Number(todayStr.slice(0, 4)), Number(todayStr.slice(0, 4)) - 1].forEach(function (y) {
+try {
+const evalFileId = getSetting_('인사평가파일_' + y);
+if (!evalFileId) { Logger.log('인사평가 백업 건너뜀: 설정에 인사평가파일_' + y + ' 없음'); return; }
+DriveApp.getFileById(String(evalFileId).trim()).makeCopy('인사평가_' + y + '_' + todayStr, dateFolder);
+} catch (e) {
+Logger.log('인사평가 백업 실패(' + y + '): ' + e);
+}
+});
+
 // 2) 백엔드(Apps Script 프로젝트 자체) 사본
 try {
 DriveApp.getFileById(ScriptApp.getScriptId()).makeCopy('백엔드_' + todayStr, dateFolder);
@@ -4521,6 +4535,12 @@ f.setTrashed(true);
 }
 }
 }
+}
+
+// 수동 실행용 (2026-10-19 추가, 역량평가 설계서 ⑮ 검증) — 편집기 드롭다운에서 이 함수를 골라 ▶ 실행.
+// runDailyBackup_은 날짜 인자가 필요해 직접 실행하면 안 된다. dailyBackupCheck_와 같은 형식으로 날짜를 만들어 넘긴다.
+function manualDailyBackupNow() {
+runDailyBackup_(Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'));
 }
 
 // ===== Firestore pushSubscriptions 백업 (2026-09-07 추가) =====
