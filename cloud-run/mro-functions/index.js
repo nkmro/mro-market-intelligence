@@ -3774,3 +3774,88 @@ exports.materialSweepTest = async (req, res) => {
     }
   }
 };
+
+// =====================================================================
+// 역량평가(인사평가) — 1단계-가: getCompetencyTest (지금은 view=ping 만)
+// 설계서 COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md v1.5, 5-2·5-3절.
+// - 관리자(ADMIN_EMAIL)만 호출 가능. 화면(feed.html)에는 아직 연결하지 않는다.
+// - 읽기만 한다(spreadsheets.readonly). 시트에 아무것도 쓰지 않는다.
+// - MRO 본 시트 '설정' 탭의 `인사평가파일_{연도}` 로 인사평가 파일을 찾고,
+//   그 파일의 인사평가설정 탭 + 기록 탭 5개 머리글 + 기준 탭 제목줄을 한 번에 읽어 점검 결과를 돌려준다.
+// - 서비스 계정 공유가 안 돼 있으면 Google이 403을 돌려주므로, 그 상태코드를 그대로 응답에 담는다.
+// =====================================================================
+const competency = require('./lib/competency');
+
+exports.getCompetencyTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, view, year } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    if (view !== 'ping') {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
+      return;
+    }
+    if (String(auth.email || '').trim().toLowerCase() !== ADMIN_EMAIL) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'FORBIDDEN' });
+      return;
+    }
+
+    // 1) MRO 본 시트: '설정' 탭(A2:C)에서 인사평가 파일 주소
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const targetYear = Number(year) || competency.seoulYear();
+    const fileId = competency.findFileId((mro[0] && mro[0].values) || [], targetYear);
+    if (!fileId) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'COMPETENCY_SETTINGS_MISSING',
+        detail: "'설정' 탭에 " + competency.FILE_KEY_PREFIX + targetYear + ' 키가 없음', year: targetYear });
+      return;
+    }
+
+    // 2) 인사평가 파일: 인사평가설정 + 기록 탭 5개 1행 + 기준 탭 1~5행 (요청 1번)
+    const ranges = [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C']
+      .concat(competency.RECORD_TABS.map(function (t) { return competency.quoteTab(t.tab) + '!1:1'; }))
+      .concat([competency.quoteTab(competency.CRITERIA_TAB) + '!A1:F5'])
+      .map(encodeURIComponent);
+    const c0 = Date.now();
+    let vr;
+    try {
+      vr = await batchGetValues(client, fileId, ranges);
+    } catch (e) {
+      const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+      const msg = String((e && e.response && e.response.data && e.response.data.error && e.response.data.error.message) || (e && e.message) || e);
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED',
+        httpStatus: httpStatus, detail: msg.slice(0, 300), year: targetYear, fileId: fileId });
+      return;
+    }
+    timings.competencySheetMs = Date.now() - c0;
+
+    const settingsRows = (vr[0] && vr[0].values) || [];
+    const tabs = competency.RECORD_TABS.map(function (t, i) {
+      const row = ((vr[i + 1] && vr[i + 1].values) || [])[0] || [];
+      return Object.assign({ key: t.key, tab: t.tab }, competency.checkHeaderRow(row));
+    });
+    const criteriaRows = (vr[vr.length - 1] && vr[vr.length - 1].values) || [];
+    const criteriaTitle = criteriaRows.map(function (r) { return (r || []).join('').trim(); })
+      .filter(function (s) { return s.indexOf('■') === 0; })[0] || null;
+
+    res.status(200).json({
+      ok: tabs.every(function (t) { return t.ok; }),
+      serverMs: Date.now() - t0, timings,
+      year: targetYear, fileId: fileId,
+      settings: settingsRows,
+      tabs: tabs,
+      criteriaTitle: criteriaTitle
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};
