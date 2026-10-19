@@ -28,7 +28,7 @@ const { SESSION_TTL_MS } = require('./auth');
 const SESSION_ACTIVE_WINDOW_MS = 2 * 60 * 1000; // 2분
 
 // counts: { newPosts, needsReply, awaitingReply } (전부 0 이상 정수, 호출부가 계산해서 넘김).
-// title: 선택 인자 [재홍님 보완 1번, 2026-08-28] — 생략(또는 falsy)하면 'MRO 시황관리'
+// title: 선택 인자 [재홍님 보완 1번, 2026-08-28] — 생략(또는 falsy)하면 'MRO 워크허브'
 // (6단계, 기존 3종 알림용 기본값). 7~8단계 담당자 댓글 리마인더처럼 다른 문구가 필요한
 // 호출부는 이 인자로 넘기면 된다(예: '담당 게시글 확인 필요').
 // 반환: { title, body } 또는 null(전부 0건이면 보낼 내용이 없다는 뜻).
@@ -38,7 +38,7 @@ function buildConsolidatedMessage_(counts, title) {
   if (counts.needsReply > 0) parts.push('댓글 필요 ' + counts.needsReply + '건');
   if (counts.awaitingReply > 0) parts.push('답변 요청 ' + counts.awaitingReply + '건');
   if (parts.length === 0) return null;
-  return { title: title || 'MRO 시황관리', body: parts.join(' · ') };
+  return { title: title || 'MRO 워크허브', body: parts.join(' · ') };
 }
 
 // 상태가 바뀌었는지 비교하기 위한 간단한 문자열 서명. 세 숫자만 반영 — 게시물/댓글의 실제
@@ -170,7 +170,7 @@ async function sendFcmMessage_(authClient, fcmProjectId, token, message) {
 // 함수)에서 주입받는다 — 여러 사용자에게 순차 발송할 때 매번 새로 GoogleAuth를 만들지 않아도
 // 되게 하기 위함(설계 문서 2절).
 // title: 선택 인자, buildConsolidatedMessage_로 그대로 전달(재홍님 보완 1번). 생략하면
-// 'MRO 시황관리' — 6단계(기존 3종 알림)는 이 인자를 아예 안 넘겨도 그대로 동작한다.
+// 'MRO 워크허브' — 6단계(기존 3종 알림)는 이 인자를 아예 안 넘겨도 그대로 동작한다.
 async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, email, counts, title) {
   const message = buildConsolidatedMessage_(counts, title);
   const signature = buildStateSignature_(counts);

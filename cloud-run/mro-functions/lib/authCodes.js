@@ -53,7 +53,7 @@ function esc_(s) {
 // 맨 앞에 두었다(이슈 댓글 메일과 같은 이유). 이름은 사용자가 입력한 값이라 HTML로 안전하게 바꾼다.
 function buildCodeEmailHtml(greetLine, descLine, code, footerLine) {
   return '<div style="font-family:\'Malgun Gothic\',\'맑은 고딕\',-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;">' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a6b52" style="background:#1a6b52;color:#ffffff;padding:18px 24px;font-size:15px;font-weight:700;">MRO 자재 시황 관리 시스템</td></tr></table>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a6b52" style="background:#1a6b52;color:#ffffff;padding:18px 24px;font-size:15px;font-weight:700;">MRO 워크허브</td></tr></table>' +
     '<div style="border:1px solid #e2e0da;border-top:none;padding:28px 24px;">' +
     '<div style="font-size:14px;color:#1f2320;margin-bottom:8px;line-height:1.6;">' + greetLine + '</div>' +
     '<div style="font-size:13px;color:#6b6f6a;line-height:1.6;margin-bottom:22px;">' + descLine + '</div>' +
@@ -70,15 +70,15 @@ function buildCodeEmailHtml(greetLine, descLine, code, footerLine) {
 function signupMail(email, name, code) {
   return {
     to: email,
-    subject: '[MRO 시황] 회원가입 인증코드',
+    subject: '[MRO 워크허브] 회원가입 인증코드',
     text: name + '님, 회원가입 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.',
-    html: buildCodeEmailHtml(esc_(name) + '님, 안녕하세요.', '회원가입을 위해 아래 인증코드를 화면에 입력해주세요.', code, '이 메일은 MRO 자재 시황 관리 시스템에서 자동으로 발송했어요.')
+    html: buildCodeEmailHtml(esc_(name) + '님, 안녕하세요.', '회원가입을 위해 아래 인증코드를 화면에 입력해주세요.', code, '이 메일은 MRO 워크허브에서 자동으로 발송했어요.')
   };
 }
 function resetMail(email, name, code) {
   return {
     to: email,
-    subject: '[MRO 시황] 비밀번호 재설정 인증코드',
+    subject: '[MRO 워크허브] 비밀번호 재설정 인증코드',
     text: name + '님, 비밀번호 재설정 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.',
     html: buildCodeEmailHtml(esc_(name) + '님, 안녕하세요.', '비밀번호 재설정을 요청하셨습니다. 아래 인증코드를 화면에 입력해주세요.', code, '본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.')
   };

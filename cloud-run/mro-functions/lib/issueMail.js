@@ -27,7 +27,7 @@ function kst(ms){const d=new Date(ms+9*3600e3);return{m:d.getUTCMonth()+1,d:d.ge
 // 앱 fmtTime과 같은 표기: 같은 날이면 "오늘 HH:MM", 아니면 "M.D HH:MM"
 function fmtTime(ms,nowMs){if(ms==null)return'';const a=kst(ms),n=kst(nowMs);return (a.day===n.day?'오늘 ':a.m+'.'+a.d+' ')+a.hh+':'+a.mi;}
 function initials(name){return name?String(name).trim().slice(-2):'?';} // 앱 initials()와 동일
-function buildSubject(nowMs,count){const p=kst(nowMs);return '[MRO 시황] '+p.m+'/'+p.d+'('+p.dow+') 오늘의 이슈 댓글 '+count+'건';}
+function buildSubject(nowMs,count){const p=kst(nowMs);return '[MRO 워크허브] '+p.m+'/'+p.d+'('+p.dow+') 오늘의 이슈 댓글 '+count+'건';}
 
 // ── 메일 프로그램 호환 도우미 (2026-10-07 재홍님 Outlook 수신 화면 피드백 반영) ──
 // Outlook 전용 도형(VML)으로 둥근 모양을 그리면 Outlook에서 글자가 잘려 보여(3차 확인) 도형은 쓰지 않고
@@ -96,14 +96,14 @@ function buildHtml(r,opts){
   '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;font-family:'+FONT+';background:'+C.bg+';" bgcolor="'+C.bg+'"><tr><td>'+
   // 앱 brand-header와 같은 보라 그라데이션(그라데이션 미지원 메일 프로그램은 bgcolor 단색으로 표시)
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td bgcolor="'+C.accent+'" style="background:'+C.accent+';background-image:linear-gradient(90deg,'+C.accent+','+C.headerEnd+');padding:14px 22px;border-radius:10px 10px 0 0;">'+
-    '<span style="color:#ffffff;font-weight:800;font-size:16px;letter-spacing:.2px;">MRO 자재 시황 관리 시스템</span>&nbsp;&nbsp;<span style="color:#cfc8e6;font-size:12px;letter-spacing:.3px;">MARKET INTELLIGENCE</span></td></tr></table>'+
+    '<span style="color:#ffffff;font-weight:800;font-size:16px;letter-spacing:.2px;">MRO 워크허브</span>&nbsp;&nbsp;<span style="color:#cfc8e6;font-size:12px;letter-spacing:.3px;">WORK HUB</span></td></tr></table>'+
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid '+C.border+';border-top:none;"><tr><td style="padding:18px 16px 20px;">'+
   (r.testMode?'<div style="font-size:12px;color:'+C.danger+';background:'+C.dangerSoft+';padding:8px 10px;margin:0 0 12px;">[시험 발송] 설정 \'이슈댓글메일테스트수신자\'로 이 주소에만 보냈습니다. 정식 운영이었다면 '+r.realRecipientCount+'명에게 각자 해당되는 내용이 발송됩니다.</div>':'')+
   '<div style="font-size:14px;color:'+C.text+';margin:0 0 4px;line-height:1.6;">'+esc(r.name)+'님, 안녕하세요.</div>'+
   '<div style="font-size:13px;color:'+C.muted+';line-height:1.6;margin:0 0 16px;">오늘 선정된 <b style="color:'+C.danger+';">📌 이슈 댓글</b> '+r.entries.length+'건을 공유드립니다. 각 댓글의 <b>앱에서 이 댓글 보기</b>를 누르면 해당 시황게시물로 바로 이동합니다.</div>'+
   // 카드 사이 간격도 Outlook에서 margin이 무시되므로 빈 줄로 띄운다(4차)
   r.entries.map(function(e){return card(e,o);}).join('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="14" style="height:14px;line-height:14px;font-size:1px;">&nbsp;</td></tr></table>')+
-  '<div style="border-top:1px solid '+C.border+';margin:18px 0 0;padding-top:12px;font-size:11px;color:#9a9891;line-height:1.6;">이 메일은 MRO 자재 시황 관리 시스템에서 매일 '+r.sendHour+'시에 자동 발송했어요.<br>이 메일에 회신하면 관리자(jhjoo@nkmro.com)에게 전달돼요. 업무 의견은 앱 댓글로 남겨주세요.</div>'+
+  '<div style="border-top:1px solid '+C.border+';margin:18px 0 0;padding-top:12px;font-size:11px;color:#9a9891;line-height:1.6;">이 메일은 MRO 워크허브에서 매일 '+r.sendHour+'시에 자동 발송했어요.<br>이 메일에 회신하면 관리자(jhjoo@nkmro.com)에게 전달돼요. 업무 의견은 앱 댓글로 남겨주세요.</div>'+
   '</td></tr></table>'+
   '</td></tr></table>'+
   '</td></tr></table></body></html>';

@@ -18,7 +18,7 @@ const SMTP_PORT = 587;
 // 혹시 바뀌면 배포 옵션 --set-env-vars=SMTP_USER=... 로 코드 수정 없이 바꿀 수 있다.
 const SMTP_USER = process.env.SMTP_USER || 'jhjoo@nkmro.com';
 const FROM_ADDRESS = 'jhjoo@nkmro.com';
-const FROM_NAME = 'MRO 자재 시황';
+const FROM_NAME = 'MRO 워크허브';
 const ALLOWED_DOMAIN = '@nkmro.com';
 const MAX_MESSAGES = 100;
 const BOT_ICON_URL = 'https://nkmro.github.io/mro-market-intelligence/bot-icon.png';
