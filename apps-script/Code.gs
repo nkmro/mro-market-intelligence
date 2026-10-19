@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-19 시황 뉴스 수집 중단 설정에 요일(토, 일, SAT 등)·8자리 날짜(20261019) 지원 추가 — isInNewsBlackout_·collectMarketNews)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-19 시황 뉴스 품질: AI 지시문 보강·요약 자기모순 감지·최저 점수(시황게시최소점수) — buildSummarizePrompt_·parseSummarizeResult_·getSettings_·collectMarketNews)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -1359,6 +1359,9 @@ const maxArticleAgeDays = Number(map['기사최대경과일']) || 7;
 // 이 건수만 시황게시물로 게시한다(점수가 없으면 발행일 최신순으로 폴백). 값이 없거나 0/음수/숫자가
 // 아니면 기본값 1(원자재당 대표 1건)로 동작한다.
 const maxPostsPerMaterial = Math.max(1, Number(map['원자재별시황게시물출력건수']) || 1);
+// 2026-10-19 (재홍님 승인): AI 관련성 점수(1~5)가 이 값 미만이면 게시하지 않고 탈락뉴스('점수미달')에 기록.
+// 설정 행이 없거나 숫자가 아니면 기본 3, 범위 밖이면 1~5로 맞춘다. 판정은 splitByMinPostScore_().
+const minPostScore = readMinPostScore_(map['시황게시최소점수']);
 // 2026-09-01: [2]번 유사 게시물 비게시 기능의 비교 기간. 기사최대경과일(사전 필터, 원문 기사 단위)과는
 // 별개의 설정이다 - 이 값은 AI가 최종 선정한 대표 후보를 "실제 게시된" 시황게시물과 다시 한번
 // 비교하는 후처리 단계에서만 쓰인다. 설정 시트에 값이 없거나 0/음수/숫자가 아니면 기본값 3(일)로 동작.
@@ -1384,7 +1387,26 @@ const rejectedNewsRetentionDays = Number(map['탈락뉴스보관기간']) || 30;
 // 2026-09-22: 시황 뉴스 수집 중단 기간(명절/휴무 등, 재홍님 승인). 콤마로 여러 기간 지정 가능
 // (예: "261001~261003, 261225~261226"). 2026-10-19부터 요일("토, 일")·8자리 날짜도 가능. 실제 판정은 isInNewsBlackout_()에서 수행.
 const newsBlackoutPeriods = String(map['시황수집중단기간'] || '');
-return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays, newsBlackoutPeriods };
+return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays, newsBlackoutPeriods, minPostScore };
+}
+
+// 2026-10-19: '시황게시최소점수' 값 읽기(순수 함수). 빈 값·숫자 아님 → 3, 소수 → 버림, 1 미만 → 1, 5 초과 → 5.
+function readMinPostScore_(raw) {
+if (raw === undefined || raw === null || String(raw).trim() === '') return 3;
+const n = Math.floor(Number(raw));
+if (!isFinite(n)) return 3;
+return Math.min(5, Math.max(1, n));
+}
+
+// 2026-10-19: 최저 점수 판정(순수 함수). group = [{c, result}] → { pass, below }.
+// 점수가 없는(null) 후보는 통과시킨다(AI가 점수를 빠뜨린 경우 — 예전 동작 유지, 재홍님 권장 승인).
+function splitByMinPostScore_(group, minScore) {
+const pass = [], below = [];
+group.forEach(function (g) {
+const sc = g.result.relevanceScore;
+if (sc !== null && sc !== undefined && sc < minScore) below.push(g); else pass.push(g);
+});
+return { pass: pass, below: below };
 }
 
 /**
@@ -1747,6 +1769,8 @@ const relevantByCode = {};
 // 이제는 판단/분류(순수 메모리 연산)만 루프에서 수행하고, 실제 시트 기록은 루프가 끝난 뒤
 // 배열을 한 번에 setValues로 기록한다 - 후보 수가 몇 백 건으로 늘어도 API 호출은 1회뿐이다.
 const logRowsToAppend_ = [];
+// 2026-10-19: 요약 자기모순으로 관련 없음 처리된 후보 — 아래 탈락뉴스 배치 기록에 '자기모순'으로 합친다.
+const contradictionRows_ = [];
 candidates.slice(0, processedCount).forEach((c, idx) => {
 const result = parseSummarizeResult_(aiTexts[idx], c.title);
 
@@ -1768,6 +1792,9 @@ if (c.isRetry) {
 removeFromAIRetryQueue_(retryQueueSheet, c.link); // 재시도가 성공적으로 처리됨
 }
 
+if (result.contradiction) {
+contradictionRows_.push([c.code, c.korean, c.title, result.summary, result.relevanceScore, c.link]);
+}
 if (result.relevant) {
 const isDupSummary = postedSummariesThisRun_.some(p => p.code === c.code && titleOverlap_(p.summary, result.summary) >= 0.6);
 if (!isDupSummary) {
@@ -1820,9 +1847,20 @@ const recentPostsForSimilarityCheck = postDataForDedup.slice(1)
 // 유사게시물스킵은 스킵 원인이 된 기존 게시물(similarPost)의 ID를 그대로 쓴다.
 const rejectedNewsRows_ = [];
 const rejectedAt_ = new Date();
+contradictionRows_.forEach(r => {
+rejectedNewsRows_.push([rejectedAt_, r[0], r[1], r[2], r[3], r[4], REJECTED_NEWS_STORE_LINK ? r[5] : '', '자기모순', '']);
+});
 Object.keys(relevantByCode).forEach(code => {
-const group = relevantByCode[code];
-group.sort(compareByRelevanceThenDate_);
+const allGroup_ = relevantByCode[code];
+allGroup_.sort(compareByRelevanceThenDate_);
+// 2026-10-19: 최저 점수(설정 '시황게시최소점수', 기본 3) 미만은 게시 후보에서 빼고 탈락뉴스('점수미달')에 기록.
+// 점수가 없는(null) 후보는 통과(splitByMinPostScore_ 참고). 통과한 후보끼리만 순위·출력 건수를 적용한다.
+const scoreSplit_ = splitByMinPostScore_(allGroup_, settings.minPostScore);
+scoreSplit_.below.forEach(({ c, result }) => {
+Logger.log('[점수미달] ' + c.code + ' "' + c.title + '" - 점수 ' + result.relevanceScore + ' < 최소 ' + settings.minPostScore);
+rejectedNewsRows_.push([rejectedAt_, c.code, c.korean, c.title, result.summary, result.relevanceScore, REJECTED_NEWS_STORE_LINK ? c.link : '', '점수미달', '']);
+});
+const group = scoreSplit_.pass;
 const toPost = group.slice(0, maxPostsPerMaterial);
 const rankedOut = group.slice(maxPostsPerMaterial); // 그룹B: 원자재별 출력 건수 제한에 밀려 게시되지 않음
 const postedIdsForCode_ = [];
@@ -2364,6 +2402,10 @@ let prompt = "너는 MRO(산업 소모성 자재) 원자재 시황 뉴스 분석
 "[" + materialName + "]이라는 단어가 기사에 등장하더라도, 다른 뜻(일상 표현, 비유, 동음이의어, 무관한 산업)으로 쓰였거나 원자재 가격/시황과 무관하면 관련 없음으로 판단해.\n" +
 "기사가 특정 기업의 주가·증시·주식시장 동향(상한가, 급등락, 시가총액, 투자의견 등)을 다루는 내용이면, [" + materialName + "] 언급 여부와 무관하게 관련 없음으로 판단해.\n" +
 "기사 안에 [" + materialName + "]의 가격, 수급, 물량, 생산량, 수출입 등 시황과 관련된 구체적인 숫자나 퍼센트(%)가 없으면 관련 없음으로 판단해.\n" +
+// 2026-10-19 (재홍님 승인): 10/19 '철' 흐름전지 기사 사례 — AI가 "철이 리튬보다 약 80배 싸다"는 비교 수치를
+// 시황 수치로 보고 관련 있음을 줬고, 요약에는 스스로 "시황 수치는 없다"고 씀. 아래 두 문장으로 기준을 명확히 한다.
+"기술·비교 기사(예: ○배 저렴하다, ○배 가볍다, ○배 오래간다)에 나오는 비교 수치는 시황 수치가 아니야. [" + materialName + "]의 가격, 수급, 물량, 생산량, 수출입의 변화(오름·내림·늘어남·줄어듦)를 직접 보여주는 수치만 시황 수치로 인정해.\n" +
+"요약에 '시황 수치가 없다', '가격 동향을 보여주는 수치가 없다'처럼 시황 수치가 없다는 표현을 쓸 상황이면 relevant는 반드시 false로 판단해. 수치가 없다고 쓰면서 relevant를 true로 답하지 마.\n" +
 "기사 제목이나 전체 논조가 특정 방향(상승/하락)을 암시하더라도, 개별 원자재의 수치는 정반대 방향일 수 있어. 예를 들어 \"수입물가 전체 하락\" 기사 안에서도 특정 품목만 상승했다고 나올 수 있으니, 반드시 [" + materialName + "] 바로 옆에 명시된 숫자와 방향(상승/하락/%)만 근거로 판단하고, 기사 제목이나 전체 톤에 맞춰 방향을 추측하지 마.\n" +
 "관련 있으면 반드시 [" + materialName + "]의 가격/수급/물량/생산량 등 시황 동향을 나타내는 구체적인 숫자나 퍼센트(%)를 포함해 2문장 이내 한국어로 중심 요약하고(주가·기업 실적 등 원자재와 무관한 내용은 요약에서 제외), 관련 없으면 요약은 빈 문자열로 둬.\n" +
 "관련 있으면 이 기사가 [" + materialName + "]의 시황(가격/수급) 변화를 얼마나 구체적이고 직접적으로 반영하는지 1(약함)~5(매우 강함) 정수로 평가해 relevanceScore에 담고, 관련 없으면 relevanceScore는 0으로 둬.\n" +
@@ -2383,6 +2425,24 @@ prompt += "\n반드시 아래 JSON 형식으로만 응답해. 다른 텍스트�
 "[제목]\n" + title + "\n\n" +
 "[본문 일부]\n" + description;
 return prompt;
+}
+
+/**
+* 2026-10-19: 요약 자기모순 판정(순수 함수). 아래 두 조건이 모두 맞을 때만 참.
+*  ① "수치가 없다"는 취지의 표현이 있음: '수치·숫자·데이터' 뒤 한 문장 안 12자 이내에
+*     '없다·없는·없었·없음·없이·제시되지 않·나오지 않·언급되지 않·확인되지 않·드러나지 않'
+*  ② 실제 변화 수치가 하나도 없음: 숫자 바로 뒤(단위 포함 10자 이내)에 '상승·하락·인상·인하·증가·감소·
+*     급등·급락·반등·올랐·내렸·늘었·줄었' 같은 변화 표현이 없음
+* ②를 둔 이유(10/19 시트 전수 확인): "알루미늄 가격이 0.5% 하락했다 … 수급 수치는 제시되지 않았다"처럼
+* 가격 변화 수치가 있는 정상 요약까지 막지 않기 위해서. 예) 철 흐름전지("80배 낮다 … 시황 수치는 없다") → 참.
+*/
+function isSelfContradictorySummary_(summary) {
+const s = String(summary || '');
+if (!s) return false;
+const saysNoFigure = /(수치|숫자|데이터)[^.!?\n]{0,12}?(없[다는었음]|없이|제시되지 않|나오지 않|언급되지 않|확인되지 않|드러나지 않)/.test(s);
+if (!saysNoFigure) return false;
+const hasChangeFigure = /\d[\d,.]*[^.!?\n\d]{0,10}?(상승|하락|인상|인하|증가|감소|급등|급락|반등|올랐|내렸|늘었|줄었|올라|내려|늘어|줄어)/.test(s);
+return !hasChangeFigure;
 }
 
 /**
@@ -2423,6 +2483,13 @@ const summary = parsed.summary ? parsed.summary.trim() : '';
 if (parsed.relevant === true && !isSummaryLanguageSafe_(summary)) {
 console.error('parseSummarizeResult_: summary에 비허용 언어(한자/외국어) 감지 - relevant:false 처리(재시도 대상). title=' + title + ', summary=' + summary);
 return { relevant: false, summary: '', relevanceScore: null, aiFailed: true };
+}
+// 2026-10-19 (재홍님 승인): 자기모순 감지 — relevant:true인데 요약이 스스로 "시황 수치가 없다"고 하면
+// 관련 없음으로 처리한다(재시도하지 않음: 같은 기사는 다시 물어도 같은 판단일 가능성이 높아 AI 비용만 듦).
+// contradiction:true 표시를 달아 collectMarketNews가 탈락뉴스('자기모순')에 남기게 한다.
+if (parsed.relevant === true && isSelfContradictorySummary_(summary)) {
+console.error('parseSummarizeResult_: 요약 자기모순(관련 있음인데 시황 수치 없다고 씀) - relevant:false 처리. title=' + title + ', summary=' + summary);
+return { relevant: false, summary: summary, relevanceScore: relevanceScore, aiFailed: false, contradiction: true };
 }
 return {
 relevant: parsed.relevant === true,
