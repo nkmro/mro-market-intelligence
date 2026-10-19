@@ -1,4 +1,4 @@
-<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (설정 화면 '시황 뉴스 수집 중단 기간' 설명 문구만 변경: 요일(토, 일, SAT)·8자리 날짜 지원, 2026-10-19) -->
+<!-- [DELIVERY] 이 파일은 GitHub feed.html 전체 교체용입니다 (댓글 수정 입력창: 위아래 빈 공간 제거 + 글 길이에 맞게 입력창 높이 자동 조절, 2026-10-19) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -320,11 +320,14 @@ font-size: 13px; padding: 2px 4px; display: none;
   .comment-delete-btn {
     font-size: 11px; color: var(--danger); background: none; border: none; cursor: pointer; padding: 4px 0;
   }
-  .edit-composer { margin-top: 4px; }
+  /* 2026-10-19: 수정 입력창은 .comment-text(white-space: pre-wrap) 안에 들어가므로, 줄바꿈·들여쓰기가
+     빈 줄로 보이지 않게 여기서 일반 줄바꿈 규칙으로 되돌린다. 입력창 높이는 글 길이에 맞춰 JS가 정한다(최대 화면 절반). */
+  .edit-composer { margin-top: 4px; white-space: normal; }
   .edit-composer textarea {
-    width: 100%; resize: none; font-family: inherit; font-size: 13px;
+    width: 100%; resize: none; font-family: inherit; font-size: 13px; line-height: 1.5;
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
-    background: #fff; min-height: 40px; margin-bottom: 6px;
+    background: #fff; min-height: 40px; margin-bottom: 6px; box-sizing: border-box;
+    max-height: 50vh; overflow-y: auto; display: block;
   }
   .edit-composer .edit-actions { display: flex; gap: 8px; }
   .edit-composer button {
@@ -2721,6 +2724,7 @@ function startEditComment(postId, itemId, commentId) {
   if (!comment) return;
 
   textEl.dataset.original = textEl.innerHTML;
+  // 2026-10-19: 바깥 줄바꿈·들여쓰기가 pre-wrap 칸 안에서 빈 줄로 보이던 문제 → 앞뒤 공백 없이 넣는다(.trim()).
   textEl.innerHTML = `
     <div class="edit-composer">
       <textarea id="edit-ta-${commentId}">${escapeHtml(comment.content)}</textarea>
@@ -2729,10 +2733,19 @@ function startEditComment(postId, itemId, commentId) {
         <button class="cancel-btn" onclick="cancelEditComment('${commentId}')">취소</button>
       </div>
     </div>
-  `;
+  `.trim();
   const ta = document.getElementById('edit-ta-' + commentId);
+  autoSizeEditTextarea_(ta);
+  ta.addEventListener('input', function () { autoSizeEditTextarea_(ta); });
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+// 2026-10-19: 댓글 수정 입력창 높이를 글 길이에 맞춘다(최대 화면 높이의 절반, 넘으면 입력창 안에서 스크롤).
+function autoSizeEditTextarea_(ta) {
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(window.innerHeight * 0.5)) + 'px';
 }
 
 function cancelEditComment(commentId) {
