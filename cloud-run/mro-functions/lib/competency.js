@@ -162,6 +162,14 @@ function buildTeam(viewer, users, recordsByTab, opts) {
 }
 
 // 기준 탭: 값이 있는 줄만 원본 그대로(화면에서 그림). 시트 구조 해석은 화면 단계에서.
+// v1.6 (설계서 4-4·⑱): 팀별 기준 탭(선택). 'CRM-역량평가-기준_서부'처럼 기본 탭 이름 + '_' + 팀 이름 탭이
+// 파일에 있으면 그 탭, 없으면 기본 탭. tabTitles = 파일의 탭 이름 배열.
+function pickCriteriaTab(tabTitles, team) {
+  const t = String(team || '').trim();
+  const special = CRITERIA_TAB + '_' + t;
+  return (t && (tabTitles || []).indexOf(special) >= 0) ? special : CRITERIA_TAB;
+}
+
 function criteriaRows(values) {
   return (values || []).map(function (r) { return (r || []).map(function (v) { return String(v === undefined ? '' : v).trim(); }); })
     .filter(function (r) { return r.join('') !== ''; });
@@ -175,3 +183,4 @@ module.exports.buildMine = buildMine;
 module.exports.buildTeam = buildTeam;
 module.exports.criteriaRows = criteriaRows;
 module.exports.monthOf = monthOf;
+module.exports.pickCriteriaTab = pickCriteriaTab;
