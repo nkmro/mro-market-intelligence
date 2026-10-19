@@ -12,7 +12,7 @@
  */
 
 /**
-* MRO 자재 시황 관리 시스템 - 인증/권한 백엔드
+* MRO 워크허브 - 인증/권한 백엔드
 * v23: 이메일+비밀번호 로그인/회원가입으로 전환 (Google OAuth 방식 폐기)
 *
 * 전제:
@@ -35,7 +35,7 @@ const ADMIN_EMAIL = 'jhjoo@nkmro.com'; // 설정 페이지 전용 — 역할 시
 
 function buildBrandedEmailHtml_(greetLine, descLine, code, footerLine) {
 return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Malgun Gothic,Arial,sans-serif;max-width:560px;margin:0 auto;">' +
-'<div style="background:#1a6b52;color:#fff;padding:18px 24px;border-radius:8px 8px 0 0;font-size:15px;font-weight:700;">MRO 자재 시황 관리 시스템</div>' +
+'<div style="background:#1a6b52;color:#fff;padding:18px 24px;border-radius:8px 8px 0 0;font-size:15px;font-weight:700;">MRO 워크허브</div>' +
 '<div style="border:1px solid #e2e0da;border-top:none;border-radius:0 0 8px 8px;padding:28px 24px;">' +
 '<div style="font-size:14px;color:#1f2320;margin-bottom:8px;line-height:1.6;">' + greetLine + '</div>' +
 '<div style="font-size:13px;color:#6b6f6a;line-height:1.6;margin-bottom:22px;">' + descLine + '</div>' +
@@ -426,7 +426,7 @@ const passwordHash = hashPassword_(password, email);
 const cache = CacheService.getScriptCache();
 cache.put('signup_' + Utilities.base64EncodeWebSafe(email), JSON.stringify({ code: code, name: name, team: team, passwordHash: passwordHash, attempts: 0 }), 600); // 10분
 
-GmailApp.sendEmail(email, '[MRO 시황] 회원가입 인증코드', name + '님, 회원가입 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.', { from: ADMIN_EMAIL, name: 'MRO 자재 시황', htmlBody: buildBrandedEmailHtml_(name + '님, 안녕하세요.', '회원가입을 위해 아래 인증코드를 화면에 입력해주세요.', code, '이 메일은 MRO 자재 시황 관리 시스템에서 자동으로 발송했어요.') });
+GmailApp.sendEmail(email, '[MRO 워크허브] 회원가입 인증코드', name + '님, 회원가입 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.', { from: ADMIN_EMAIL, name: 'MRO 워크허브', htmlBody: buildBrandedEmailHtml_(name + '님, 안녕하세요.', '회원가입을 위해 아래 인증코드를 화면에 입력해주세요.', code, '이 메일은 MRO 워크허브에서 자동으로 발송했어요.') });
 
 return jsonResponse_({ ok: true });
 }
@@ -479,7 +479,7 @@ const code = String(Math.floor(100000 + Math.random() * 900000));
 const cache = CacheService.getScriptCache();
 cache.put('pwreset_' + Utilities.base64EncodeWebSafe(email), JSON.stringify({ code: code, attempts: 0 }), 600); // 10분
 
-GmailApp.sendEmail(email, '[MRO 시황] 비밀번호 재설정 인증코드', user.name + '님, 비밀번호 재설정 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.', { from: ADMIN_EMAIL, name: 'MRO 자재 시황', htmlBody: buildBrandedEmailHtml_(user.name + '님, 안녕하세요.', '비밀번호 재설정을 요청하셨습니다. 아래 인증코드를 화면에 입력해주세요.', code, '본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.') });
+GmailApp.sendEmail(email, '[MRO 워크허브] 비밀번호 재설정 인증코드', user.name + '님, 비밀번호 재설정 인증코드는 [' + code + '] 입니다. 10분 이내에 입력해주세요.', { from: ADMIN_EMAIL, name: 'MRO 워크허브', htmlBody: buildBrandedEmailHtml_(user.name + '님, 안녕하세요.', '비밀번호 재설정을 요청하셨습니다. 아래 인증코드를 화면에 입력해주세요.', code, '본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.') });
 
 return jsonResponse_({ ok: true });
 }
@@ -4402,7 +4402,7 @@ return jsonResponse_({ ok: true, posts: results });
 }
 
 function testGmailAuthReauth() {
-GmailApp.sendEmail(ADMIN_EMAIL, '[MRO 시황] 권한 재승인 테스트', '이 메일이 도착했다면 Gmail 발송 권한이 정상 복구된 것입니다.', { from: ADMIN_EMAIL, name: 'MRO 자재 시황' });
+GmailApp.sendEmail(ADMIN_EMAIL, '[MRO 워크허브] 권한 재승인 테스트', '이 메일이 도착했다면 Gmail 발송 권한이 정상 복구된 것입니다.', { from: ADMIN_EMAIL, name: 'MRO 워크허브' });
 }
 
 /**
