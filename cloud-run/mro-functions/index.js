@@ -3254,7 +3254,7 @@ exports.issueMailBatchTest = async (req, res) => {
       try {
         await mailer.sendMessages([{
           to: mailer.FROM_ADDRESS,
-          subject: '[MRO 시황] 이슈 댓글 메일 일부 발송 실패 (' + today + ')',
+          subject: '[MRO 워크허브] 이슈 댓글 메일 일부 발송 실패 (' + today + ')',
           text: '발송 ' + sent + '통 성공, ' + failed + '통 실패.\n' + failures.map(function (f) { return (f.to || '') + ' ' + JSON.stringify(f.error); }).join('\n'),
           html: '<pre style="font-size:12px;">' +
             '발송 ' + sent + '통 성공, ' + failed + '통 실패.\n' + failures.map(function (f) { return String(f.to || '').replace(/[<>&]/g, '') + ' ' + JSON.stringify(f.error).replace(/[<>&]/g, ''); }).join('\n') + '</pre>'
