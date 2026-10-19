@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-15 AI 원자재 추천 단계 4: 15분 점검의 F 채우기를 Cloud Run(materialSweepTest)으로 넘김 — ensureAllItemRowsComplete는 D·E·G·H만 · 시험용 stage4ClearTestF 추가)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-19 시황 뉴스 수집 중단 설정에 요일(토, 일, SAT 등)·8자리 날짜(20261019) 지원 추가 — isInNewsBlackout_·collectMarketNews)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -1382,7 +1382,7 @@ const similarPostCompareDays = similarPostCompareDaysValid ? similarPostCompareD
 // 유사게시물비교기간에 적용한 경고 로그는 이번 변경 범위 밖이라 넣지 않았다.
 const rejectedNewsRetentionDays = Number(map['탈락뉴스보관기간']) || 30;
 // 2026-09-22: 시황 뉴스 수집 중단 기간(명절/휴무 등, 재홍님 승인). 콤마로 여러 기간 지정 가능
-// (예: "261001~261003, 261225~261226"). 실제 판정은 isInNewsBlackout_()에서 수행.
+// (예: "261001~261003, 261225~261226"). 2026-10-19부터 요일("토, 일")·8자리 날짜도 가능. 실제 판정은 isInNewsBlackout_()에서 수행.
 const newsBlackoutPeriods = String(map['시황수집중단기간'] || '');
 return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, maxArticleAgeDays, maxPostsPerMaterial, similarPostCompareDays, rejectedNewsRetentionDays, newsBlackoutPeriods };
 }
@@ -1391,31 +1391,57 @@ return { priceTerms, display, triggerHour, postRetentionDays, logRetentionDays, 
  * '설정' 시트의 '시황수집중단기간' 값을 파싱해 오늘(todayYYMMDD, 'yyMMdd' 문자열)이
  * 뉴스 수집 차단 기간에 포함되는지 판정하는 순수 함수.
  *
- * 형식: 콤마(,)로 여러 기간 나열 가능.
- *   - 단일일: "261001"
- *   - 기간(양끝 포함): "261001~261003"
- *   - 복수: "261001~261003, 261225~261226"
+ * 형식: 콤마(,)로 여러 항목 나열 가능.
+ *   - 단일일: "261001" (2026-10-19부터 8자리 "20261001"도 같은 날로 인정)
+ *   - 기간(양끝 포함): "261001~261003" (8자리 섞어 써도 됨)
+ *   - 요일(2026-10-19 추가, 재홍님 승인): 한글 "월~일" 한 글자 또는 "토요일" / 영어 "SAT", "Saturday"
+ *     (대소문자 무관). 해당 요일이면 매주 차단. 요일 범위("토~일")는 받지 않음 → "토, 일"로 쓸 것.
+ *   - 복수·혼합: "261001~261003, 261225, 토, 일"
  *
- * 잘못된 형식의 항목(자릿수 불일치, 숫자 아님, 범위 미완성, 시작>종료 등)은 조용히
- * 무시하고 나머지 유효한 항목만 적용한다. 유효한 항목이 하나도 없으면 안전 원칙에 따라
+ * todayDow: 오늘 요일(서울 기준, 0=일 1=월 … 6=토). 넘기지 않으면 요일 항목은 무시한다(예전 호출 호환).
+ *
+ * 잘못된 형식의 항목(자릿수 불일치, 숫자 아님, 범위 미완성, 시작>종료, 모르는 요일 이름 등)은
+ * 조용히 무시하고 나머지 유효한 항목만 적용한다. 유효한 항목이 하나도 없으면 안전 원칙에 따라
  * 차단하지 않는다(false 반환).
  */
-function isInNewsBlackout_(todayYYMMDD, settingValue) {
+var NEWS_BLACKOUT_DOW_ = {
+'일': 0, '일요일': 0, 'SUN': 0, 'SUNDAY': 0,
+'월': 1, '월요일': 1, 'MON': 1, 'MONDAY': 1,
+'화': 2, '화요일': 2, 'TUE': 2, 'TUESDAY': 2,
+'수': 3, '수요일': 3, 'WED': 3, 'WEDNESDAY': 3,
+'목': 4, '목요일': 4, 'THU': 4, 'THURSDAY': 4,
+'금': 5, '금요일': 5, 'FRI': 5, 'FRIDAY': 5,
+'토': 6, '토요일': 6, 'SAT': 6, 'SATURDAY': 6
+};
+// 날짜 한 개를 6자리(yyMMdd)로 맞춘다. 6자리는 그대로, 8자리(yyyyMMdd, 20으로 시작)는 앞 두 자리를 뗀다. 그 밖은 null.
+function normalizeBlackoutDate_(s) {
+if (/^\d{6}$/.test(s)) return s;
+if (/^20\d{6}$/.test(s)) return s.slice(2);
+return null;
+}
+function isInNewsBlackout_(todayYYMMDD, settingValue, todayDow) {
 var raw = String(settingValue || '');
 var entries = raw.split(',');
 for (var i = 0; i < entries.length; i++) {
 var entry = entries[i].trim();
 if (!entry) continue; // 빈 항목 무시 (예: "261001,,261002"의 중간 빈 값)
 
+// 요일 항목(2026-10-19 추가)
+var dowKey = entry.toUpperCase();
+if (Object.prototype.hasOwnProperty.call(NEWS_BLACKOUT_DOW_, dowKey)) {
+if (typeof todayDow === 'number' && NEWS_BLACKOUT_DOW_[dowKey] === todayDow) return true;
+continue;
+}
+
 var parts = entry.split('~').map(function (s) { return s.trim(); });
 
 if (parts.length === 1) {
-var single = parts[0];
-if (!/^\d{6}$/.test(single)) continue; // 형식 불량 무시 (예: "26100", "abc")
+var single = normalizeBlackoutDate_(parts[0]);
+if (!single) continue; // 형식 불량 무시 (예: "26100", "abc", "토~" 같은 것)
 if (todayYYMMDD === single) return true;
 } else if (parts.length === 2) {
-var start = parts[0], end = parts[1];
-if (!/^\d{6}$/.test(start) || !/^\d{6}$/.test(end)) continue; // 미완성 범위 등 무시
+var start = normalizeBlackoutDate_(parts[0]), end = normalizeBlackoutDate_(parts[1]);
+if (!start || !end) continue; // 미완성 범위·요일 범위("토~일") 등 무시
 if (start > end) {
 Logger.log('[수집중단] 잘못된 범위(시작 > 종료)라 무시합니다: ' + entry);
 continue;
@@ -1505,8 +1531,10 @@ const props = PropertiesService.getScriptProperties();
 // 판정 로직은 isInNewsBlackout_()로 분리되어 있어 이 블록은 호출만 한다.
 const newsBlackoutSetting_ = getSettings_().newsBlackoutPeriods;
 const todayYYMMDD_ = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
-if (isInNewsBlackout_(todayYYMMDD_, newsBlackoutSetting_)) {
-Logger.log('[수집중단] 블랙아웃 적용: ' + newsBlackoutSetting_ + ' (오늘 ' + todayYYMMDD_ + ')');
+// 2026-10-19: 요일 항목(토, 일, SAT 등) 판정용 오늘 요일(서울 기준, 0=일 … 6=토)
+const todayDow_ = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+if (isInNewsBlackout_(todayYYMMDD_, newsBlackoutSetting_, todayDow_)) {
+Logger.log('[수집중단] 블랙아웃 적용: ' + newsBlackoutSetting_ + ' (오늘 ' + todayYYMMDD_ + ', ' + '일월화수목금토'.charAt(todayDow_) + '요일)');
 props.setProperty('CMN_LAST_STAGE', '수집중단(블랙아웃:' + newsBlackoutSetting_ + ')@' + new Date().toISOString());
 return;
 }
