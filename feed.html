@@ -4038,7 +4038,7 @@ const p = parseCompCriteria_(res.rows);
 const comps = p.blocks.filter(function (x) { return x.comp; });
 const teamNote = (res.criteriaTab && res.criteriaTab !== 'CRM-역량평가-기준') ? ' · ' + teamLabel(res.viewer && res.viewer.team) + ' 전용 기준' : '';
 const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">평가 기준 보기</div>
-<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml((p.title || '역량평가 기준') + ' · ' + (res.year || '') + '년' + teamNote)}</div>`;
+${teamNote ? `<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(teamNote.replace(/^ · /, ''))}</div>` : ''}`;
 if (!comps.length) {
 // 해석 실패 — 시트 줄을 그대로 보여준다(보기 전용)
 const raw = (res.rows || []).map(function (r) { return '<tr>' + r.map(function (v) { return '<td style="padding:4px 8px; border-bottom:1px solid var(--border); font-size:13px;">' + escapeHtml(v) + '</td>'; }).join('') + '</tr>'; }).join('');
