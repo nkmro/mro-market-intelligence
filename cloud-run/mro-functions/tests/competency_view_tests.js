@@ -97,5 +97,14 @@ t('⑳ mine 박태영 awaitingReply = 본인 2', m2.awaitingReply === 2);
 t('⑳ mine 팀 건수표에는 회신 대기 없음', m2.teamCounts.every(x => !('awaitingReply' in x)));
 t('⑳ mine 손희진 = 1', c.buildMine(U[3], U, R2).awaitingReply === 1);
 
+// ① recordItems: '역량-' 탭만, 마지막 부분, 기준 탭·팀별 기준 탭·설정 탭은 제외
+const TITLES = ['역량-직무별전문성-자기개발', '역량-직급별업무역량-직급역량개선노력', '역량-영업수행역량-대면영업',
+  '역량-개선기획역량-원가개선제안', '역량-개선기획역량-추가매출계획이행', 'CRM-역량평가-기준', 'CRM-역량평가-기준_서부', '인사평가설정', '직급별_요구역량'];
+t('① recordItems = 역량- 탭 5개의 마지막 부분', c.recordItemsFromTabs(TITLES).join(',') === '자기개발,직급역량개선노력,대면영업,원가개선제안,추가매출계획이행');
+t('① 팀별 기준 탭이 있어도 recordItems 그대로(기준 탭은 별개)', c.recordItemsFromTabs(TITLES).indexOf('기준_서부') === -1 && c.pickCriteriaTab(TITLES, '서부') === 'CRM-역량평가-기준_서부');
+t('① 새 탭 추가 시 자동 포함', c.recordItemsFromTabs(TITLES.concat(['역량-팀워크기여도-팀워크기여'])).slice(-1)[0] === '팀워크기여');
+t('① 빈 목록·null·공백 이름 안전', c.recordItemsFromTabs(null).length === 0 && c.recordItemsFromTabs([' 역량-a-b ', '역량-', '']).join(',') === 'b');
+t('① 배열이 아닌 값(문자열·객체)도 빈 목록, 하이픈 없는 "역량"은 제외', c.recordItemsFromTabs('역량-a-b').length === 0 && c.recordItemsFromTabs({}).length === 0 && c.recordItemsFromTabs(['역량', '역량-x']).join(',') === 'x');
+
 console.log('pass ' + pass + ' / fail ' + fail);
 process.exit(fail ? 1 : 0);
