@@ -3907,12 +3907,14 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   // v1.6 (설계서 4-4·⑱): 기준 보기만 탭 목록을 먼저 읽어 팀별 기준 탭(선택)이 있는지 본다.
   // 탭 목록을 못 읽으면 기본 기준 탭으로 진행(기준 탭 접근 실패는 아래 batchGet에서 따로 잡힘).
   let criteriaTab = competency.CRITERIA_TAB;
+  let recordItems = null; // ①: 탭 목록을 못 읽으면 null → 응답에서 빠지고 화면은 고정 목록 사용
   if (view === 'criteria') {
     const k0 = Date.now();
     try {
       const meta = await client.request({ url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '?fields=sheets.properties.title' });
       const titles = ((meta.data && meta.data.sheets) || []).map(function (sh) { return sh && sh.properties && sh.properties.title; });
       criteriaTab = competency.pickCriteriaTab(titles, viewer.team);
+      recordItems = competency.recordItemsFromTabs(titles);
     } catch (e) {
       console.error('[getCompetencyTest] 탭 목록 읽기 실패(무시, 기본 기준 탭 사용): ' + String((e && e.message) || e).slice(0, 200));
     }
@@ -3934,7 +3936,7 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   const base = { ok: true, view: view, year: targetYear,
     viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
   if (view === 'criteria') {
-    res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, criteriaTab: criteriaTab, rows: competency.criteriaRows((vr[0] && vr[0].values) || []) }));
+    res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, criteriaTab: criteriaTab }, recordItems ? { recordItems: recordItems } : {}, { rows: competency.criteriaRows((vr[0] && vr[0].values) || []) }));
     return;
   }
   const recordsByTab = {};
