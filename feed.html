@@ -85,10 +85,13 @@
   .nav-group { margin-bottom: 6px; }
   .nav-group-head {
     display: flex; align-items: center; gap: 6px;
-    padding: 8px 12px 6px; font-size: 12px; font-weight: 600;
-    color: rgba(255,255,255,.82); cursor: pointer; letter-spacing: .2px;
+    padding: 10px 12px 6px; font-size: 15px; font-weight: 700;
+    color: #fff; cursor: pointer; letter-spacing: .2px;
   }
-  .nav-group-caret { display: inline-block; width: 10px; font-size: 10px; transition: transform .15s; }
+  .nav-group-caret { display: inline-block; width: 14px; font-size: 10px; opacity: .85; transition: transform .15s; }
+  /* 묶음 안 메뉴(소메뉴)는 묶음 제목보다 작고 안쪽으로 들여 쓴다 (재홍님 요청 2026-10-20) */
+  .nav-group-body .nav-item { font-size: 13px; padding: 8px 12px 8px 30px; }
+  .nav-group-body .nav-item .ic svg { width: 14px; height: 14px; }
   .nav-group.collapsed .nav-group-caret { transform: rotate(-90deg); }
   .nav-group.collapsed .nav-group-body { display: none; }
   .nav-group-new {
@@ -662,7 +665,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
     <div class="sidebar-nav-zone">
       <div class="sidebar-title-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px;"><div class="sidebar-title">MENU</div><button id="notif-perm-btn" style="display:none; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:13px; color:#fff; padding:2px 4px; white-space:nowrap;" onclick="requestNotifPermission()"><span style="font-size:15px;">🔔</span>알림 켜기</button></div>
       <div class="nav-group" id="nav-group-mro" data-group="mro">
-        <div class="nav-group-head" onclick="toggleNavGroup_('mro')"><span class="nav-group-caret">▾</span>MRO 자재 시황<span class="nav-group-new" id="nav-group-mro-new" style="display:none;">NEW</span></div>
+        <div class="nav-group-head" onclick="toggleNavGroup_('mro')"><span class="nav-group-caret">▼</span>MRO 자재 시황<span class="nav-group-new" id="nav-group-mro-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
       <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span> 시황 뉴스</div>
       <div class="nav-item" id="nav-notif" data-view="notif" onclick="switchView('notif')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
@@ -671,7 +674,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         </div>
       </div>
       <div class="nav-group collapsed" id="nav-group-admin" data-group="admin" style="display:none;">
-        <div class="nav-group-head" onclick="toggleNavGroup_('admin')"><span class="nav-group-caret">▾</span>관리</div>
+        <div class="nav-group-head" onclick="toggleNavGroup_('admin')"><span class="nav-group-caret">▼</span>관리</div>
         <div class="nav-group-body">
       <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 사용자 현황</div>
       <div class="nav-item" id="nav-settings-common" data-view="settings-common" onclick="switchView('settings-common')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 공통 설정</div>
@@ -1082,11 +1085,14 @@ function scrollToTop_() {
 
 // 1단계-다 (설계서 2-1): 메뉴 묶음 접기/펼치기. 상태는 이 브라우저에만 기억(localStorage, 실패해도 기본값).
 // 기본: MRO 자재 시황 = 펼침, 관리 = 접힘.
+// MRO 자재 시황은 앱을 열 때마다 항상 펼친다(재홍님 결정 2026-10-20) — 접어도 기억하지 않음.
+const NAV_GROUP_ALWAYS_OPEN_ = ['mro'];
 const NAV_GROUP_STORE_KEY_ = 'mro_nav_groups';
 function toggleNavGroup_(group) {
 const el = document.getElementById('nav-group-' + group);
 if (!el) return;
 el.classList.toggle('collapsed');
+if (NAV_GROUP_ALWAYS_OPEN_.indexOf(group) >= 0) return;
 try {
 const saved = JSON.parse(localStorage.getItem(NAV_GROUP_STORE_KEY_) || '{}') || {};
 saved[group] = el.classList.contains('collapsed') ? 'collapsed' : 'open';
@@ -1097,6 +1103,7 @@ function restoreNavGroups_() {
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(NAV_GROUP_STORE_KEY_) || '{}') || {}; } catch (e) { saved = {}; }
 Object.keys(saved).forEach(function (group) {
+if (NAV_GROUP_ALWAYS_OPEN_.indexOf(group) >= 0) return;
 const el = document.getElementById('nav-group-' + group);
 if (el) el.classList.toggle('collapsed', saved[group] === 'collapsed');
 });
