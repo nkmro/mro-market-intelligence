@@ -191,6 +191,16 @@ function pickCriteriaTab(tabTitles, team) {
   return (t && (tabTitles || []).indexOf(special) >= 0) ? special : CRITERIA_TAB;
 }
 
+// ① (2026-10-20 재홍님 결정): 평가 기준 화면 "기록 있음" 자동 인식.
+// 파일의 탭 이름 중 '역량-'으로 시작하는 탭을 기록 탭으로 보고, 마지막 '-' 뒤(세부 항목 이름)만 돌려준다.
+// 예: '역량-직무별전문성-자기개발' → '자기개발'. 기준 탭(CRM-…)·설정 탭은 '역량-'으로 시작하지 않아 빠진다.
+function recordItemsFromTabs(tabTitles) {
+  return (Array.isArray(tabTitles) ? tabTitles : []).map(function (t) { return String(t || '').trim(); })
+    .filter(function (t) { return t.indexOf('역량-') === 0; })
+    .map(function (t) { return t.slice(t.lastIndexOf('-') + 1).trim(); })
+    .filter(function (x) { return x !== ''; });
+}
+
 function criteriaRows(values) {
   return (values || []).map(function (r) { return (r || []).map(function (v) { return String(v === undefined ? '' : v).trim(); }); })
     .filter(function (r) { return r.join('') !== ''; });
@@ -207,3 +217,4 @@ module.exports.monthOf = monthOf;
 module.exports.pickCriteriaTab = pickCriteriaTab;
 module.exports.reviewState = reviewState;
 module.exports.ADD_SALES_REPLY_HEADER = ADD_SALES_REPLY_HEADER;
+module.exports.recordItemsFromTabs = recordItemsFromTabs;
