@@ -104,10 +104,23 @@ function resolveAuthor(rec, users) {
 }
 function authorStatus(user) { return !user ? 'unresolved' : (user.status === '활성' ? 'active' : 'left'); }
 
+// v1.7 ⑳: 기록 하나의 처리 상태.
+// - 추가매출(addSales): '달성 여부 (Y/N)' 칸이 비면(공백 제거 후) 'awaitingReply'(팀원 회신 대기),
+//   채워졌고(Y·N 모두 회신) '팀장 의견'이 비면 'pendingReview'(팀장 확인 대기), 둘 다 있으면 'done'.
+// - 나머지 4개 탭: 기존 규칙 그대로 — '팀장 의견'이 비면 'pendingReview', 있으면 'done'.
+const ADD_SALES_REPLY_HEADER = '달성 여부 (Y/N)'; // 2026-10-19 1행 직접 확인 [설계서 ⑳]
+function reviewState(rec) {
+  if (rec.tab === 'addSales') {
+    const reply = String((rec.fields || {})[ADD_SALES_REPLY_HEADER] === undefined ? '' : rec.fields[ADD_SALES_REPLY_HEADER]).trim();
+    if (!reply) return 'awaitingReply';
+  }
+  return rec.leaderOpinion ? 'done' : 'pendingReview';
+}
+
 function publicRecord(rec, user) {
   return { tab: rec.tab, row: rec.row, recordId: rec.recordId, name: rec.name,
     authorEmail: user ? normEmail(user.email) : (rec.authorEmail || ''), authorStatus: authorStatus(user),
-    office: rec.office, recordedAt: rec.recordedAt, leaderOpinion: rec.leaderOpinion, fields: rec.fields };
+    office: rec.office, recordedAt: rec.recordedAt, leaderOpinion: rec.leaderOpinion, reviewState: reviewState(rec), fields: rec.fields };
 }
 
 function monthOf(recordedAt) {
@@ -116,21 +129,25 @@ function monthOf(recordedAt) {
 }
 
 // view=mine: 본인 기록 전체 + 우리 팀 건수표(활성 일반·담당, 건수만 — 내용·팀장 의견 없음)
+// v1.7 ⑳: awaitingReply = 본인 추가매출 중 회신 대기 개수(본인 숫자만, 팀 건수표에는 넣지 않음)
 function buildMine(viewer, users, recordsByTab) {
-  const mine = {}; const counts = {};
+  const mine = {}; const counts = {}; let awaitingReply = 0;
   const team = users.filter(function (u) { return u.status === '활성' && MEMBER_ROLES.indexOf(u.role) >= 0 && String(u.team || '').trim() === String(viewer.team || '').trim(); });
   team.forEach(function (u) { counts[normEmail(u.email)] = { name: u.name, office: u.office || '', byTab: {} }; });
   Object.keys(recordsByTab).forEach(function (tab) {
     mine[tab] = [];
     recordsByTab[tab].forEach(function (rec) {
       const user = resolveAuthor(rec, users);
-      if (user && normEmail(user.email) === normEmail(viewer.email)) mine[tab].push(publicRecord(rec, user));
+      if (user && normEmail(user.email) === normEmail(viewer.email)) {
+        mine[tab].push(publicRecord(rec, user));
+        if (reviewState(rec) === 'awaitingReply') awaitingReply++;
+      }
       if (user && counts[normEmail(user.email)]) {
         const c = counts[normEmail(user.email)].byTab; c[tab] = (c[tab] || 0) + 1;
       }
     });
   });
-  return { records: mine, teamCounts: Object.keys(counts).map(function (k) { return counts[k]; }) };
+  return { records: mine, teamCounts: Object.keys(counts).map(function (k) { return counts[k]; }), awaitingReply: awaitingReply };
 }
 
 // view=team: 팀장=자기 팀 일반·담당 / 임원=전체 일반·담당. 그 외 역할은 호출부에서 FORBIDDEN.
@@ -143,7 +160,7 @@ function buildTeam(viewer, users, recordsByTab, opts) {
   };
   const members = {};
   users.filter(function (u) { return inScope(u) && (u.status === '활성' || opts.includeLeft); }).forEach(function (u) {
-    members[normEmail(u.email)] = { name: u.name, email: normEmail(u.email), team: u.team, office: u.office || '', status: u.status === '활성' ? 'active' : 'left', byTab: {}, byMonth: {}, pendingReview: 0 };
+    members[normEmail(u.email)] = { name: u.name, email: normEmail(u.email), team: u.team, office: u.office || '', status: u.status === '활성' ? 'active' : 'left', byTab: {}, byMonth: {}, pendingReview: 0, awaitingReply: 0 };
   });
   const records = []; const unresolved = [];
   Object.keys(recordsByTab).forEach(function (tab) {
@@ -155,7 +172,11 @@ function buildTeam(viewer, users, recordsByTab, opts) {
       records.push(publicRecord(rec, user));
       m.byTab[tab] = (m.byTab[tab] || 0) + 1;
       const mo = monthOf(rec.recordedAt); m.byMonth[mo] = (m.byMonth[mo] || 0) + 1;
-      if (!rec.leaderOpinion && m.status === 'active') m.pendingReview++;
+      if (m.status === 'active') { // 퇴사자 기록은 보기 전용 — 둘 다 세지 않음(⑫)
+        const st = reviewState(rec);
+        if (st === 'pendingReview') m.pendingReview++;
+        else if (st === 'awaitingReply') m.awaitingReply++;
+      }
     });
   });
   return { members: Object.keys(members).map(function (k) { return members[k]; }), records: records, unresolved: unresolved };
@@ -184,3 +205,5 @@ module.exports.buildTeam = buildTeam;
 module.exports.criteriaRows = criteriaRows;
 module.exports.monthOf = monthOf;
 module.exports.pickCriteriaTab = pickCriteriaTab;
+module.exports.reviewState = reviewState;
+module.exports.ADD_SALES_REPLY_HEADER = ADD_SALES_REPLY_HEADER;
