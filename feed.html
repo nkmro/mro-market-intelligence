@@ -98,6 +98,8 @@
     margin-left: auto; background: #e24b4a; color: #fff;
     font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
   }
+  /* 1단계-라-나 (설계서 2-1): 인사평가 묶음 안 작은 제목 "역량평가 · 40%" */
+  .nav-group-sub { font-size: 11px; color: rgba(255,255,255,.6); padding: 2px 12px 4px 30px; }
   .sidebar-bottom { margin-top: auto; border-top: 1px solid rgba(0,0,0,.08); padding: 10px 12px 16px; }
   .sidebar-me { font-size: 12px; color: var(--text-muted); padding: 6px 12px; }
   .sidebar-logout {
@@ -459,6 +461,19 @@ font-size: 13px; padding: 2px 4px; display: none;
 .settings-row-title { font-size: 14px; font-weight: 600; }
 .settings-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
 .settings-row .settings-row-input { width: 200px; flex-shrink: 0; }
+/* 1단계-라-나: 인사평가 › 평가 기준 보기 (화면 ④, 보기 전용) */
+.cc-section { font-size: 12px; font-weight: 700; color: var(--text-muted); margin: 14px 0 6px; }
+.cc-comp { border-top: 1px solid var(--border); padding: 12px 0; }
+.cc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.cc-name { font-size: 15px; font-weight: 700; }
+.cc-weight { font-size: 14px; font-weight: 700; color: var(--accent); }
+.cc-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0 4px 12px; }
+.cc-item-name { flex: 1; min-width: 0; }
+.cc-ratio { color: var(--text-muted); flex-shrink: 0; }
+.cc-rec { font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 10px; padding: 0 6px; flex-shrink: 0; }
+.cc-grades { font-size: 12px; color: var(--text-muted); padding: 4px 0 0 12px; }
+.cc-total { display: flex; justify-content: space-between; border-top: 2px solid var(--border); padding: 12px 0 4px; font-weight: 700; }
+.cc-note { font-size: 12px; color: var(--text-muted); margin: 8px 0 4px; line-height: 1.5; }
 
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
@@ -673,6 +688,13 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
       <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 시황 설정</div>
         </div>
       </div>
+      <div class="nav-group collapsed" id="nav-group-hr" data-group="hr" style="display:none;">
+        <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가</div>
+        <div class="nav-group-body">
+          <div class="nav-group-sub">역량평가 · 40%</div>
+          <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
+        </div>
+      </div>
       <div class="nav-group collapsed" id="nav-group-admin" data-group="admin" style="display:none;">
         <div class="nav-group-head" onclick="toggleNavGroup_('admin')"><span class="nav-group-caret">▼</span>관리</div>
         <div class="nav-group-body">
@@ -718,6 +740,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="users-view" style="display:none;"></div>
 <div id="items-view" style="display:none;"></div>
 <div id="settings-view" style="display:none;"></div>
+<div id="comp-criteria-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -850,6 +873,8 @@ const CLOUD_RUN_UNPIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intellig
 // 추가했을 수 있어서 — 2026-09-04 hedge 제거와 같은 이유). 빈 문자열로 바꾸면 즉시 기존 경로로만
 // 동작한다(다른 CLOUD_RUN_*_URL과 같은 롤백 스위치).
 const CLOUD_RUN_SUGGEST_MATERIALS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/suggestMaterialsTest';
+// 1단계-라-나: 인사평가 읽기(view=mine/team/criteria). 대체 경로 없음 — 실패 시 화면 안내만(설계서 7장, 읽기 대체는 3단계).
+const CLOUD_RUN_GET_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCompetencyTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -1125,6 +1150,7 @@ document.getElementById('notif-view').style.display = view === 'notif' ? 'block'
 document.getElementById('users-view').style.display = view === 'users' ? 'block' : 'none';
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
 document.getElementById('settings-view').style.display = (view === 'settings' || view === 'settings-common') ? 'block' : 'none';
+document.getElementById('comp-criteria-view').style.display = view === 'comp-criteria' ? 'block' : 'none';
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1156,6 +1182,9 @@ loadSettingsPage('자재시황');
 }
 if (view === 'settings-common') {
 loadSettingsPage('공통');
+}
+if (view === 'comp-criteria') {
+loadCompCriteriaPage();
 }
 toggleDrawer(false);
 }
@@ -1398,6 +1427,11 @@ document.getElementById('nav-settings').style.display = 'flex';
 document.getElementById('nav-gas-admin').style.display = 'flex';
 document.getElementById('nav-settings-common').style.display = 'flex';
 document.getElementById('nav-group-admin').style.display = '';
+}
+// 1단계-라-나 (설계서 2-1): 인사평가 묶음 — 일반·담당·팀장·임원 모두. 1-라-나에서는 평가 기준 보기만(나머지 화면은 1-라-다·라).
+if (['일반', '담당', '팀장', '임원'].indexOf(session.role) >= 0) {
+document.getElementById('nav-group-hr').style.display = '';
+document.getElementById('nav-comp-criteria').style.display = 'flex';
 }
 restoreNavGroups_();
 setupTeamLabelControl();
@@ -3944,6 +3978,86 @@ msg.textContent = '저장됐어요.';
 } catch (e) {
 msg.textContent = '네트워크 오류가 발생했어요.';
 }
+}
+
+// ==== 인사평가 › 평가 기준 보기 (1단계-라-나, 설계서 3장 화면 ④·4-4) ====
+// getCompetencyTest(view=criteria)가 돌려준 기준 탭의 줄(rows)을 앱 모양으로 다시 그린다. 보기 전용.
+// 대체 경로(Apps Script)는 없음 — 실패하면 안내 문구만(설계서 7장: 읽기 대체 경로는 3단계).
+// 기록 탭이 있는 세부 항목 5개(탭 이름 끝부분과 같음, 띄어쓰기·괄호 무시) — 화면에서 "기록 있음" 표시
+const COMP_RECORD_ITEMS_ = ['자기개발', '직급역량개선노력', '대면영업', '원가개선제안', '추가매출계획이행'];
+let compCriteriaReq_ = 0;
+function compNorm_(s) { return String(s || '').replace(/\(.*?\)/g, '').replace(/\s+/g, ''); }
+function compErrorText_(res) {
+if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
+if (res.error === 'COMPETENCY_SETTINGS_MISSING') return (res.year || '올해') + '년 인사평가 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
+if (res.error === 'SHEET_ACCESS_FAILED') return '인사평가 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
+if (res.error === 'SESSION_EXPIRED' || res.error === 'SESSION_NOT_FOUND') return '로그인이 만료됐어요. 다시 로그인해 주세요.';
+if (res.error === 'FORBIDDEN' || res.error === 'USER_NOT_FOUND') return '이 화면을 볼 권한이 없어요.';
+return '기준을 불러오지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
+}
+async function loadCompCriteriaPage() {
+const root = document.getElementById('comp-criteria-view');
+const reqNo = ++compCriteriaReq_;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+let res = null;
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+res = await fetch(CLOUD_RUN_GET_COMPETENCY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionToken: session ? session.sessionToken : null, view: 'criteria' }), signal: controller.signal }).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+} catch (e) { res = null; }
+if (reqNo !== compCriteriaReq_) return; // 그 사이 다시 눌렀으면 늦게 온 이 응답은 버린다
+if (!res || !res.ok) {
+root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res))}</div>`;
+return;
+}
+renderCompCriteria_(res);
+}
+// 기준 탭 줄 해석: B열(1) '■'=제목, '항 목'=머리글(건너뜀), '▶'=구분 제목, '- '=역량(C열 가중치),
+// D·E열(3·4)=세부 항목·배점 비율, F·G열(5·6)=등급·점수, B열 '계'=합계. 해석 못 하면 원본 표로 보여준다.
+function parseCompCriteria_(rows) {
+const out = { title: '', blocks: [], total: '' };
+let cur = null;
+(rows || []).forEach(function (r) {
+const c = function (i) { return String((r && r[i]) || '').trim(); };
+const b = c(1);
+if (b.charAt(0) === '■') { out.title = b.replace(/^■\s*/, ''); return; }
+if (compNorm_(b) === '항목') return;
+if (b.charAt(0) === '▶') { out.blocks.push({ section: b.replace(/^▶\s*/, '') }); cur = null; return; }
+if (b === '계') { out.total = c(2); cur = null; return; }
+if (b.indexOf('- ') === 0) { cur = { name: b.slice(2).trim(), weight: c(2), items: [], grades: [] }; out.blocks.push({ comp: cur }); }
+if (!cur) return;
+if (c(3)) cur.items.push({ name: c(3), ratio: c(4) });
+if (c(5)) cur.grades.push(c(5) + ' ' + c(6));
+});
+return out;
+}
+function renderCompCriteria_(res) {
+const root = document.getElementById('comp-criteria-view');
+const p = parseCompCriteria_(res.rows);
+const comps = p.blocks.filter(function (x) { return x.comp; });
+const teamNote = (res.criteriaTab && res.criteriaTab !== 'CRM-역량평가-기준') ? ' · ' + teamLabel(res.viewer && res.viewer.team) + ' 전용 기준' : '';
+const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">평가 기준 보기</div>
+<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml((p.title || '역량평가 기준') + ' · ' + (res.year || '') + '년' + teamNote)}</div>`;
+if (!comps.length) {
+// 해석 실패 — 시트 줄을 그대로 보여준다(보기 전용)
+const raw = (res.rows || []).map(function (r) { return '<tr>' + r.map(function (v) { return '<td style="padding:4px 8px; border-bottom:1px solid var(--border); font-size:13px;">' + escapeHtml(v) + '</td>'; }).join('') + '</tr>'; }).join('');
+root.innerHTML = `<div class="settings-panel">${head}<div style="overflow-x:auto;"><table style="border-collapse:collapse;">${raw}</table></div></div>`;
+return;
+}
+const body = p.blocks.map(function (x) {
+if (x.section) return `<div class="cc-section">${escapeHtml(x.section)}</div>`;
+const cp = x.comp;
+const items = cp.items.map(function (it) {
+const rec = COMP_RECORD_ITEMS_.indexOf(compNorm_(it.name)) >= 0;
+return `<div class="cc-item"><span class="cc-item-name">${escapeHtml(it.name)}</span>${rec ? '<span class="cc-rec">기록 있음</span>' : ''}<span class="cc-ratio">${escapeHtml(it.ratio)}</span></div>`;
+}).join('');
+const grades = cp.grades.length ? `<div class="cc-grades">등급별 점수: ${escapeHtml(cp.grades.join(' · '))}</div>` : '';
+return `<div class="cc-comp"><div class="cc-head"><span class="cc-name">${escapeHtml(cp.name)}</span><span class="cc-weight">${escapeHtml(cp.weight)}</span></div>${items}${grades}</div>`;
+}).join('');
+const total = p.total ? `<div class="cc-total"><span>합계</span><span>${escapeHtml(p.total)}</span></div>` : '';
+root.innerHTML = `<div class="settings-panel">${head}${body}${total}
+<div class="cc-note">"기록 있음" 항목은 앱에서 근거 기록을 모으는 항목입니다. 기록 수는 참고용이며, 평가는 내용으로 합니다.</div></div>`;
 }
 
 // ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
