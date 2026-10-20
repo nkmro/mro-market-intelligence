@@ -81,6 +81,20 @@
     margin-left: auto; background: #e24b4a; color: #fff;
     font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px;
   }
+  /* 1단계-다 (설계서 2-1): 사이드바 메뉴 묶음. 묶음 제목을 누르면 접고 펼친다. */
+  .nav-group { margin-bottom: 6px; }
+  .nav-group-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px 6px; font-size: 12px; font-weight: 600;
+    color: rgba(255,255,255,.82); cursor: pointer; letter-spacing: .2px;
+  }
+  .nav-group-caret { display: inline-block; width: 10px; font-size: 10px; transition: transform .15s; }
+  .nav-group.collapsed .nav-group-caret { transform: rotate(-90deg); }
+  .nav-group.collapsed .nav-group-body { display: none; }
+  .nav-group-new {
+    margin-left: auto; background: #e24b4a; color: #fff;
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
+  }
   .sidebar-bottom { margin-top: auto; border-top: 1px solid rgba(0,0,0,.08); padding: 10px 12px 16px; }
   .sidebar-me { font-size: 12px; color: var(--text-muted); padding: 6px 12px; }
   .sidebar-logout {
@@ -647,12 +661,23 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
   <div class="sidebar" id="sidebar">
     <div class="sidebar-nav-zone">
       <div class="sidebar-title-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px;"><div class="sidebar-title">MENU</div><button id="notif-perm-btn" style="display:none; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:13px; color:#fff; padding:2px 4px; white-space:nowrap;" onclick="requestNotifPermission()"><span style="font-size:15px;">🔔</span>알림 켜기</button></div>
+      <div class="nav-group" id="nav-group-mro" data-group="mro">
+        <div class="nav-group-head" onclick="toggleNavGroup_('mro')"><span class="nav-group-caret">▾</span>MRO 자재 시황<span class="nav-group-new" id="nav-group-mro-new" style="display:none;">NEW</span></div>
+        <div class="nav-group-body">
       <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span> 시황 뉴스</div>
       <div class="nav-item" id="nav-notif" data-view="notif" onclick="switchView('notif')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
       <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span> 품목 관리</div>
+      <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 시황 설정</div>
+        </div>
+      </div>
+      <div class="nav-group collapsed" id="nav-group-admin" data-group="admin" style="display:none;">
+        <div class="nav-group-head" onclick="toggleNavGroup_('admin')"><span class="nav-group-caret">▾</span>관리</div>
+        <div class="nav-group-body">
       <div class="nav-item" id="nav-users" data-view="users" onclick="switchView('users')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 사용자 현황</div>
-      <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 설정</div>
+      <div class="nav-item" id="nav-settings-common" data-view="settings-common" onclick="switchView('settings-common')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 공통 설정</div>
       <div class="nav-item" id="nav-gas-admin" onclick="openGasAdmin()" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></span> Gmail 재인증</div>
+        </div>
+      </div>
     </div>
     <div class="sidebar-bottom">
       <div class="sidebar-me" id="sidebar-me"></div>
@@ -1055,6 +1080,34 @@ function scrollToTop_() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// 1단계-다 (설계서 2-1): 메뉴 묶음 접기/펼치기. 상태는 이 브라우저에만 기억(localStorage, 실패해도 기본값).
+// 기본: MRO 자재 시황 = 펼침, 관리 = 접힘.
+const NAV_GROUP_STORE_KEY_ = 'mro_nav_groups';
+function toggleNavGroup_(group) {
+const el = document.getElementById('nav-group-' + group);
+if (!el) return;
+el.classList.toggle('collapsed');
+try {
+const saved = JSON.parse(localStorage.getItem(NAV_GROUP_STORE_KEY_) || '{}') || {};
+saved[group] = el.classList.contains('collapsed') ? 'collapsed' : 'open';
+localStorage.setItem(NAV_GROUP_STORE_KEY_, JSON.stringify(saved));
+} catch (e) {}
+}
+function restoreNavGroups_() {
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(NAV_GROUP_STORE_KEY_) || '{}') || {}; } catch (e) { saved = {}; }
+Object.keys(saved).forEach(function (group) {
+const el = document.getElementById('nav-group-' + group);
+if (el) el.classList.toggle('collapsed', saved[group] === 'collapsed');
+});
+}
+// 선택한 메뉴가 접힌 묶음 안에 있으면(예: 알림 클릭으로 ?view=notif 진입) 그 묶음을 펼친다(저장은 안 함).
+function openNavGroupOf_(view) {
+const item = document.querySelector('.nav-item[data-view="' + view + '"]');
+const group = item && item.closest('.nav-group');
+if (group) group.classList.remove('collapsed');
+}
+
 function switchView(view) {
 currentView = view;
 document.querySelectorAll('.nav-item[data-view]').forEach(el => {
@@ -1064,7 +1117,8 @@ document.getElementById('feed-view').style.display = view === 'feed' ? 'block' :
 document.getElementById('notif-view').style.display = view === 'notif' ? 'block' : 'none';
 document.getElementById('users-view').style.display = view === 'users' ? 'block' : 'none';
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
-document.getElementById('settings-view').style.display = view === 'settings' ? 'block' : 'none';
+document.getElementById('settings-view').style.display = (view === 'settings' || view === 'settings-common') ? 'block' : 'none';
+openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
 // 댓글 고정(Pin Comment) 신규 기능 — #pinned-area를 header-stack(topbar 밖)으로 옮기면서
@@ -1091,7 +1145,10 @@ if (view === 'items') {
 loadItems();
 }
 if (view === 'settings') {
-loadSettingsPage();
+loadSettingsPage('자재시황');
+}
+if (view === 'settings-common') {
+loadSettingsPage('공통');
 }
 toggleDrawer(false);
 }
@@ -1332,7 +1389,10 @@ document.getElementById('nav-items').style.display = 'flex';
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-settings').style.display = 'flex';
 document.getElementById('nav-gas-admin').style.display = 'flex';
+document.getElementById('nav-settings-common').style.display = 'flex';
+document.getElementById('nav-group-admin').style.display = '';
 }
+restoreNavGroups_();
 setupTeamLabelControl();
 const [__authTIdle, __authTSeen, __authTNotif] = await Promise.all([idlePromise, seenPromise, notifPromise]);
 updateNotifBadge();
@@ -1763,6 +1823,8 @@ badge.style.display = 'inline-block';
 } else {
 badge.style.display = 'none';
 }
+const mroGroupNew = document.getElementById('nav-group-mro-new');
+if (mroGroupNew) mroGroupNew.style.display = count > 0 ? 'inline-block' : 'none';
 const hamburgerBadge = document.getElementById('hamburger-badge');
 if (hamburgerBadge) {
 if (count > 0) {
@@ -3776,7 +3838,11 @@ const SETTINGS_META = {
 '이슈댓글메일테스트수신자': { label: '이슈 댓글 메일 시험 수신자', desc: '시험용. 메일 주소를 넣으면 실제 대상자 대신 이 주소 한 곳으로만 보냅니다. 정식 운영 시에는 비워두세요.' }
 };
 
-async function loadSettingsPage() {
+// 1단계-다 (설계서 2-1·⑬): 설정 시트는 1개 그대로, 화면만 D열 '구분'으로 나눈다.
+// '공통'이면 관리 › 공통 설정, 그 밖(빈칸 포함)은 시황 설정. 구분은 getSettingsTest가 categories로 준다.
+let settingsCategory_ = '자재시황';
+async function loadSettingsPage(category) {
+settingsCategory_ = category === '공통' ? '공통' : '자재시황';
 const root = document.getElementById('settings-view');
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 try {
@@ -3802,15 +3868,24 @@ if (!res.ok) {
 root.innerHTML = `<div class="feed-empty">설정을 불러오지 못했어요. (${escapeHtml(res.error || 'SERVER_ERROR')})</div>`;
 return;
 }
-renderSettingsPage(res.settings || {}, res.descriptions || {});
+renderSettingsPage(res.settings || {}, res.descriptions || {}, res.categories);
 } catch (e) {
 root.innerHTML = `<div class="feed-empty">네트워크 오류가 발생했어요.</div>`;
 }
 }
 
-function renderSettingsPage(settings, descriptions) {
+function renderSettingsPage(settings, descriptions, categories) {
 const root = document.getElementById('settings-view');
-const rowsHtml = Object.keys(settings).map(function (key) {
+// categories가 없으면(Apps Script 대체 경로 — 구분을 보내지 않음) 예전처럼 전체를 한 화면에 보여준다.
+const hasCategories = !!categories && typeof categories === 'object';
+const wantCommon = settingsCategory_ === '공통';
+const shownKeys = Object.keys(settings).filter(function (key) {
+if (!hasCategories) return true;
+return (String(categories[key] || '').trim() === '공통') === wantCommon;
+});
+const titleHtml = `<div class="settings-row-title" style="font-size:16px; margin:0 0 12px;">${wantCommon ? '공통 설정' : '시황 설정'}</div>`
++ (hasCategories ? '' : `<div class="form-hint" style="margin:0 0 12px;">구분 정보를 받지 못해 전체 설정을 한 화면에 보여줍니다.</div>`);
+const rowsHtml = shownKeys.map(function (key) {
 const meta = SETTINGS_META[key] || { label: key, desc: '' };
 const desc = (descriptions && descriptions[key]) || meta.desc || '';
 return `
@@ -3825,6 +3900,7 @@ ${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}
 }).join('');
 root.innerHTML = `
 <div class="settings-panel">
+${titleHtml}
 ${rowsHtml}
 <div id="settings-save-msg" class="form-hint" style="margin:10px 0;"></div>
 <div class="item-form-actions">
