@@ -4036,6 +4036,8 @@ function renderCompCriteria_(res) {
 const root = document.getElementById('comp-criteria-view');
 const p = parseCompCriteria_(res.rows);
 const comps = p.blocks.filter(function (x) { return x.comp; });
+// ①: 서버가 탭 이름으로 알려준 기록 항목(recordItems)이 있으면 그것으로, 없으면 고정 목록으로 "기록 있음" 표시
+const recList = (Array.isArray(res.recordItems) && res.recordItems.length) ? res.recordItems.map(compNorm_) : COMP_RECORD_ITEMS_;
 const teamNote = (res.criteriaTab && res.criteriaTab !== 'CRM-역량평가-기준') ? ' · ' + teamLabel(res.viewer && res.viewer.team) + ' 전용 기준' : '';
 const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">평가 기준 보기</div>
 ${teamNote ? `<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(teamNote.replace(/^ · /, ''))}</div>` : ''}`;
@@ -4049,7 +4051,7 @@ const body = p.blocks.map(function (x) {
 if (x.section) return `<div class="cc-section">${escapeHtml(x.section)}</div>`;
 const cp = x.comp;
 const items = cp.items.map(function (it) {
-const rec = COMP_RECORD_ITEMS_.indexOf(compNorm_(it.name)) >= 0;
+const rec = recList.indexOf(compNorm_(it.name)) >= 0;
 return `<div class="cc-item"><span class="cc-item-name">${escapeHtml(it.name)}</span>${rec ? '<span class="cc-rec">기록 있음</span>' : ''}<span class="cc-ratio">${escapeHtml(it.ratio)}</span></div>`;
 }).join('');
 const grades = cp.grades.length ? `<div class="cc-grades">등급별 점수: ${escapeHtml(cp.grades.join(' · '))}</div>` : '';
