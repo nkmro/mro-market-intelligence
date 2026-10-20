@@ -48,7 +48,7 @@ t('팀장: 자기 팀 활성 일반·담당 기록만', tm.records.map(r => r.na
 t('팀장: 다른 팀 기록 없음', tm.records.every(r => r.name !== '서부팀원'));
 t('팀장: 퇴사 기본 숨김', tm.records.every(r => r.name !== '최성광') && tm.members.every(x => x.status === 'active'));
 t('팀장: 판정 불가 기본 숨김', tm.unresolved.length === 0);
-t('팀장: 확인 대기 = 팀장 의견 빈 기록(손희진1+박태영 추가매출1)', tm.members.reduce((a, x) => a + x.pendingReview, 0) === 2);
+t('팀장: 확인 대기 = 팀장 의견 빈 기록(손희진1). v1.7 ⑳: 박태영 추가매출(달성 여부 없음)은 회신 대기로', tm.members.reduce((a, x) => a + x.pendingReview, 0) === 1 && tm.members.find(x => x.name === '박태영').awaitingReply === 1);
 t('팀장: 월별 0=기록일시 없음, 10월 1', tm.members.find(x => x.name === '손희진').byMonth[10] === 1 && tm.members.find(x => x.name === '박태영').byMonth[0] === 2);
 tm = c.buildTeam(U[0], U, R, { includeLeft: true });
 t('팀장+퇴사 포함: 최성광 보임', tm.records.some(r => r.name === '최성광' && r.authorStatus === 'left'));
@@ -72,5 +72,30 @@ t('기준 탭: 팀별 탭 있으면 그 탭(서부)', c.pickCriteriaTab(TT, '서
 t('기준 탭: 임원(본사)은 기본', c.pickCriteriaTab(TT, '본사') === 'CRM-역량평가-기준');
 t('기준 탭: 팀 빈칸·탭 목록 없음은 기본', c.pickCriteriaTab(TT, '') === 'CRM-역량평가-기준' && c.pickCriteriaTab(null, '서부') === 'CRM-역량평가-기준');
 t('기준 탭: 팀 앞뒤 공백 무시', c.pickCriteriaTab(TT, ' 서부 ') === 'CRM-역량평가-기준_서부');
+// v1.7 ⑳ 추가매출 확인 대기·회신 대기
+const AS = [['사무소','담당','구분','고객사','품목','달성 여부 (Y/N)','실적 반영 시점(YYMM~)','팀장 의견'].concat(EX),
+  ['양산','박태영','품목확대','A사','라이너','','',''],        // 회신 대기
+  ['양산','박태영','품목확대','B사','대차',' ','',''],        // 공백만 → 회신 대기
+  ['양산','박태영','품목확대','C사','케이블','Y','2607',''],  // 확인 대기
+  ['양산','박태영','품목확대','D사','팔레트','N','',''],      // N도 회신 → 확인 대기
+  ['양산','박태영','품목확대','E사','실린더','Y','2608','중'], // 완료
+  ['양산','손희진','품목확대','F사','박스','',''],             // 손희진 회신 대기
+  ['포항','최성광','품목확대','G사','x','','','']];            // 퇴사 — 세지 않음
+const R2 = { selfDev: [], gradeComp: [], faceSales: [], costSave: [], addSales: c.parseTab('addSales', AS) };
+const st = R2.addSales.map(r => c.reviewState(r));
+t('⑳ 상태: 빈칸/공백만=회신 대기, Y·N=확인 대기, 팀장 의견 있음=완료', st.join(',') === 'awaitingReply,awaitingReply,pendingReview,pendingReview,done,awaitingReply,awaitingReply');
+t('⑳ 다른 탭은 기존 규칙(팀장 의견 비면 확인 대기)', c.reviewState(R.faceSales[1]) === 'pendingReview' && c.reviewState(R.faceSales[0]) === 'done');
+let t2 = c.buildTeam(U[0], U, R2, {});
+const pty = t2.members.find(x => x.name === '박태영'), shj = t2.members.find(x => x.name === '손희진');
+t('⑳ team 박태영: 확인 대기 2, 회신 대기 2', pty.pendingReview === 2 && pty.awaitingReply === 2);
+t('⑳ team 손희진: 회신 대기 1', shj.awaitingReply === 1 && shj.pendingReview === 0);
+t2 = c.buildTeam(U[0], U, R2, { includeLeft: true });
+t('⑳ 퇴사자(최성광)는 둘 다 0', t2.members.find(x => x.name === '최성광').awaitingReply === 0 && t2.members.find(x => x.name === '최성광').pendingReview === 0);
+t('⑳ 기록마다 reviewState 포함', t2.records.every(r => ['awaitingReply','pendingReview','done'].indexOf(r.reviewState) >= 0));
+let m2 = c.buildMine(U[2], U, R2);
+t('⑳ mine 박태영 awaitingReply = 본인 2', m2.awaitingReply === 2);
+t('⑳ mine 팀 건수표에는 회신 대기 없음', m2.teamCounts.every(x => !('awaitingReply' in x)));
+t('⑳ mine 손희진 = 1', c.buildMine(U[3], U, R2).awaitingReply === 1);
+
 console.log('pass ' + pass + ' / fail ' + fail);
 process.exit(fail ? 1 : 0);
