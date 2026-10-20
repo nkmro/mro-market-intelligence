@@ -234,6 +234,8 @@ res.status(500).json({ ok: false, serverMs, error: String((err && err.message) |
 // GET/POST /getSettingsTest : session-authenticated read of the (settings) sheet. Mirrors handleGetSettings_ in Code.gs. Single sheet read, no retry/cache/hedge.
 const SHEET_SETTING_NAME = '설정';
 const SETTINGS_RANGE = encodeURIComponent(SHEET_SETTING_NAME + '!A2:C');
+// 1단계-다 (설계서 2-1·⑬): getSettingsTest만 D열 '구분'까지 읽는다. 로그인·설정 저장이 쓰는 SETTINGS_RANGE는 그대로.
+const SETTINGS_RANGE_WITH_CATEGORY = encodeURIComponent(SHEET_SETTING_NAME + '!A2:D');
 exports.getSettingsTest = async (req, res) => {
 setCors(res);
 if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -266,20 +268,22 @@ await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
 const client = await auth.getClient();
-const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${SETTINGS_RANGE}`;
+const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${SETTINGS_RANGE_WITH_CATEGORY}`;
 const resp = await client.request({ url });
 timings.sheetMs = Date.now() - u0;
 const rows = (resp.data && resp.data.values) || [];
 const settings = {};
 const descriptions = {};
+const categories = {};
 rows.forEach(function (row) {
 const key = row[0];
 if (!key) return;
 settings[key] = row[1];
 descriptions[key] = row[2] || '';
+categories[key] = row[3] || '';
 });
 const serverMs = Date.now() - t0;
-res.status(200).json({ ok: true, serverMs, timings, settings, descriptions });
+res.status(200).json({ ok: true, serverMs, timings, settings, descriptions, categories });
 } catch (err) {
 const serverMs = Date.now() - t0;
 res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
