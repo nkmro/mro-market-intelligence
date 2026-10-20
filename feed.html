@@ -474,6 +474,58 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cc-grades { font-size: 12px; color: var(--text-muted); padding: 4px 0 0 12px; }
 .cc-total { display: flex; justify-content: space-between; border-top: 2px solid var(--border); padding: 12px 0 4px; font-weight: 700; }
 .cc-note { font-size: 12px; color: var(--text-muted); margin: 8px 0 4px; line-height: 1.5; }
+/* 내 역량 기록(1단계-라-다-가, 화면 ①·⑤) — 위: 우리 팀 현황, 아래: 종류별 탭(.notif-tab 모양 재사용) */
+.cm-notice { font-size: 13px; background: var(--danger-soft); color: var(--danger); border-radius: 8px; padding: 8px 12px; margin: 8px 0 4px; }
+.cm-team { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; background: #faf9fc; }
+.cm-team-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+.cm-team-meta { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.cm-tiles { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.cm-tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; text-align: center; animation: cmFadeUp .4s ease both; }
+.cm-tile-emoji { font-size: 20px; line-height: 1.2; }
+.cm-tile-num { font-size: 20px; font-weight: 700; color: var(--accent); }
+.cm-tile-label { font-size: 12px; color: var(--text-muted); }
+.cm-rows { display: flex; flex-direction: column; gap: 2px; }
+.cm-row { display: grid; grid-template-columns: 150px 1fr 44px; grid-template-areas: "who bar sum" ". chips chips"; align-items: center; column-gap: 10px; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
+.cm-row:hover { background: #f0eef5; }
+.cm-me { background: #eeeaf8; }
+.cm-who { grid-area: who; display: flex; align-items: baseline; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.cm-who-name { font-weight: 600; }
+.cm-who-office { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.cm-me-tag { font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 8px; padding: 0 5px; }
+.cm-bar { grid-area: bar; height: 10px; background: #e6e3ee; border-radius: 4px; overflow: hidden; }
+.cm-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transform-origin: left center; animation: cmGrow .7s cubic-bezier(.2,.8,.2,1) both; }
+.cm-row-sum { grid-area: sum; text-align: right; font-weight: 700; }
+.cm-chips { grid-area: chips; display: flex; flex-wrap: wrap; gap: 4px; min-height: 0; }
+.cm-chip { font-size: 11px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; }
+@keyframes cmGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes cmFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cm-tile, .cm-bar-fill { animation: none; } }
+.cm-mine { margin-top: 4px; }
+.cm-tabs { overflow-x: auto; }
+.cm-tabs .notif-tab { padding-left: 6px; padding-right: 6px; }
+.cm-tab-emoji { font-size: 14px; }
+.cm-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); position: absolute; top: 6px; right: 6px; }
+.cm-tab-body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; padding: 8px 12px 12px; }
+.cm-item { font-size: 12px; color: var(--text-muted); margin: 2px 0 6px; }
+.cm-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
+.cm-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+.cm-card-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.cm-caret { font-size: 11px; color: var(--text-muted); transition: transform .15s; flex-shrink: 0; }
+.cm-fold .cm-caret { transform: rotate(-90deg); }
+.cm-fold .cm-card-body { display: none; }
+.cm-card-body { margin-top: 4px; }
+.cm-fold { background: #faf9fc; padding-top: 6px; padding-bottom: 6px; }
+.cm-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-st { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 7px; flex-shrink: 0; border: 1px solid; }
+.cm-st-reply { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.cm-st-review { color: var(--accent); border-color: var(--accent); }
+.cm-st-done { color: var(--text-muted); border-color: var(--border); }
+.cm-f { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
+.cm-fk { color: var(--text-muted); flex: 0 0 130px; overflow-wrap: anywhere; }
+.cm-fv { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-op { font-size: 13px; color: var(--accent); margin-top: 4px; }
+@media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } }
+@media (max-width: 480px) { .cm-tab-label { display: none; } .cm-tabs .notif-tab { padding-left: 4px; padding-right: 4px; } }
 
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
@@ -692,6 +744,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가</div>
         <div class="nav-group-body">
           <div class="nav-group-sub">역량평가 · 40%</div>
+          <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록</div>
           <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
         </div>
       </div>
@@ -741,6 +794,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="items-view" style="display:none;"></div>
 <div id="settings-view" style="display:none;"></div>
 <div id="comp-criteria-view" style="display:none;"></div>
+<div id="comp-mine-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -1151,6 +1205,7 @@ document.getElementById('users-view').style.display = view === 'users' ? 'block'
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
 document.getElementById('settings-view').style.display = (view === 'settings' || view === 'settings-common') ? 'block' : 'none';
 document.getElementById('comp-criteria-view').style.display = view === 'comp-criteria' ? 'block' : 'none';
+document.getElementById('comp-mine-view').style.display = view === 'comp-mine' ? 'block' : 'none';
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1185,6 +1240,9 @@ loadSettingsPage('공통');
 }
 if (view === 'comp-criteria') {
 loadCompCriteriaPage();
+}
+if (view === 'comp-mine') {
+loadCompMinePage();
 }
 toggleDrawer(false);
 }
@@ -1432,6 +1490,10 @@ document.getElementById('nav-group-admin').style.display = '';
 if (['일반', '담당', '팀장', '임원'].indexOf(session.role) >= 0) {
 document.getElementById('nav-group-hr').style.display = '';
 document.getElementById('nav-comp-criteria').style.display = 'flex';
+}
+// 1단계-라-다-가 (설계서 2-1 메뉴표): 내 역량 기록은 팀원(일반·담당)만. 팀장·임원 자리에는 1-라-라에서 팀 역량평가(②).
+if (['일반', '담당'].indexOf(session.role) >= 0) {
+document.getElementById('nav-comp-mine').style.display = 'flex';
 }
 restoreNavGroups_();
 setupTeamLabelControl();
@@ -3987,13 +4049,13 @@ msg.textContent = '네트워크 오류가 발생했어요.';
 const COMP_RECORD_ITEMS_ = ['자기개발', '직급역량개선노력', '대면영업', '원가개선제안', '추가매출계획이행'];
 let compCriteriaReq_ = 0;
 function compNorm_(s) { return String(s || '').replace(/\(.*?\)/g, '').replace(/\s+/g, ''); }
-function compErrorText_(res) {
+function compErrorText_(res, what) {
 if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
 if (res.error === 'COMPETENCY_SETTINGS_MISSING') return (res.year || '올해') + '년 인사평가 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
 if (res.error === 'SHEET_ACCESS_FAILED') return '인사평가 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
 if (res.error === 'SESSION_EXPIRED' || res.error === 'SESSION_NOT_FOUND') return '로그인이 만료됐어요. 다시 로그인해 주세요.';
 if (res.error === 'FORBIDDEN' || res.error === 'USER_NOT_FOUND') return '이 화면을 볼 권한이 없어요.';
-return '기준을 불러오지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
+return (what || '기준') + '을 불러오지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
 }
 async function loadCompCriteriaPage() {
 const root = document.getElementById('comp-criteria-view');
@@ -4060,6 +4122,143 @@ return `<div class="cc-comp"><div class="cc-head"><span class="cc-name">${escape
 const total = p.total ? `<div class="cc-total"><span>합계</span><span>${escapeHtml(p.total)}</span></div>` : '';
 root.innerHTML = `<div class="settings-panel">${head}${body}${total}
 <div class="cc-note">"기록 있음" 항목은 앱에서 근거 기록을 모으는 항목입니다. 기록 수는 참고용이며, 평가는 내용으로 합니다.</div></div>`;
+}
+
+// ==== 인사평가 › 내 역량 기록 (1단계-라-다-가, 설계서 3장 화면 ①·⑤) ====
+// getCompetencyTest(view=mine): 본인 기록 5탭(records) + 우리 팀 건수표(teamCounts, 건수만) + 본인 추가매출 회신 대기 개수(awaitingReply).
+// 보기 전용. 화면 위 = 우리 팀 기록 현황(건수만), 아래 = 기록 종류별 탭(알림 화면의 .notif-tab 모양 재사용).
+// ⑤ 휴대폰은 같은 화면을 쓰고 CSS(768px 이하)로 팀 현황을 간단히(이름·막대·합계만) 보여준다(2026-10-20 재홍님 결정 — 설계서 2-2 변경).
+// 탭 순서·이름·평가 항목 = 설계서 4-2 / 서버 lib/competency.js RECORD_TABS의 key와 같다. title = 카드 제목으로 쓸 칸(머리글 이름).
+const COMP_TABS_ = [
+{ key: 'selfDev', label: '자기개발', emoji: '📚', item: '직무별 전문성 › 자기 개발', title: '자기개발 항목' },
+{ key: 'gradeComp', label: '직급역량', emoji: '🎯', item: '직급별 업무 역량 › 직급 역량 개선 노력', title: '개선 직급 역량 항목' },
+{ key: 'faceSales', label: '대면영업', emoji: '🤝', item: '영업 수행 역량 › 대면 영업', title: '고객사' },
+{ key: 'costSave', label: '원가개선', emoji: '💡', item: '개선 기획 역량 › 원가 개선 제안', title: '원가 개선 항목' },
+{ key: 'addSales', label: '추가매출', emoji: '🚀', item: '개선 기획 역량 › 추가 매출계획 이행', title: '고객사' }
+];
+// 카드 상세에 보이지 않는 칸: 사람·관리용 칸(이름·담당·사무소·순번)과 앱 관리 칸(설계서 4-3), 팀장 의견(아래 따로 표시)
+const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록ID', '작성자이메일', '기록일시', '수정일시', '팀장한줄의견', '첨부', '팀', '팀장 의견', '팀장 의견 (상중하)'];
+// 설계서 3장 공통 규칙: 화면 표시 이름 "기대 효과" = 시트 칸 "기대 성과". 입력 형식 안내 괄호(YYMMDD~·Y/N 등)는 화면 이름에서 뺀다(시트 칸 이름은 그대로).
+const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과' };
+function compFieldLabel_(k) { return COMP_FIELD_LABEL_[k] || String(k).replace(/\s*\((?:YY|Y\/N)[^)]*\)/g, '').trim() || k; }
+// 줄별 처리 상태(서버 reviewState, 설계서 ⑳): 회신 대기(팀원 할 일) / 확인 대기(팀장 할 일) / 완료
+const COMP_STATE_ = { awaitingReply: { text: '회신 대기', cls: 'cm-st-reply' }, pendingReview: { text: '확인 대기', cls: 'cm-st-review' }, done: { text: '완료', cls: 'cm-st-done' } };
+function compStateChip_(st) {
+const s = COMP_STATE_[st];
+return s ? `<span class="cm-st ${s.cls}">${s.text}</span>` : '';
+}
+// 공통 불러오기: getCompetencyTest 호출(20초 타임아웃). 실패·타임아웃이면 null. 대체 경로 없음(설계서 7장: 3단계).
+async function compFetch_(body) {
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+const res = await fetch(CLOUD_RUN_GET_COMPETENCY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+return res;
+} catch (e) { return null; }
+}
+let compMineReq_ = 0;
+let compMineRes_ = null; // 마지막으로 받은 응답(탭을 바꿀 때 서버를 다시 부르지 않음)
+let compMineTab_ = '';
+async function loadCompMinePage() {
+const root = document.getElementById('comp-mine-view');
+const reqNo = ++compMineReq_;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const res = await compFetch_({ view: 'mine' });
+if (reqNo !== compMineReq_) return; // 그 사이 다시 눌렀으면 늦게 온 이 응답은 버린다
+if (!res || !res.ok) {
+root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '기록'))}</div>`;
+return;
+}
+compMineRes_ = res;
+renderCompMine_(res);
+}
+function compMineList_(res, key) {
+const recs = (res && res.records) || {};
+return Array.isArray(recs[key]) ? recs[key] : [];
+}
+// 기록 카드 1장: 제목 칸 + 상태 + 나머지 값 있는 칸 + 팀장 의견.
+// 완료(done)는 한 줄로 접어서, 회신 대기·확인 대기는 펼쳐서 보여준다. 제목 줄을 누르면 접기/펼치기.
+function compRecordCard_(t, rec) {
+const f = rec.fields || {};
+const title = String(f[t.title] === undefined ? '' : f[t.title]).trim() || '(제목 없음)';
+const rows = Object.keys(f).filter(function (k) {
+return k !== t.title && COMP_HIDDEN_FIELDS_.indexOf(k) < 0 && String(f[k] === undefined ? '' : f[k]).trim() !== '';
+}).map(function (k) {
+return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k))}</span><span class="cm-fv">${escapeHtml(String(f[k]).trim())}</span></div>`;
+}).join('');
+const op = String(rec.leaderOpinion || '').trim();
+const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
+const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
+const fold = rec.reviewState === 'done' ? ' cm-fold' : '';
+return `<div class="cm-card${fold}"><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState)}</div><div class="cm-card-body">${rows}${opHtml}</div></div>`;
+}
+// 우리 팀 기록 현황(건수만, 설계서 2-2 예외): 종류별 합계 칸 5개 + 팀원별 막대(합계) + 종류별 건수.
+// 막대 색은 하나(--accent)이고 종류는 이모지·글자로 구분한다(색만으로 구분하지 않음). 움직임을 줄이는 설정이면 애니메이션 없음.
+function compTeamHtml_(res) {
+const tc = Array.isArray(res.teamCounts) ? res.teamCounts : [];
+if (!tc.length) return '';
+const me = String((res.viewer && res.viewer.name) || '').replace(/\s+/g, '');
+const rows = tc.map(function (m) {
+const by = m.byTab || {};
+const nums = COMP_TABS_.map(function (t) { return Number(by[t.key]) || 0; });
+let sum = 0; nums.forEach(function (x) { sum += x; });
+return { m: m, nums: nums, sum: sum };
+});
+const tabSum = COMP_TABS_.map(function (t, i) { let s = 0; rows.forEach(function (r) { s += r.nums[i]; }); return s; });
+let total = 0; tabSum.forEach(function (x) { total += x; });
+let max = 0; rows.forEach(function (r) { if (r.sum > max) max = r.sum; });
+const tiles = COMP_TABS_.map(function (t, i) {
+return `<div class="cm-tile" style="animation-delay:${i * 60}ms;"><div class="cm-tile-emoji">${t.emoji}</div><div class="cm-tile-num">${tabSum[i]}</div><div class="cm-tile-label">${t.label}</div></div>`;
+}).join('');
+const list = rows.map(function (r, i) {
+const isMe = me && String(r.m.name || '').replace(/\s+/g, '') === me;
+const pct = max > 0 ? Math.round(r.sum / max * 100) : 0;
+const chips = COMP_TABS_.map(function (t, j) { return r.nums[j] ? `<span class="cm-chip" title="${t.label} ${r.nums[j]}건">${t.emoji}${r.nums[j]}</span>` : ''; }).join('');
+const tip = COMP_TABS_.map(function (t, j) { return t.label + ' ' + r.nums[j]; }).join(' · ');
+return `<div class="cm-row${isMe ? ' cm-me' : ''}" title="${escapeHtml(tip)}"><div class="cm-who"><span class="cm-who-name">${escapeHtml(r.m.name || '')}</span>${isMe ? '<span class="cm-me-tag">나</span>' : ''}${r.m.office ? `<span class="cm-who-office">${escapeHtml(r.m.office)}</span>` : ''}</div><div class="cm-bar"><div class="cm-bar-fill" style="width:${pct}%; animation-delay:${200 + i * 40}ms;"></div></div><div class="cm-row-sum">${r.sum}건</div><div class="cm-chips">${chips}</div></div>`;
+}).join('');
+return `<div class="cm-team"><div class="cm-team-head"><span>👥 우리 팀 기록 현황</span><span class="cm-team-meta">팀원 ${tc.length}명 · 총 ${total}건</span></div>
+<div class="cm-tiles">${tiles}</div><div class="cm-rows">${list}</div><div class="cc-note">기록 수는 참고용입니다. 평가는 내용으로 합니다.</div></div>`;
+}
+function compMineTabBody_(res, key) {
+const t = COMP_TABS_.filter(function (x) { return x.key === key; })[0] || COMP_TABS_[0];
+const list = compMineList_(res, t.key);
+const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec); }).join('') : `<div class="cm-empty">아직 기록이 없어요.</div>`;
+return `<div class="cm-item"><b>${t.emoji} ${t.label}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${cards}`;
+}
+function compMineTabsHtml_(res) {
+const n = Number(res.awaitingReply) || 0;
+return COMP_TABS_.map(function (t) {
+const c = compMineList_(res, t.key).length;
+const dot = (t.key === 'addSales' && n > 0) ? `<span class="cm-tab-dot" title="회신 대기 ${n}건"></span>` : '';
+return `<button class="notif-tab ${t.key === compMineTab_ ? 'active' : ''}" title="${t.label}" aria-label="${t.label} ${c}건" onclick="switchCompMineTab_('${t.key}')"><span class="cm-tab-emoji">${t.emoji}</span><span class="cm-tab-label">${t.label}</span> <span class="notif-tab-count">${c}</span>${dot}</button>`;
+}).join('');
+}
+// 탭 바꾸기: 서버를 다시 부르지 않고 탭 줄과 내용만 다시 그린다(팀 현황 애니메이션은 다시 돌지 않음)
+function switchCompMineTab_(key) {
+if (!compMineRes_) return;
+compMineTab_ = key;
+const tabs = document.getElementById('cm-tabs');
+const body = document.getElementById('cm-tab-body');
+if (tabs) tabs.innerHTML = compMineTabsHtml_(compMineRes_);
+if (body) body.innerHTML = compMineTabBody_(compMineRes_, key);
+}
+function renderCompMine_(res) {
+const root = document.getElementById('comp-mine-view');
+compMineRes_ = res;
+const viewer = res.viewer || {};
+const n = Number(res.awaitingReply) || 0;
+// 처음 열 때 탭: 회신 대기가 있으면 추가매출, 없으면 기록이 있는 첫 탭, 그것도 없으면 첫 탭. 같은 화면 안에서 고른 탭은 유지.
+if (!COMP_TABS_.some(function (t) { return t.key === compMineTab_; })) {
+const firstWith = COMP_TABS_.filter(function (t) { return compMineList_(res, t.key).length; })[0];
+compMineTab_ = n > 0 ? 'addSales' : (firstWith ? firstWith.key : COMP_TABS_[0].key);
+}
+const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">내 역량 기록</div>
+<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div>`;
+const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 계획 중 <b>달성 여부(Y/N) 회신이 필요한 줄이 ${n}건</b> 있어요.</div>` : '';
+root.innerHTML = `<div class="settings-panel">${head}${notice}${compTeamHtml_(res)}
+<div class="cm-mine"><div class="notif-tabs cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
 }
 
 // ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
