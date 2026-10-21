@@ -474,7 +474,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cc-grades { font-size: 12px; color: var(--text-muted); padding: 4px 0 0 12px; }
 .cc-total { display: flex; justify-content: space-between; border-top: 2px solid var(--border); padding: 12px 0 4px; font-weight: 700; }
 .cc-note { font-size: 12px; color: var(--text-muted); margin: 8px 0 4px; line-height: 1.5; }
-/* 내 역량 기록(1단계-라-다-가, 화면 ①·⑤) — 위: 우리 팀 현황, 아래: 종류별 탭(.notif-tab 모양 재사용) */
+/* 내 역량 기록(1단계-라-다-가, 화면 ①·⑤) — 위: 우리 팀 현황, 아래: 종류별 탭(1단계-라-다-나: ②와 같은 버튼형) */
 .cm-notice { font-size: 13px; background: var(--danger-soft); color: var(--danger); border-radius: 8px; padding: 8px 12px; margin: 8px 0 4px; }
 .cm-team { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; background: #faf9fc; }
 .cm-team-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
@@ -495,17 +495,25 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-bar { grid-area: bar; height: 10px; background: #e6e3ee; border-radius: 4px; overflow: hidden; }
 .cm-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transform-origin: left center; animation: cmGrow .7s cubic-bezier(.2,.8,.2,1) both; }
 .cm-row-sum { grid-area: sum; text-align: right; font-weight: 700; }
-.cm-chips { grid-area: chips; display: flex; flex-wrap: wrap; gap: 4px; min-height: 0; }
+.cm-chips { grid-area: chips; display: flex; flex-wrap: nowrap; overflow: hidden; gap: 4px; height: 16px; } /* 칩이 없는 팀원 줄도 같은 높이(1단계-라-다-나) */
 .cm-chip { font-size: 11px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; }
 @keyframes cmGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes cmFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .cm-tile, .cm-bar-fill { animation: none; } }
 .cm-mine { margin-top: 4px; }
-.cm-tabs { overflow-x: auto; }
-.cm-tabs .notif-tab { padding-left: 6px; padding-right: 6px; }
-.cm-tab-emoji { font-size: 14px; }
-.cm-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); position: absolute; top: 6px; right: 6px; }
-.cm-tab-body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; padding: 8px 12px 12px; }
+.cm-tabs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.cm-tab { position: relative; min-width: 0; min-height: 52px; border: 2px solid #c9c3dc; background: var(--card); color: var(--text); font-size: 14px; font-weight: 700; border-radius: 10px; font-family: inherit; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 5px; padding: 4px; }
+.cm-tab.active { border-color: var(--accent); background: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(58,47,110,.3); }
+.cm-tab-count { background: #efedf3; color: var(--accent); border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.cm-tab.active .cm-tab-count { background: #fff; }
+.cm-tab-emoji { font-size: 15px; }
+.cm-tab-short { display: none; }
+.cm-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: #e24b4a; border: 2px solid #fff; position: absolute; top: 4px; right: 4px; }
+.cm-tab-body { margin-top: 10px; border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px 12px; }
+.cm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.cm-filter { border: 1px solid var(--border); background: var(--card); color: var(--text-muted); border-radius: 16px; padding: 4px 12px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.cm-filter.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.nav-group:not(.collapsed) #nav-group-hr-badge { display: none !important; }
 .cm-item { font-size: 12px; color: var(--text-muted); margin: 2px 0 6px; }
 .cm-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
 .cm-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
@@ -525,7 +533,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-fv { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-op { font-size: 13px; color: var(--accent); margin-top: 4px; }
 @media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } }
-@media (max-width: 480px) { .cm-tab-label { display: none; } .cm-tabs .notif-tab { padding-left: 4px; padding-right: 4px; } }
+@media (max-width: 480px) { .cm-tabs { gap: 4px; } .cm-tab { flex-direction: column; flex-wrap: nowrap; min-height: 56px; font-size: 12px; gap: 1px; } .cm-tab-emoji { font-size: 13px; } .cm-tab-label { display: none; } .cm-tab-short { display: inline; } .cm-tab-count { padding: 0 7px; } }
 
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
@@ -741,10 +749,10 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         </div>
       </div>
       <div class="nav-group collapsed" id="nav-group-hr" data-group="hr" style="display:none;">
-        <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가</div>
+        <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가<span class="nav-badge" id="nav-group-hr-badge" style="display:none;">0</span></div>
         <div class="nav-group-body">
           <div class="nav-group-sub">역량평가 · 40%</div>
-          <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록</div>
+          <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록<span class="nav-badge" id="nav-comp-mine-badge" style="display:none;">0</span></div>
           <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
         </div>
       </div>
@@ -1494,6 +1502,8 @@ document.getElementById('nav-comp-criteria').style.display = 'flex';
 // 1단계-라-다-가 (설계서 2-1 메뉴표): 내 역량 기록은 팀원(일반·담당)만. 팀장·임원 자리에는 1-라-라에서 팀 역량평가(②).
 if (['일반', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-comp-mine').style.display = 'flex';
+// 1단계-라-다-나 (설계서 2-1 v1.9): 회신 대기 배지 — 일반·담당만 앱 시작 때 view=mine 1번, 기다리지 않음
+loadCompBadge_();
 }
 restoreNavGroups_();
 setupTeamLabelControl();
@@ -4171,6 +4181,8 @@ root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '기�
 return;
 }
 compMineRes_ = res;
+compMineFilter_ = 'all'; // 화면을 새로 열면 추가매출 필터는 "전체"로
+compSetBadge_(res.awaitingReply); // 배지도 최신 숫자로
 renderCompMine_(res);
 }
 function compMineList_(res, key) {
@@ -4223,17 +4235,49 @@ return `<div class="cm-team"><div class="cm-team-head"><span>👥 우리 팀 기
 }
 function compMineTabBody_(res, key) {
 const t = COMP_TABS_.filter(function (x) { return x.key === key; })[0] || COMP_TABS_[0];
-const list = compMineList_(res, t.key);
-const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec); }).join('') : `<div class="cm-empty">아직 기록이 없어요.</div>`;
-return `<div class="cm-item"><b>${t.emoji} ${t.label}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${cards}`;
+const all = compMineList_(res, t.key);
+// 1단계-라-다-나 (설계서 부록 B): 추가매출 탭에만 상태 필터 4칸(전체·회신 대기·확인 대기·완료, 개수). 서버를 다시 부르지 않음.
+const isAdd = t.key === 'addSales';
+const list = (isAdd && compMineFilter_ !== 'all') ? all.filter(function (r) { return r.reviewState === compMineFilter_; }) : all;
+const filters = (isAdd && all.length) ? `<div class="cm-filters">${COMP_MINE_FILTERS_.map(function (f) {
+let c = 0; all.forEach(function (r) { if (f.key === 'all' || r.reviewState === f.key) c++; });
+return `<button class="cm-filter ${f.key === compMineFilter_ ? 'active' : ''}" onclick="switchCompMineFilter_('${f.key}')">${f.text} ${c}</button>`;
+}).join('')}</div>` : '';
+const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
+const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec); }).join('') : `<div class="cm-empty">${empty}</div>`;
+return `<div class="cm-item"><b>${t.emoji} ${t.label}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${filters}${cards}`;
 }
 function compMineTabsHtml_(res) {
 const n = Number(res.awaitingReply) || 0;
 return COMP_TABS_.map(function (t) {
 const c = compMineList_(res, t.key).length;
 const dot = (t.key === 'addSales' && n > 0) ? `<span class="cm-tab-dot" title="회신 대기 ${n}건"></span>` : '';
-return `<button class="notif-tab ${t.key === compMineTab_ ? 'active' : ''}" title="${t.label}" aria-label="${t.label} ${c}건" onclick="switchCompMineTab_('${t.key}')"><span class="cm-tab-emoji">${t.emoji}</span><span class="cm-tab-label">${t.label}</span> <span class="notif-tab-count">${c}</span>${dot}</button>`;
+return `<button class="cm-tab ${t.key === compMineTab_ ? 'active' : ''}" title="${t.label}" aria-label="${t.label} ${c}건" onclick="switchCompMineTab_('${t.key}')"><span><span class="cm-tab-emoji">${t.emoji}</span> <span class="cm-tab-label">${t.label}</span><span class="cm-tab-short">${t.label.slice(0, 2)}</span></span><span class="cm-tab-count">${c}</span>${dot}</button>`;
 }).join('');
+}
+// 1단계-라-다-나: 추가매출 탭 상태 필터 (설계서 부록 B와 같은 4칸)
+const COMP_MINE_FILTERS_ = [{ key: 'all', text: '전체' }, { key: 'awaitingReply', text: '회신 대기' }, { key: 'pendingReview', text: '확인 대기' }, { key: 'done', text: '완료' }];
+let compMineFilter_ = 'all';
+function switchCompMineFilter_(key) {
+if (!compMineRes_) return;
+compMineFilter_ = key;
+const body = document.getElementById('cm-tab-body');
+if (body) body.innerHTML = compMineTabBody_(compMineRes_, compMineTab_);
+}
+// 1단계-라-다-나: 회신 대기 배지 (설계서 2-1 v1.9) — "내 역량 기록" 메뉴 옆, 묶음이 접혀 있으면 묶음 제목 옆에도(CSS). 0이면 숨김.
+function compSetBadge_(n) {
+n = Number(n) || 0;
+['nav-comp-mine-badge', 'nav-group-hr-badge'].forEach(function (id) {
+const el = document.getElementById(id);
+if (!el) return;
+el.textContent = String(n);
+el.style.display = n > 0 ? '' : 'none';
+});
+}
+// 앱 시작 때 일반·담당만 1번 부른다(기다리지 않음). 실패하면 배지만 안 보이고 다른 동작에는 영향 없음.
+async function loadCompBadge_() {
+const res = await compFetch_({ view: 'mine' });
+if (res && res.ok) compSetBadge_(res.awaitingReply);
 }
 // 탭 바꾸기: 서버를 다시 부르지 않고 탭 줄과 내용만 다시 그린다(팀 현황 애니메이션은 다시 돌지 않음)
 function switchCompMineTab_(key) {
@@ -4258,7 +4302,7 @@ const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 
 <div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div>`;
 const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 계획 중 <b>달성 여부(Y/N) 회신이 필요한 줄이 ${n}건</b> 있어요.</div>` : '';
 root.innerHTML = `<div class="settings-panel">${head}${notice}${compTeamHtml_(res)}
-<div class="cm-mine"><div class="notif-tabs cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
+<div class="cm-mine"><div class="cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
 }
 
 // ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
