@@ -22,7 +22,8 @@ const face = [['순번','이름','사무소','고객사','대면자','직급','�
   ['5','동명','','E사','v','','','','',''],
   ['6','서부팀원','','F사','u','','','','',''],
   ['','','','','','','','','','']];
-const add = [['사무소','담당','구분','고객사','품목'].concat(EX), ['양산','박태영','품목확대','A사','라이너']];
+// v1.11: 회신 대기 규칙은 '달성 여부 (Y/N)' 칸이 있는 탭에만(탭 이름 무관) — 실제 추가매출 탭처럼 그 칸을 넣음(빈 값 = 회신 대기)
+const add = [['사무소','담당','구분','고객사','품목','달성 여부 (Y/N)'].concat(EX), ['양산','박태영','품목확대','A사','라이너','']];
 const R = { selfDev: [], gradeComp: [], faceSales: c.parseTab('faceSales', face), costSave: [], addSales: c.parseTab('addSales', add) };
 
 t('parseTab 빈 이름 줄 제외', R.faceSales.length === 6);
@@ -100,11 +101,14 @@ t('⑳ mine 손희진 = 1', c.buildMine(U[3], U, R2).awaitingReply === 1);
 // ① recordItems: '역량-' 탭만, 마지막 부분, 기준 탭·팀별 기준 탭·설정 탭은 제외
 const TITLES = ['역량-직무별전문성-자기개발', '역량-직급별업무역량-직급역량개선노력', '역량-영업수행역량-대면영업',
   '역량-개선기획역량-원가개선제안', '역량-개선기획역량-추가매출계획이행', 'CRM-역량평가-기준', 'CRM-역량평가-기준_서부', '인사평가설정', '직급별_요구역량'];
-t('① recordItems = 역량- 탭 5개의 마지막 부분', c.recordItemsFromTabs(TITLES).join(',') === '자기개발,직급역량개선노력,대면영업,원가개선제안,추가매출계획이행');
-t('① 팀별 기준 탭이 있어도 recordItems 그대로(기준 탭은 별개)', c.recordItemsFromTabs(TITLES).indexOf('기준_서부') === -1 && c.pickCriteriaTab(TITLES, '서부') === 'CRM-역량평가-기준_서부');
-t('① 새 탭 추가 시 자동 포함', c.recordItemsFromTabs(TITLES.concat(['역량-팀워크기여도-팀워크기여'])).slice(-1)[0] === '팀워크기여');
-t('① 빈 목록·null·공백 이름 안전', c.recordItemsFromTabs(null).length === 0 && c.recordItemsFromTabs([' 역량-a-b ', '역량-', '']).join(',') === 'b');
-t('① 배열이 아닌 값(문자열·객체)도 빈 목록, 하이픈 없는 "역량"은 제외', c.recordItemsFromTabs('역량-a-b').length === 0 && c.recordItemsFromTabs({}).length === 0 && c.recordItemsFromTabs(['역량', '역량-x']).join(',') === 'x');
+// v1.11(1단계-라-마): recordItemsFromTabs → recordTabsFromSheets로 바뀜. 같은 뜻의 시험 5개를 새 함수로 옮김.
+const SH = function (titles) { return titles.map(function (t, i) { return { properties: { sheetId: 100 + i, title: t, index: i } }; }); };
+const labels = function (titles) { return c.recordTabsFromSheets(SH(titles)).map(function (x) { return x.label; }); };
+t('① 기록 탭 = 역량- 탭 5개, 화면 이름은 마지막 부분', labels(TITLES).join(',') === '자기개발,직급역량개선노력,대면영업,원가개선제안,추가매출계획이행');
+t('① 팀별 기준 탭은 기록 탭이 아님(기준 탭은 별개)', labels(TITLES).indexOf('기준_서부') === -1 && c.pickCriteriaTab(TITLES, '서부') === 'CRM-역량평가-기준_서부');
+t('① 새 탭 추가 시 자동 포함', labels(TITLES.concat(['역량-팀워크기여도-팀워크'])).slice(-1)[0] === '팀워크');
+t('① 빈 목록·null·공백 이름 안전', c.recordTabsFromSheets(null).length === 0 && labels([' 역량-a-b ', '역량-', '']).join(',') === 'b');
+t('① 배열이 아닌 값(문자열·객체)도 빈 목록, 하이픈 없는 "역량"은 제외', c.recordTabsFromSheets('역량-a-b').length === 0 && c.recordTabsFromSheets({}).length === 0 && labels(['역량', '역량-x']).join(',') === 'x');
 
 console.log('pass ' + pass + ' / fail ' + fail);
 process.exit(fail ? 1 : 0);

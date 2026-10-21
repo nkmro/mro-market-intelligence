@@ -27,7 +27,7 @@ r = c.checkHeaderRow(base.concat(c.EXTRA_HEADERS, ['메모']));
 t('6칸 뒤에 다른 칸', !r.ok);
 r = c.checkHeaderRow(base.concat([' 기록ID ','작성자이메일','기록일시','수정일시','팀장한줄의견','첨부']));
 t('앞뒤 공백은 허용', r.ok);
-t('탭 5개', c.RECORD_TABS.length === 5);
+t('탭 5개 (v1.11: 고정 목록 대신 기존 5개 탭의 gid → 기존 키 표)', Object.keys(c.LEGACY_TAB_KEYS).length === 5 && Object.values(c.LEGACY_TAB_KEYS).sort().join(',') === ['selfDev','gradeComp','faceSales','costSave','addSales'].sort().join(','));
 
 console.log('pass ' + pass + ' / fail ' + fail);
 process.exit(fail ? 1 : 0);

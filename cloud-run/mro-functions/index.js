@@ -3829,10 +3829,23 @@ exports.getCompetencyTest = async (req, res) => {
       return;
     }
 
-    // 2) 인사평가 파일: 인사평가설정 + 기록 탭 5개 1행 + 기준 탭 1~5행 (요청 1번)
+    // 2) 인사평가 파일: 시트 정보(탭 자동 인식, v1.11 4-2-1 — ping은 메모리 저장을 쓰지 않음) →
+    //    인사평가설정 + 기록 탭 전부 1행 + 기준 탭 (값 읽기 1번)
+    const k0 = Date.now();
+    let pingSheets;
+    try {
+      pingSheets = (await competencySheetMeta_(client, fileId, false)).sheets;
+    } catch (e) {
+      const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED',
+        httpStatus: httpStatus, detail: '시트 정보 읽기 실패', year: targetYear, fileId: fileId });
+      return;
+    }
+    timings.tabListMs = Date.now() - k0;
+    const recTabs = competency.recordTabsFromSheets(pingSheets);
     const ranges = [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C']
-      .concat(competency.RECORD_TABS.map(function (t) { return competency.quoteTab(t.tab) + '!1:1'; }))
-      .concat([competency.quoteTab(competency.CRITERIA_TAB) + '!A1:F5'])
+      .concat(recTabs.map(function (t) { return competency.quoteTab(t.title) + '!1:1'; }))
+      .concat([competency.quoteTab(competency.CRITERIA_TAB) + '!A1:H60'])
       .map(encodeURIComponent);
     const c0 = Date.now();
     let vr;
@@ -3848,11 +3861,17 @@ exports.getCompetencyTest = async (req, res) => {
     timings.competencySheetMs = Date.now() - c0;
 
     const settingsRows = (vr[0] && vr[0].values) || [];
-    const tabs = competency.RECORD_TABS.map(function (t, i) {
-      const row = ((vr[i + 1] && vr[i + 1].values) || [])[0] || [];
-      return Object.assign({ key: t.key, tab: t.tab }, competency.checkHeaderRow(row));
-    });
     const criteriaRows = (vr[vr.length - 1] && vr[vr.length - 1].values) || [];
+    const criteriaGroups = competency.criteriaGroups(criteriaRows);
+    const tabs = recTabs.map(function (t, i) {
+      const row = ((vr[i + 1] && vr[i + 1].values) || [])[0] || [];
+      // v1.11: 경고(저장은 막지 않음) — 항목 이름 4자 초과, 기준표 연결 1개가 아님
+      const warnings = [];
+      if (t.label.length > competency.TAB_LABEL_MAX) warnings.push('항목 이름 ' + t.label.length + '자(권장 ' + competency.TAB_LABEL_MAX + '자 이내)');
+      const link = competency.linkCriteria(t, criteriaGroups);
+      if (link.count !== 1) warnings.push('기준표 연결 ' + link.count + '개');
+      return Object.assign({ key: t.id, tab: t.title, gid: t.gid, label: t.label }, competency.checkHeaderRow(row), { warnings: warnings });
+    });
     const criteriaTitle = criteriaRows.map(function (r) { return (r || []).join('').trim(); })
       .filter(function (s) { return s.indexOf('■') === 0; })[0] || null;
 
@@ -3904,30 +3923,11 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   if (!fileId) {
     res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear }); return;
   }
-  // v1.6 (설계서 4-4·⑱): 기준 보기만 탭 목록을 먼저 읽어 팀별 기준 탭(선택)이 있는지 본다.
-  // 탭 목록을 못 읽으면 기본 기준 탭으로 진행(기준 탭 접근 실패는 아래 batchGet에서 따로 잡힘).
-  let criteriaTab = competency.CRITERIA_TAB;
-  let recordItems = null; // ①: 탭 목록을 못 읽으면 null → 응답에서 빠지고 화면은 고정 목록 사용
-  if (view === 'criteria') {
-    const k0 = Date.now();
-    try {
-      const meta = await client.request({ url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '?fields=sheets.properties.title' });
-      const titles = ((meta.data && meta.data.sheets) || []).map(function (sh) { return sh && sh.properties && sh.properties.title; });
-      criteriaTab = competency.pickCriteriaTab(titles, viewer.team);
-      recordItems = competency.recordItemsFromTabs(titles);
-    } catch (e) {
-      console.error('[getCompetencyTest] 탭 목록 읽기 실패(무시, 기본 기준 탭 사용): ' + String((e && e.message) || e).slice(0, 200));
-    }
-    timings.tabListMs = Date.now() - k0;
-  }
-  const ranges = (view === 'criteria'
-    ? [competency.quoteTab(criteriaTab) + '!A1:H60']
-    : competency.RECORD_TABS.map(function (t) { return competency.quoteTab(t.tab) + '!A1:Z'; })
-  ).map(encodeURIComponent);
+  // v1.11 (설계서 4-2-1): 기록 탭 자동 인식 — 시트 정보(메모리 5분 저장) + 값 읽기 1번.
+  let loaded;
   const c0 = Date.now();
-  let vr;
   try {
-    vr = await batchGetValues(client, fileId, ranges);
+    loaded = await competencyLoadFile_(client, fileId, viewer.team, view, timings);
   } catch (e) {
     const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
     res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus, year: targetYear }); return;
@@ -3935,15 +3935,50 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   timings.competencySheetMs = Date.now() - c0;
   const base = { ok: true, view: view, year: targetYear,
     viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
+  const criteriaRows = competency.criteriaRows(loaded.get('criteria') || []);
   if (view === 'criteria') {
-    res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, criteriaTab: criteriaTab }, recordItems ? { recordItems: recordItems } : {}, { rows: competency.criteriaRows((vr[0] && vr[0].values) || []) }));
+    // 평가 기준 보기 "기록 있음": 기준표에 연결된 세부 항목 이름(시트 정보를 못 읽으면 응답에서 빠지고 화면은 고정 목록)
+    const recordItems = loaded.metaOk
+      ? competency.describeTabs(loaded.recTabs, {}, [], criteriaRows).map(function (t) { return t.criteriaItem; }).filter(Boolean)
+      : null;
+    res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, criteriaTab: loaded.criteriaTab }, recordItems ? { recordItems: recordItems } : {}, { rows: criteriaRows }));
     return;
   }
-  const recordsByTab = {};
-  competency.RECORD_TABS.forEach(function (t, i) { recordsByTab[t.key] = competency.parseTab(t.key, (vr[i] && vr[i].values) || []); });
+  const recordsByTab = {}; const headerRowsById = {};
+  loaded.recTabs.forEach(function (t) {
+    const values = loaded.get('tab:' + t.id) || [];
+    headerRowsById[t.id] = values[0] || [];
+    recordsByTab[t.id] = competency.parseTab(t.id, values);
+  });
+  const tabs = competency.describeTabs(loaded.recTabs, headerRowsById, loaded.get('settings') || [], criteriaRows);
   const isAdmin = String(viewer.email || '').trim().toLowerCase() === ADMIN_EMAIL;
   const result = view === 'mine'
     ? competency.buildMine(viewer, users, recordsByTab)
     : competency.buildTeam(viewer, users, recordsByTab, { includeLeft: body.includeLeft === true, isAdmin: isAdmin });
-  res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings }, result));
+  res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, tabs: tabs }, result));
+}
+
+// v1.11 (설계서 4-2-1): 인사평가 파일 시트 정보 — 탭 이름·gid·숨김·순서. useCache면 서버 메모리(5분)에서 먼저 찾는다.
+// 기존 요청(spreadsheets.get)의 fields만 넓힌 것. 문서: Sheets API v4 SheetProperties(sheetId·title·hidden·index).
+const competencyTabMetaCache_ = competency.makeTtlCache(competency.TAB_META_TTL_MS);
+async function competencySheetMeta_(client, fileId, useCache) {
+  if (useCache) {
+    const hit = competencyTabMetaCache_.get(fileId);
+    if (hit) return { sheets: hit, cached: true };
+  }
+  const meta = await client.request({ url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '?fields=' + encodeURIComponent('sheets.properties(sheetId,title,hidden,index)') });
+  const sheets = (meta.data && meta.data.sheets) || [];
+  competencyTabMetaCache_.set(fileId, sheets);
+  return { sheets: sheets, cached: false };
+}
+
+// 시트 정보 → 읽을 범위 → 값 읽기 1번(+ 이름 변경 직후 1번 재시도). 실제 순서는 lib/competency.js loadCompetencyFile.
+// 인코딩 규약: 인사평가 파일 쪽 범위는 날 문자열 → 여기서 encodeURIComponent 한 번만(ping·기존 보기와 같음).
+function competencyLoadFile_(client, fileId, team, view, timings) {
+  return competency.loadCompetencyFile({
+    meta: function (useCache) { return competencySheetMeta_(client, fileId, useCache); },
+    batchGet: function (ranges) { return batchGetValues(client, fileId, ranges.map(encodeURIComponent)); },
+    invalidate: function () { competencyTabMetaCache_.del(fileId); },
+    log: function (m) { console.error('[getCompetencyTest] ' + m); }
+  }, { team: team, view: view, timings: timings });
 }
