@@ -4250,10 +4250,7 @@ const all = compMineList_(res, t.key);
 // 1단계-라-다-나 (설계서 부록 B): 회신 칸이 있는 탭(hasReply, 지금은 추가매출)에만 상태 필터 4칸(전체·회신 대기·확인 대기·완료, 개수). 서버를 다시 부르지 않음.
 const isAdd = t.hasReply;
 const list = (isAdd && compMineFilter_ !== 'all') ? all.filter(function (r) { return r.reviewState === compMineFilter_; }) : all;
-const filters = (isAdd && all.length) ? `<div class="cm-filters">${COMP_MINE_FILTERS_.map(function (f) {
-let c = 0; all.forEach(function (r) { if (f.key === 'all' || r.reviewState === f.key) c++; });
-return `<button class="cm-filter ${f.key === compMineFilter_ ? 'active' : ''}" onclick="switchCompMineFilter_('${f.key}')">${f.text} ${c}</button>`;
-}).join('')}</div>` : '';
+const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILTERS_, compMineFilter_, 'switchCompMineFilter_') : '';
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
 const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec); }).join('') : `<div class="cm-empty">${empty}</div>`;
 return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${filters}${cards}`;
@@ -4263,13 +4260,24 @@ const n = Number(res.awaitingReply) || 0;
 return compTabs_.map(function (t) {
 const c = compMineList_(res, t.key).length;
 const dot = (t.hasReply && n > 0) ? `<span class="cm-tab-dot" title="회신 대기 ${n}건"></span>` : '';
-const lb = escapeHtml(t.label);
-return `<button class="cm-tab ${t.key === compMineTab_ ? 'active' : ''}" title="${lb}" aria-label="${lb} ${c}건" onclick="switchCompMineTab_('${escapeHtml(t.key)}')"><span><span class="cm-tab-emoji">${escapeHtml(t.emoji)}</span> <span class="cm-tab-label">${lb}</span><span class="cm-tab-short">${escapeHtml(t.label.slice(0, 2))}</span></span><span class="cm-tab-count">${c}</span>${dot}</button>`;
+return compTabBtnHtml_(t, c, t.key === compMineTab_, dot, 'switchCompMineTab_');
 }).join('');
+}
+// 탭 버튼 1개 — ①·② 같은 모양(1단계-라-라에서 ① 코드를 그대로 꺼냄). onclick = 누르면 부를 함수 이름(탭 key를 넘김).
+function compTabBtnHtml_(t, c, active, dot, onclick) {
+const lb = escapeHtml(t.label);
+return `<button class="cm-tab ${active ? 'active' : ''}" title="${lb}" aria-label="${lb} ${c}건" onclick="${onclick}('${escapeHtml(t.key)}')"><span><span class="cm-tab-emoji">${escapeHtml(t.emoji)}</span> <span class="cm-tab-label">${lb}</span><span class="cm-tab-short">${escapeHtml(t.label.slice(0, 2))}</span></span><span class="cm-tab-count">${c}</span>${dot}</button>`;
 }
 // 1단계-라-다-나: 추가매출 탭 상태 필터 (설계서 부록 B와 같은 4칸)
 const COMP_MINE_FILTERS_ = [{ key: 'all', text: '전체' }, { key: 'awaitingReply', text: '회신 대기' }, { key: 'pendingReview', text: '확인 대기' }, { key: 'done', text: '완료' }];
 let compMineFilter_ = 'all';
+// 상태 필터 칸 — ①·② 같은 모양(1단계-라-라에서 ① 코드를 그대로 꺼냄). 칸마다 개수 = rows 중 그 상태 줄 수(전체 = 줄 수).
+function compFilterChipsHtml_(rows, filters, cur, onclick) {
+return `<div class="cm-filters">${filters.map(function (f) {
+let c = 0; rows.forEach(function (r) { if (f.key === 'all' || r.reviewState === f.key) c++; });
+return `<button class="cm-filter ${f.key === cur ? 'active' : ''}" onclick="${onclick}('${f.key}')">${f.text} ${c}</button>`;
+}).join('')}</div>`;
+}
 function switchCompMineFilter_(key) {
 if (!compMineRes_) return;
 compMineFilter_ = key;
