@@ -501,29 +501,31 @@ font-size: 13px; padding: 2px 4px; display: none;
 @keyframes cmFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .cm-tile, .cm-bar-fill { animation: none; } }
 .cm-mine { margin-top: 4px; }
-.cm-tabs { display: grid; grid-template-columns: var(--cm-cols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); gap: 8px; } /* 칸 수 = 탭 수에 따라 화면 코드가 정함(설계서 4-2-1, v1.11) */
-.cm-tab { position: relative; min-width: 0; min-height: 52px; border: 2px solid #c9c3dc; background: var(--card); color: var(--text); font-size: 14px; font-weight: 700; border-radius: 10px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 2px; padding: 4px; } /* 개수는 항상 이름 아래(v1.11) */
-.cm-tab.active { border-color: var(--accent); background: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(58,47,110,.3); }
-.cm-tab-count { background: #efedf3; color: var(--accent); border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-.cm-tab.active .cm-tab-count { background: #fff; }
+.cm-tabs { display: grid; grid-template-columns: var(--cm-cols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); gap: 4px; position: relative; z-index: 1; margin-bottom: -1px; } /* 칸 수 = 탭 수에 따라 화면 코드가 정함(설계서 4-2-1, v1.11). 진짜 탭 모양 — 아래 내용 칸과 붙음(1단계-라-라-다) */
+.cm-tab { position: relative; min-width: 0; min-height: 50px; border: 1px solid var(--border); border-bottom-color: var(--border); background: #efedf3; color: var(--text-muted); font-size: 14px; font-weight: 700; border-radius: 10px 10px 0 0; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 2px; padding: 4px; } /* 개수는 항상 이름 아래(v1.11) */
+.cm-tab.active { background: var(--card); color: var(--accent); border-top: 3px solid var(--accent); border-bottom-color: var(--card); }
+.cm-tab-count { background: var(--card); color: var(--accent); border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.cm-tab.active .cm-tab-count { background: var(--accent); color: #fff; }
 .cm-tab-emoji { font-size: 15px; }
 .cm-tab-short { display: none; }
 .cm-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: #e24b4a; border: 2px solid #fff; position: absolute; top: 4px; right: 4px; }
-.cm-tab-body { margin-top: 10px; border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px 12px; }
+.cm-tab-body { border: 1px solid var(--border); border-radius: 0 0 12px 12px; padding: 10px 12px 12px; background: var(--card); }
 .cm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
 .cm-filter { border: 1px solid var(--border); background: var(--card); color: var(--text-muted); border-radius: 16px; padding: 4px 12px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .cm-filter.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .nav-group:not(.collapsed) #nav-group-hr-badge { display: none !important; }
 .cm-item { font-size: 12px; color: var(--text-muted); margin: 2px 0 6px; }
 .cm-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
-.cm-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+.cm-card { border: 1px solid var(--border); border-left: 4px solid #c9c3dc; border-radius: 8px; padding: 9px 12px; margin: 8px 0; background: var(--card); box-shadow: 0 1px 2px rgba(31,35,32,.05); } /* 왼쪽 줄 색 = 상태(1단계-라-라-다) */
+.cm-card-awaitingReply { border-left-color: var(--danger); }
+.cm-card-pendingReview { border-left-color: var(--accent); }
 .cm-card-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .cm-caret { font-size: 11px; color: var(--text-muted); transition: transform .15s; flex-shrink: 0; }
 .cm-fold .cm-caret { transform: rotate(-90deg); }
 .cm-fold .cm-card-body { display: none; }
 .cm-card-body { margin-top: 4px; }
 .cm-fold { background: #faf9fc; padding-top: 6px; padding-bottom: 6px; }
-.cm-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-st { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 7px; flex-shrink: 0; border: 1px solid; }
 .cm-st-reply { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
 .cm-st-review { color: var(--accent); border-color: var(--accent); }
@@ -544,6 +546,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .ct-table th { font-size: 12px; font-weight: 600; color: var(--text-muted); vertical-align: bottom; }
 .ct-table th:first-child, .ct-table td:first-child { text-align: left; position: sticky; left: 0; background: #faf9fc; }
 .ct-table .ct-total td { font-weight: 700; border-bottom: none; }
+.ct-table .ct-team-row td { text-align: left; position: static; font-weight: 700; color: var(--accent); background: #efedf3; }
 .ct-th-label { display: block; font-size: 11px; }
 .ct-zero { color: #c9c3dc; }
 .ct-ar { color: var(--danger); font-weight: 700; }
@@ -553,11 +556,12 @@ font-size: 13px; padding: 2px 4px; display: none;
 .ct-month-btn { border: none; background: none; padding: 6px 0 0; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
 .ct-month { display: none; margin-top: 6px; }
 .ct-month.open { display: block; }
-.ca-group { border-top: 1px solid var(--border); padding: 10px 0 4px; }
-.ca-group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 14px; }
+.ca-group { border: 1px solid var(--border); border-radius: 10px; padding: 0 10px 4px; margin: 12px 0; background: #fcfbfe; } /* 팀원 묶음 = 상자 하나(1단계-라-라-다) */
+.ca-group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 14px; background: #efedf3; margin: 0 -10px 2px; padding: 8px 12px; border-radius: 10px 10px 0 0; }
 .ca-group-name { font-weight: 700; }
 .ca-group-meta { margin-left: auto; font-size: 12px; color: var(--text-muted); }
 .ct-unresolved { margin-top: 12px; border-top: 2px dashed var(--border); }
+.ct-team-title { font-size: 15px; font-weight: 800; color: var(--accent); margin: 16px 0 4px; padding-bottom: 4px; border-bottom: 2px solid var(--accent); }
 
 .items-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
 .items-toolbar select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
@@ -4250,7 +4254,7 @@ return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k))}<
 const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
-const fold = rec.reviewState === 'done' ? ' cm-fold' : '';
+const fold = (rec.reviewState === 'done' ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
 return `<div class="cm-card${fold}"><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${rows}${opHtml}</div></div>`;
 }
 // 우리 팀 기록 현황(건수만, 설계서 2-2 예외): 종류별 합계 칸 5개 + 팀원별 막대(합계) + 종류별 건수.
@@ -4409,39 +4413,49 @@ return (t && t.hasReply ? COMP_MINE_FILTERS_ : COMP_MINE_FILTERS_.filter(functio
 .map(function (f) { return f.key === 'pendingReview' ? { key: f.key, text: pr } : f; });
 }
 function compLeadNum_(n, cls) { return n ? `<td${cls ? ` class="${cls}"` : ''}>${n}</td>` : '<td class="ct-zero">0</td>'; }
-function compLeadWho_(m, isExec) {
+function compLeadWho_(m) {
 const left = m.status === 'left' ? '<span class="ct-left-tag">퇴사</span>' : '';
-return `<td>${escapeHtml(m.name || '')}${left}</td>${isExec ? `<td>${escapeHtml(teamLabel(m.team || ''))}</td>` : ''}<td>${escapeHtml(m.office || '')}</td>`;
+return `<td>${escapeHtml(m.name || '')}${left}</td><td>${escapeHtml(m.office || '')}</td>`;
+}
+// 표 줄: 팀장 = 팀원 줄만. 임원 = '팀' 칸 대신 팀 구분 줄("동부팀 · 4명") 아래에 그 팀 팀원 줄(2026-10-22 재홍님 결정 (d) — 표 폭 줄임, 아래 카드의 팀 › 팀원 묶음과 같은 모양).
+// 팀 순서 = members에 처음 나온 순서. ncol = 표 칸 수(구분 줄이 표 폭 전체를 차지하게).
+function compLeadTableRows_(res, rowFn, ncol) {
+const members = Array.isArray(res.members) ? res.members : [];
+if ((res.viewer || {}).role !== '임원') return members.map(rowFn).join('');
+const teams = [];
+members.forEach(function (m) { if (teams.indexOf(m.team) < 0) teams.push(m.team); });
+return teams.map(function (tm) {
+const ms = members.filter(function (m) { return m.team === tm; });
+return `<tr class="ct-team-row"><td colspan="${ncol}">${escapeHtml(teamLabel(tm || ''))} · ${ms.length}명</td></tr>` + ms.map(rowFn).join('');
+}).join('');
 }
 // 팀원별 건수표: 확인 대기·회신 대기(서버 숫자 — 퇴사자는 세지 않음, ⑫) + 합계 + 종류별 건수(서버 byTab).
 // 팀장 할 일(확인 대기)이 화면 폭이 좁아도 먼저 보이게 이름 바로 뒤에 둔다. 표가 넓으면 표 안에서만 옆으로 밀림.
 function compLeadTableHtml_(res) {
 const members = Array.isArray(res.members) ? res.members : [];
 if (!members.length) return '<div class="cm-empty">팀원이 없어요.</div>';
-const isExec = (res.viewer || {}).role === '임원';
 const tot = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totAr = 0, totPr = 0;
-const head = `<tr><th>이름</th>${isExec ? '<th>팀</th>' : ''}<th>사무소</th><th>${compLeadPr_(res)}</th><th>회신 대기</th><th>합계</th>${compLeadTabs_.map(function (t) { return `<th title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
-const body = members.map(function (m) {
+const head = `<tr><th>이름</th><th>사무소</th><th>${compLeadPr_(res)}</th><th>회신 대기</th><th>합계</th>${compLeadTabs_.map(function (t) { return `<th title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
+const body = compLeadTableRows_(res, function (m) {
 const by = m.byTab || {}; let sum = 0;
 const cells = compLeadTabs_.map(function (t, i) { const n = Number(by[t.key]) || 0; sum += n; tot[i] += n; return compLeadNum_(n); }).join('');
 const ar = Number(m.awaitingReply) || 0, pr = Number(m.pendingReview) || 0;
 totSum += sum; totAr += ar; totPr += pr;
-return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m, isExec)}${compLeadNum_(pr, 'ct-pr')}${compLeadNum_(ar, 'ct-ar')}${compLeadNum_(sum)}${cells}</tr>`;
-}).join('');
-const foot = `<tr class="ct-total"><td>합계</td>${isExec ? '<td></td>' : ''}<td></td>${compLeadNum_(totPr, 'ct-pr')}${compLeadNum_(totAr, 'ct-ar')}${compLeadNum_(totSum)}${tot.map(function (n) { return compLeadNum_(n); }).join('')}</tr>`;
+return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr')}${compLeadNum_(ar, 'ct-ar')}${compLeadNum_(sum)}${cells}</tr>`;
+}, 5 + compLeadTabs_.length);
+const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr')}${compLeadNum_(totAr, 'ct-ar')}${compLeadNum_(totSum)}${tot.map(function (n) { return compLeadNum_(n); }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table">${head}${body}${foot}</table></div>`;
 }
 // 월별 표(설계서 ②·⑤): 서버 byMonth(기록일시 기준). 기록일시가 없는 기존 기록은 "기존" 칸.
 function compLeadMonthHtml_(res) {
 const members = Array.isArray(res.members) ? res.members : [];
 if (!members.length) return '';
-const isExec = (res.viewer || {}).role === '임원';
 const months = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-const head = `<tr><th>이름</th>${isExec ? '<th>팀</th>' : ''}<th>사무소</th>${months.map(function (k) { return `<th>${k ? k + '월' : '기존'}</th>`; }).join('')}</tr>`;
-const body = members.map(function (m) {
+const head = `<tr><th>이름</th><th>사무소</th>${months.map(function (k) { return `<th>${k ? k + '월' : '기존'}</th>`; }).join('')}</tr>`;
+const body = compLeadTableRows_(res, function (m) {
 const by = m.byMonth || {};
-return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m, isExec)}${months.map(function (k) { return compLeadNum_(Number(by[k]) || 0); }).join('')}</tr>`;
-}).join('');
+return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${months.map(function (k) { return compLeadNum_(Number(by[k]) || 0); }).join('')}</tr>`;
+}, 2 + months.length);
 return `<button class="ct-month-btn" onclick="this.nextElementSibling.classList.toggle('open')">📅 월별 기록 수 보기/접기</button><div class="ct-month"><div class="ct-wrap"><table class="ct-table">${head}${body}</table></div></div>`;
 }
 // 탭 버튼: 개수 = 그 탭 줄 수, 빨간 점 = 그 탭에 확인 대기(팀장 할 일)가 있음 — 재직 팀원 줄만
@@ -4478,7 +4492,7 @@ const teams = [];
 members.forEach(function (m) { if (teams.indexOf(m.team) < 0) teams.push(m.team); });
 groups = teams.map(function (tm) {
 const inner = members.filter(function (m) { return m.team === tm; }).map(groupHtml).join('');
-return inner ? `<div class="cc-section">${escapeHtml(teamLabel(tm || ''))}</div>${inner}` : '';
+return inner ? `<div class="ct-team-title">${escapeHtml(teamLabel(tm || ''))}</div>${inner}` : '';
 }).join('');
 } else {
 groups = members.map(groupHtml).join('');
