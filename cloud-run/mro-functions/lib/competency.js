@@ -145,7 +145,8 @@ function buildMine(viewer, users, recordsByTab) {
         mine[tab].push(publicRecord(rec, user));
         if (reviewState(rec) === 'awaitingReply') awaitingReply++;
       }
-      if (user && counts[normEmail(user.email)]) {
+      // v1.15: 건수는 '한 일'만 — 달성 여부 칸이 빈 줄(계획만 있는 줄, awaitingReply)은 세지 않는다(2026-10-26 재홍님 결정).
+      if (user && counts[normEmail(user.email)] && reviewState(rec) !== 'awaitingReply') {
         const c = counts[normEmail(user.email)].byTab; c[tab] = (c[tab] || 0) + 1;
       }
     });
@@ -173,10 +174,13 @@ function buildTeam(viewer, users, recordsByTab, opts) {
       const m = members[normEmail(user.email)];
       if (!m) return;
       records.push(publicRecord(rec, user));
-      m.byTab[tab] = (m.byTab[tab] || 0) + 1;
-      const mo = monthOf(rec.recordedAt); m.byMonth[mo] = (m.byMonth[mo] || 0) + 1;
+      const st = reviewState(rec);
+      // v1.15: 종류별·월별 건수는 '한 일'만 — 계획만 있는 줄(awaitingReply)은 빼고, 미이행(awaitingReply) 개수로만 센다. 기록 목록(records)은 그대로.
+      if (st !== 'awaitingReply') {
+        m.byTab[tab] = (m.byTab[tab] || 0) + 1;
+        const mo = monthOf(rec.recordedAt); m.byMonth[mo] = (m.byMonth[mo] || 0) + 1;
+      }
       if (m.status === 'active') { // 퇴사자 기록은 보기 전용 — 둘 다 세지 않음(⑫)
-        const st = reviewState(rec);
         if (st === 'pendingReview') m.pendingReview++;
         else if (st === 'awaitingReply') m.awaitingReply++;
       }

@@ -50,7 +50,8 @@ t('팀장: 다른 팀 기록 없음', tm.records.every(r => r.name !== '서부�
 t('팀장: 퇴사 기본 숨김', tm.records.every(r => r.name !== '최성광') && tm.members.every(x => x.status === 'active'));
 t('팀장: 판정 불가 기본 숨김', tm.unresolved.length === 0);
 t('팀장: 확인 대기 = 팀장 의견 빈 기록(손희진1). v1.7 ⑳: 박태영 추가매출(달성 여부 없음)은 회신 대기로', tm.members.reduce((a, x) => a + x.pendingReview, 0) === 1 && tm.members.find(x => x.name === '박태영').awaitingReply === 1);
-t('팀장: 월별 0=기록일시 없음, 10월 1', tm.members.find(x => x.name === '손희진').byMonth[10] === 1 && tm.members.find(x => x.name === '박태영').byMonth[0] === 2);
+// v1.15: 박태영 추가매출 1줄은 달성 여부가 빈 계획 → 월별 건수에서 빠짐(예전 2 → 대면영업 1만)
+t('팀장: 월별 0=기록일시 없음, 10월 1 (v1.15: 계획만 있는 줄은 빼고 셈)', tm.members.find(x => x.name === '손희진').byMonth[10] === 1 && tm.members.find(x => x.name === '박태영').byMonth[0] === 1);
 tm = c.buildTeam(U[0], U, R, { includeLeft: true });
 t('팀장+퇴사 포함: 최성광 보임', tm.records.some(r => r.name === '최성광' && r.authorStatus === 'left'));
 t('팀장(관리자 아님)+퇴사 포함: 판정 불가는 여전히 숨김', tm.unresolved.length === 0);
@@ -97,6 +98,21 @@ let m2 = c.buildMine(U[2], U, R2);
 t('⑳ mine 박태영 awaitingReply = 본인 2', m2.awaitingReply === 2);
 t('⑳ mine 팀 건수표에는 회신 대기 없음', m2.teamCounts.every(x => !('awaitingReply' in x)));
 t('⑳ mine 손희진 = 1', c.buildMine(U[3], U, R2).awaitingReply === 1);
+// v1.15 (2026-10-26 재홍님 결정): 건수(byTab·byMonth·teamCounts)는 결과를 적은 줄(Y·N)만. 계획만 있는 줄은 미이행 개수로만
+t2 = c.buildTeam(U[0], U, R2, {});
+const p15 = t2.members.find(x => x.name === '박태영'), s15 = t2.members.find(x => x.name === '손희진');
+t('v1.15 team 박태영 추가매출 건수 = Y·N·완료 3 (계획 2는 뺌)', p15.byTab.addSales === 3);
+t('v1.15 team 박태영 N(미달성)도 셈', t2.records.filter(r => r.name === '박태영' && r.fields['달성 여부 (Y/N)'] === 'N').length === 1 && p15.byTab.addSales === 3);
+t('v1.15 team 손희진 계획만 → 추가매출 건수 없음, 미이행 1은 그대로', !s15.byTab.addSales && s15.awaitingReply === 1);
+t('v1.15 team 월별 합 = 종류별 합 (계획 뺌)', [p15, s15].every(m => Object.values(m.byMonth).reduce((a, b) => a + b, 0) === Object.values(m.byTab).reduce((a, b) => a + b, 0)));
+t('v1.15 team 미평가·미이행 개수 그대로(박태영 2·2)', p15.pendingReview === 2 && p15.awaitingReply === 2);
+t('v1.15 team 기록 목록은 그대로(계획 줄도 포함, 탭 버튼 숫자용)', t2.records.filter(r => r.tab === 'addSales').length === 6);
+t2 = c.buildTeam(U[0], U, R2, { includeLeft: true });
+t('v1.15 퇴사자(최성광) 계획만 → 건수 없음, 목록에는 있음', !t2.members.find(x => x.name === '최성광').byTab.addSales && t2.records.some(r => r.name === '최성광'));
+const m15 = c.buildMine(U[2], U, R2);
+t('v1.15 mine 팀 건수표: 박태영 3, 손희진 없음', m15.teamCounts.find(x => x.name === '박태영').byTab.addSales === 3 && !m15.teamCounts.find(x => x.name === '손희진').byTab.addSales);
+t('v1.15 mine 내 기록 목록은 그대로(계획 2 포함 5줄)·내 미이행 2 그대로', m15.records.addSales.length === 5 && m15.awaitingReply === 2);
+t('v1.15 다른 탭(대면영업)은 예전과 같음', c.buildTeam(U[0], U, R, {}).members.find(x => x.name === '손희진').byTab.faceSales === 1);
 
 // ① recordItems: '역량-' 탭만, 마지막 부분, 기준 탭·팀별 기준 탭·설정 탭은 제외
 const TITLES = ['역량-직무별전문성-자기개발', '역량-직급별업무역량-직급역량개선노력', '역량-영업수행역량-대면영업',
