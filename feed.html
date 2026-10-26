@@ -269,6 +269,7 @@ font-size: 13px; padding: 2px 4px; display: none;
     padding: 3px 12px; border-radius: 20px;
   }
   .post-time { margin-left: auto; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .old-post-tag { font-size: 11px; font-weight: 700; color: #7a5b00; background: #fff4d6; border: 1px solid #f0d58a; border-radius: 10px; padding: 1px 8px; white-space: nowrap; } /* 2026-10-23 끼워 넣은 지난 게시물 표시 */
   .post-title { font-size: 16px; font-weight: 700; margin: 2px 0 6px; line-height: 1.4; }
   .post-summary { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 8px; }
   .article-link {
@@ -770,7 +771,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
       <div class="nav-group" id="nav-group-mro" data-group="mro">
         <div class="nav-group-head" onclick="toggleNavGroup_('mro')"><span class="nav-group-caret">▼</span>MRO 자재 시황<span class="nav-group-new" id="nav-group-mro-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
-      <div class="nav-item active" data-view="feed" onclick="switchView('feed')"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span> 시황 뉴스</div>
+      <div class="nav-item active" data-view="feed" onclick="openFeedMenu_()"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span> 시황 뉴스</div>
       <div class="nav-item" id="nav-notif" data-view="notif" onclick="switchView('notif')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> 알림<span class="nav-badge" id="notif-badge" style="display:none;">0</span></div>
       <div class="nav-item" id="nav-items" data-view="items" onclick="switchView('items')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span> 품목 관리</div>
       <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 시황 설정</div>
@@ -991,6 +992,9 @@ function openGasAdmin() {
 
 let session = null;
 let feedState = { posts: [], nextCursor: 0, loadingMore: false };
+// 2026-10-23: 알림·고정 댓글에서 이동하며 피드에 끼워 넣은 지난 게시물 id. 댓글을 달면 게시물 객체가 서버 응답으로
+// 바뀌므로(updatedPost) 객체에 표시를 달지 않고 id로 기억한다. 피드를 새로 받으면 비운다.
+let feedInjectedIds_ = new Set();
 let currentView = 'feed'; // 현재 활성 화면 추적 (백그라운드 복귀 시 해당 화면만 다시 불러오기 위함)
 const threadState = {};
 const postComments = {};
@@ -1861,6 +1865,7 @@ async function loadFeed(isRetry) {
       return true;
     }
     feedState.posts = res.posts || [];
+    feedInjectedIds_ = new Set();
     primeCommentsFromFeed(res.posts || []);
     feedState.nextCursor = res.nextCursor; feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
     if (!hasOpenComposer() && !hasGeneratingReportPrompt_()) renderFeed();
@@ -2337,6 +2342,25 @@ return `
 }).join('');
 }
 
+// 2026-10-23: 왼쪽 '시황 뉴스' 메뉴를 눌렀을 때만 — 끼워 넣은 지난 게시물 중 담당 확인이 모두 끝난 글은 목록에서 뺀다.
+// 확인이 안 끝난 글은 원래 피드에도 나오는 글이라 그대로 둔다(feedResponses.js 79~83행 규칙과 같음). 서버는 다시 부르지 않는다.
+// 알림·고정 댓글 이동(goToItem·goToComment)은 계속 switchView('feed')를 써서 이 정리를 거치지 않는다.
+function openFeedMenu_() {
+let changed = false;
+if (feedInjectedIds_.size) {
+feedState.posts = feedState.posts.filter(function (p) {
+const id = String(p.id);
+if (!feedInjectedIds_.has(id)) return true;
+const allConfirmed = (p.items || []).every(function (it) { return it.confirmed; });
+if (!allConfirmed) return true;
+feedInjectedIds_.delete(id);
+changed = true;
+return false;
+});
+}
+switchView('feed');
+if (changed) renderFeed();
+}
 function goToPost(postId) {
   switchView('feed');
   setTimeout(() => {
@@ -2410,6 +2434,7 @@ function goToItem(postId, itemId) {
         }
         if (res && res.ok && res.post) {
           feedState.posts.unshift(res.post);
+          feedInjectedIds_.add(String(res.post.id));
           renderFeed();
         } else {
           return;
@@ -2482,6 +2507,7 @@ function goToComment(postId, itemId, commentId) {
         }
         if (res && res.ok && res.post) {
           feedState.posts.unshift(res.post);
+          feedInjectedIds_.add(String(res.post.id));
           renderFeed();
         } else {
           return;
@@ -2505,6 +2531,11 @@ function goToComment(postId, itemId, commentId) {
   }, 50);
 }
 
+// 2026-10-23: '지난 게시물 · 9.28' 표시용 날짜(월.일). 날짜를 못 읽으면 빈 글자.
+function fmtShortDate_(v) {
+const d = new Date(v);
+return isNaN(d.getTime()) ? '' : (d.getMonth() + 1) + '.' + d.getDate();
+}
 function renderPost(post) {
 const items = post.items || [];
 const itemsHtml = items.map(item => renderItemRow(post, item)).join('');
@@ -2515,6 +2546,7 @@ return `
 <div class="bot-icon"><img src="bot-icon.png" alt=""></div>
 <span class="material-badge">${escapeHtml(post.materialName || '')}</span>
 <div class="bot-name">AI 시황봇</div>
+${feedInjectedIds_.has(String(post.id)) ? `<span class="old-post-tag" title="알림에서 열어 잠깐 보여주는 지난 게시물이에요. 왼쪽 '시황 뉴스' 메뉴를 누르면 목록에서 빠져요.">🕘 지난 게시물 · ${escapeHtml(fmtShortDate_(post.createdAt))}</span>` : ''}
 <span class="post-time">${escapeHtml(fmtTime(post.createdAt))}</span>
 </div>
 <div class="post-title">${escapeHtml(post.summary || '')}</div>
