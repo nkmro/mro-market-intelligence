@@ -536,6 +536,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-fv { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-op { font-size: 13px; color: var(--accent); margin-top: 4px; }
 @media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
+/* 1단계-라-라-다 (B3, 2026-10-26 재홍님 결정): 탭 칸이 좁아지는 폭(481~860px)에서는 이모지를 위 줄로, 이름은 낱말째 줄바꿈("자기개 / 발" 방지). 480px 이하(짧은 이름)·861px 이상은 그대로 */
+@media (min-width: 481px) and (max-width: 860px) { .cm-tab-emoji { display: block; line-height: 1.1; } .cm-tab > span:first-child { word-break: keep-all; } }
 @media (max-width: 480px) { .cm-tabs { gap: 4px; } .cm-tab { min-height: 56px; font-size: 12px; gap: 1px; } .cm-tab-emoji { font-size: 13px; } .cm-tab-label { display: none; } .cm-tab-short { display: inline; } .cm-tab-count { padding: 0 7px; } }
 /* 팀 역량평가(1단계-라-라, 화면 ②) — 건수표·월별표·팀원별 묶음. 탭·필터·카드는 ①의 cm- 클래스 그대로 */
 .ct-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -549,6 +551,14 @@ font-size: 13px; padding: 2px 4px; display: none;
 .ct-table .ct-total td { font-weight: 700; border-bottom: none; }
 .ct-table .ct-team-row td { text-align: left; position: static; font-weight: 700; color: var(--accent); background: #efedf3; }
 .ct-th-label { display: block; font-size: 11px; }
+/* 1단계-라-라-다: 건수표 숫자를 누르면 아래 탭·필터·팀원 묶음으로 이동. 누를 수 있는 숫자만 점선 밑줄(0은 그대로 글자) */
+.ct-go { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.ct-go:hover { text-decoration-style: solid; }
+.ct-go:focus-visible, button.cm-tile:focus-visible, button.cm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ca-group { scroll-margin-top: 20px; }
+.ca-group.flash { animation: flash-highlight 2s ease; } /* 알림 이동(.post-card.flash)과 같은 강조 — 내려가는 움직임 뒤에도 보이게 2초(2026-10-26 재홍님 결정) */
+button.cm-tile, button.cm-chip { font-family: inherit; color: inherit; cursor: pointer; }
+button.cm-tile:hover, button.cm-chip:hover { border-color: var(--accent); }
 .ct-zero { color: #c9c3dc; }
 .ct-ar { color: var(--danger); font-weight: 700; }
 .ct-pr { color: var(--accent); font-weight: 700; }
@@ -4226,9 +4236,9 @@ const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록I
 // 설계서 3장 공통 규칙: 화면 표시 이름 "기대 효과" = 시트 칸 "기대 성과". 입력 형식 안내 괄호(YYMMDD~·Y/N 등)는 화면 이름에서 뺀다(시트 칸 이름은 그대로).
 const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과' };
 function compFieldLabel_(k) { return COMP_FIELD_LABEL_[k] || String(k).replace(/\s*\((?:YY|Y\/N)[^)]*\)/g, '').trim() || k; }
-// 줄별 처리 상태(서버 reviewState, 설계서 ⑳): 회신 대기(팀원 할 일) / 확인 대기(팀장 할 일) / 완료
-const COMP_STATE_ = { awaitingReply: { text: '회신 대기', cls: 'cm-st-reply' }, pendingReview: { text: '확인 대기', cls: 'cm-st-review' }, done: { text: '완료', cls: 'cm-st-done' } };
-// prLabel(1단계-라-라): 임원 화면에서 '확인 대기' 대신 '팀장 확인 대기'로 보일 때만 넘긴다. ①·팀장 화면은 그대로.
+// 줄별 처리 상태(서버 reviewState, 설계서 ⑳): 미이행(팀원 할 일) / 미평가(팀장 할 일) / 완료. 화면 글자만 v1.13 ⑳에서 바꿈(내부 키 그대로)
+const COMP_STATE_ = { awaitingReply: { text: '미이행', cls: 'cm-st-reply' }, pendingReview: { text: '미평가', cls: 'cm-st-review' }, done: { text: '완료', cls: 'cm-st-done' } };
+// prLabel(1단계-라-라): 임원 화면에서 '미평가' 대신 '팀장 미평가'로 보일 때만 넘긴다. ①·팀장 화면은 그대로.
 function compStateChip_(st, prLabel) {
 const s = COMP_STATE_[st];
 return s ? `<span class="cm-st ${s.cls}">${(prLabel && st === 'pendingReview') ? prLabel : s.text}</span>` : '';
@@ -4305,17 +4315,28 @@ const tabSum = compTabs_.map(function (t, i) { let s = 0; rows.forEach(function 
 let total = 0; tabSum.forEach(function (x) { total += x; });
 let max = 0; rows.forEach(function (r) { if (r.sum > max) max = r.sum; });
 const tiles = compTabs_.map(function (t, i) {
-return `<div class="cm-tile" style="animation-delay:${i * 60}ms;"><div class="cm-tile-emoji">${escapeHtml(t.emoji)}</div><div class="cm-tile-num">${tabSum[i]}</div><div class="cm-tile-label">${escapeHtml(t.label)}</div></div>`;
+return `<button class="cm-tile" style="animation-delay:${i * 60}ms;" onclick="compMineGo_('${escapeHtml(t.key)}')" title="눌러서 내 ${escapeHtml(t.label)} 기록 보기"><div class="cm-tile-emoji">${escapeHtml(t.emoji)}</div><div class="cm-tile-num">${tabSum[i]}</div><div class="cm-tile-label">${escapeHtml(t.label)}</div></button>`;
 }).join('');
 const list = rows.map(function (r, i) {
 const isMe = me && String(r.m.name || '').replace(/\s+/g, '') === me;
 const pct = max > 0 ? Math.round(r.sum / max * 100) : 0;
-const chips = compTabs_.map(function (t, j) { return r.nums[j] ? `<span class="cm-chip" title="${escapeHtml(t.label)} ${r.nums[j]}건">${escapeHtml(t.emoji)}${r.nums[j]}</span>` : ''; }).join('');
+// 1단계-라-라-다: 내 줄 칩만 누르면 내 그 탭으로(다른 팀원 칩은 건수만 — 기록은 볼 수 없음, 설계서 2-2)
+const chips = compTabs_.map(function (t, j) {
+if (!r.nums[j]) return '';
+return isMe ? `<button class="cm-chip" onclick="compMineGo_('${escapeHtml(t.key)}')" title="눌러서 내 ${escapeHtml(t.label)} 기록 보기">${escapeHtml(t.emoji)}${r.nums[j]}</button>` : `<span class="cm-chip" title="${escapeHtml(t.label)} ${r.nums[j]}건">${escapeHtml(t.emoji)}${r.nums[j]}</span>`;
+}).join('');
 const tip = compTabs_.map(function (t, j) { return t.label + ' ' + r.nums[j]; }).join(' · ');
 return `<div class="cm-row${isMe ? ' cm-me' : ''}" title="${escapeHtml(tip)}"><div class="cm-who"><span class="cm-who-name">${escapeHtml(r.m.name || '')}</span>${isMe ? '<span class="cm-me-tag">나</span>' : ''}${r.m.office ? `<span class="cm-who-office">${escapeHtml(r.m.office)}</span>` : ''}</div><div class="cm-bar"><div class="cm-bar-fill" style="width:${pct}%; animation-delay:${200 + i * 40}ms;"></div></div><div class="cm-row-sum">${r.sum}건</div><div class="cm-chips">${chips}</div></div>`;
 }).join('');
 return `<div class="cm-team"><div class="cm-team-head"><span>👥 우리 팀 기록 현황</span><span class="cm-team-meta">팀원 ${tc.length}명 · 총 ${total}건</span></div>
 <div class="cm-tiles">${tiles}</div><div class="cm-rows">${list}</div><div class="cc-note">기록 수는 참고용입니다. 평가는 내용으로 합니다.</div></div>`;
+}
+// 1단계-라-라-다: 타일·내 칩 → 내 그 탭(필터 "전체")으로 바꾸고 탭 위치로 내려감
+function compMineGo_(key) {
+if (!compMineRes_) return;
+compMineFilter_ = 'all';
+switchCompMineTab_(key);
+compScrollFlash_(document.getElementById('cm-tabs'), false);
 }
 function compMineTabBody_(res, key) {
 const t = compTabs_.filter(function (x) { return x.key === key; })[0] || compTabs_[0];
@@ -4332,7 +4353,7 @@ function compMineTabsHtml_(res) {
 const n = Number(res.awaitingReply) || 0;
 return compTabs_.map(function (t) {
 const c = compMineList_(res, t.key).length;
-const dot = (t.hasReply && n > 0) ? `<span class="cm-tab-dot" title="회신 대기 ${n}건"></span>` : '';
+const dot = (t.hasReply && n > 0) ? `<span class="cm-tab-dot" title="미이행 ${n}건"></span>` : '';
 return compTabBtnHtml_(t, c, t.key === compMineTab_, dot, 'switchCompMineTab_');
 }).join('');
 }
@@ -4342,7 +4363,7 @@ const lb = escapeHtml(t.label);
 return `<button class="cm-tab ${active ? 'active' : ''}" title="${lb}" aria-label="${lb} ${c}건" onclick="${onclick}('${escapeHtml(t.key)}')"><span><span class="cm-tab-emoji">${escapeHtml(t.emoji)}</span> <span class="cm-tab-label">${lb}</span><span class="cm-tab-short">${escapeHtml(t.label.slice(0, 2))}</span></span><span class="cm-tab-count">${c}</span>${dot}</button>`;
 }
 // 1단계-라-다-나: 추가매출 탭 상태 필터 (설계서 부록 B와 같은 4칸)
-const COMP_MINE_FILTERS_ = [{ key: 'all', text: '전체' }, { key: 'awaitingReply', text: '회신 대기' }, { key: 'pendingReview', text: '확인 대기' }, { key: 'done', text: '완료' }];
+const COMP_MINE_FILTERS_ = [{ key: 'all', text: '전체' }, { key: 'awaitingReply', text: '미이행' }, { key: 'pendingReview', text: '미평가' }, { key: 'done', text: '완료' }];
 let compMineFilter_ = 'all';
 // 상태 필터 칸 — ①·② 같은 모양(1단계-라-라에서 ① 코드를 그대로 꺼냄). 칸마다 개수 = rows 중 그 상태 줄 수(전체 = 줄 수).
 function compFilterChipsHtml_(rows, filters, cur, onclick) {
@@ -4436,15 +4457,47 @@ renderCompLead_();
 function toggleCompLeadLeft_(on) { compLeadIncludeLeft_ = !!on; loadCompLeadPage(true); }
 function compLeadRows_(res, key) { return (Array.isArray(res.records) ? res.records : []).filter(function (r) { return r.tab === key; }); }
 function compLeadCount_(rows, st) { let n = 0; rows.forEach(function (r) { if (r.reviewState === st) n++; }); return n; }
-// '확인 대기' 글자: 팀장 = 본인 할 일이라 '확인 대기', 임원 = 팀장이 아직 확인 안 한 수라 '팀장 확인 대기'(2026-10-22 재홍님 결정)
-function compLeadPr_(res) { return ((res && res.viewer) || {}).role === '임원' ? '팀장 확인 대기' : '확인 대기'; }
+// '미평가' 글자: 팀장 = 본인 할 일이라 '미평가', 임원 = 팀장이 아직 평가 안 한 수라 '팀장 미평가'(2026-10-22 결정, v1.13 ⑳ 명칭)
+function compLeadPr_(res) { return ((res && res.viewer) || {}).role === '임원' ? '팀장 미평가' : '미평가'; }
 // 회신 칸이 없는 탭은 "회신 대기" 칸을 뺀 3칸(부록 B). 임원은 '확인 대기' 칸 글자만 바꿈.
 function compLeadFilters_(t, res) {
 const pr = compLeadPr_(res);
 return (t && t.hasReply ? COMP_MINE_FILTERS_ : COMP_MINE_FILTERS_.filter(function (f) { return f.key !== 'awaitingReply'; }))
 .map(function (f) { return f.key === 'pendingReview' ? { key: f.key, text: pr } : f; });
 }
-function compLeadNum_(n, cls) { return n ? `<td${cls ? ` class="${cls}"` : ''}>${n}</td>` : '<td class="ct-zero">0</td>'; }
+// go = 누르면 부를 코드(compLeadGoAttr_). 0이거나 갈 곳이 없으면 그냥 글자(1단계-라-라-다).
+function compLeadNum_(n, cls, go) {
+if (!n) return '<td class="ct-zero">0</td>';
+const c = cls ? ` class="${cls}"` : '';
+return go ? `<td${c}><button class="ct-go" onclick="${go}" title="눌러서 이 기록 보기">${n}</button></td>` : `<td${c}>${n}</td>`;
+}
+// 1단계-라-라-다: 숫자 → 갈 탭. mi = res.members 안 순서(합계 줄은 -1 = 모든 팀원). st = 그 상태 줄이 있는 첫 탭(미평가·미이행은 재직 팀원 줄만 — 표 숫자와 같은 기준), st 없으면 기록이 있는 첫 탭.
+function compLeadFirstTab_(res, mi, st) {
+const m = mi >= 0 ? res.members[mi] : null;
+const t = compLeadTabs_.filter(function (t) {
+return compLeadRows_(res, t.key).some(function (r) { return (!m || r.authorEmail === m.email) && (!st || (r.reviewState === st && r.authorStatus === 'active')); });
+})[0];
+return t ? t.key : '';
+}
+function compLeadGoAttr_(key, filter, mi) { return key ? `compLeadGo_('${escapeHtml(key)}','${filter}',${mi})` : ''; }
+// 숫자를 누르면: 탭·상태 필터를 바꾸고(서버 다시 안 부름) 그 팀원 묶음으로 내려가 잠깐 강조. 합계 줄 숫자는 탭 위치까지만.
+function compLeadGo_(key, filter, mi) {
+if (!compLeadRes_) return;
+compLeadFilter_ = filter;
+switchCompLeadTab_(key);
+const m = mi >= 0 ? (compLeadRes_.members || [])[mi] : null;
+const g = m ? Array.prototype.filter.call(document.querySelectorAll('#ct-tab-body .ca-group'), function (x) { return x.dataset.email === m.email; })[0] : null;
+compScrollFlash_(g || document.getElementById('ct-tabs'), !!g);
+}
+// 내려가기 + 강조(알림 이동과 같은 flash). 움직임 줄이기 설정이면 바로 이동.
+function compScrollFlash_(el, flash) {
+if (!el) return;
+const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+if (!flash) return;
+el.classList.add('flash');
+setTimeout(function () { el.classList.remove('flash'); }, 2000);
+}
 function compLeadWho_(m) {
 const left = m.status === 'left' ? '<span class="ct-left-tag">퇴사</span>' : '';
 return `<td>${escapeHtml(m.name || '')}${left}</td><td>${escapeHtml(m.office || '')}</td>`;
@@ -4467,15 +4520,17 @@ function compLeadTableHtml_(res) {
 const members = Array.isArray(res.members) ? res.members : [];
 if (!members.length) return '<div class="cm-empty">팀원이 없어요.</div>';
 const tot = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totAr = 0, totPr = 0;
-const head = `<tr><th>이름</th><th>사무소</th><th>${compLeadPr_(res)}</th><th>회신 대기</th><th>합계</th>${compLeadTabs_.map(function (t) { return `<th title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
+const head = `<tr><th>이름</th><th>사무소</th><th>${compLeadPr_(res)}</th><th>미이행</th><th>합계</th>${compLeadTabs_.map(function (t) { return `<th title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
 const body = compLeadTableRows_(res, function (m) {
-const by = m.byTab || {}; let sum = 0;
-const cells = compLeadTabs_.map(function (t, i) { const n = Number(by[t.key]) || 0; sum += n; tot[i] += n; return compLeadNum_(n); }).join('');
+const by = m.byTab || {}; let sum = 0; const mi = members.indexOf(m);
+const cells = compLeadTabs_.map(function (t, i) { const n = Number(by[t.key]) || 0; sum += n; tot[i] += n; return compLeadNum_(n, '', compLeadGoAttr_(t.key, 'all', mi)); }).join('');
 const ar = Number(m.awaitingReply) || 0, pr = Number(m.pendingReview) || 0;
 totSum += sum; totAr += ar; totPr += pr;
-return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr')}${compLeadNum_(ar, 'ct-ar')}${compLeadNum_(sum)}${cells}</tr>`;
+const goPr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'pendingReview'), 'pendingReview', mi);
+const goAr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'awaitingReply'), 'awaitingReply', mi);
+return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr', goPr)}${compLeadNum_(ar, 'ct-ar', goAr)}${compLeadNum_(sum, '', compLeadGoAttr_(compLeadFirstTab_(res, mi, ''), 'all', mi))}${cells}</tr>`;
 }, 5 + compLeadTabs_.length);
-const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr')}${compLeadNum_(totAr, 'ct-ar')}${compLeadNum_(totSum)}${tot.map(function (n) { return compLeadNum_(n); }).join('')}</tr>`;
+const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totAr, 'ct-ar', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'awaitingReply'), 'awaitingReply', -1))}${compLeadNum_(totSum, '', compLeadGoAttr_(compLeadFirstTab_(res, -1, ''), 'all', -1))}${tot.map(function (n, i) { return compLeadNum_(n, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table">${head}${body}${foot}</table></div>`;
 }
 // 월별 표(설계서 ②·⑤): 서버 byMonth(기록일시 기준). 기록일시가 없는 기존 기록은 "기존" 칸.
@@ -4514,8 +4569,8 @@ const mineAll = all.filter(function (r) { return r.authorEmail === m.email; });
 const mine = shown.filter(function (r) { return r.authorEmail === m.email; });
 if (!mine.length) return '';
 const left = m.status === 'left';
-const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `회신 대기 ${compLeadCount_(mineAll, 'awaitingReply')} · ` : '') + `${prText} ${compLeadCount_(mineAll, 'pendingReview')} · 총 ${mineAll.length}`;
-return `<div class="ca-group${left ? ' ct-left' : ''}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}${m.office ? `<span class="cm-who-office">${escapeHtml(m.office)}</span>` : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText }); }).join('')}</div>`;
+const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `미이행 ${compLeadCount_(mineAll, 'awaitingReply')} · ` : '') + `${prText} ${compLeadCount_(mineAll, 'pendingReview')} · 총 ${mineAll.length}`;
+return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}${m.office ? `<span class="cm-who-office">${escapeHtml(m.office)}</span>` : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText }); }).join('')}</div>`;
 };
 let groups;
 if ((res.viewer || {}).role === '임원') {
