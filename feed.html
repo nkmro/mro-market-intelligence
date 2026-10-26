@@ -463,6 +463,13 @@ font-size: 13px; padding: 2px 4px; display: none;
 .settings-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
 .settings-row .settings-row-input { width: 200px; flex-shrink: 0; }
 /* 1단계-라-나: 인사평가 › 평가 기준 보기 (화면 ④, 보기 전용) */
+/* 인사평가 설정(보기 전용) — 공통·시황 설정과 같은 줄 모양, 입력칸 대신 읽기 칸 */
+.cs-val { width: 200px; flex-shrink: 0; box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #f5f4f8; color: var(--text); }
+.cs-none { color: var(--text-muted); }
+.cs-none b { display: inline-block; font-size: 11px; font-weight: 700; color: var(--danger); border: 1px solid var(--danger); border-radius: 8px; padding: 0 6px; margin-right: 4px; }
+.cs-file a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.cs-sec { font-size: 13px; font-weight: 700; color: var(--accent); margin: 18px 0 0; padding-top: 4px; }
+@media (max-width: 480px) { .cs-val { width: 132px; } }
 .cc-section { font-size: 12px; font-weight: 700; color: var(--text-muted); margin: 14px 0 6px; }
 .cc-comp { border-top: 1px solid var(--border); padding: 12px 0; }
 .cc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -794,6 +801,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
           <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록<span class="nav-badge" id="nav-comp-mine-badge" style="display:none;">0</span></div>
           <div class="nav-item" id="nav-comp-team" data-view="comp-team" onclick="switchView('comp-team')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 팀 역량평가</div>
           <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
+          <div class="nav-item" id="nav-comp-settings" data-view="comp-settings" onclick="switchView('comp-settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 인사평가 설정</div>
         </div>
       </div>
       <div class="nav-group collapsed" id="nav-group-admin" data-group="admin" style="display:none;">
@@ -842,6 +850,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="items-view" style="display:none;"></div>
 <div id="settings-view" style="display:none;"></div>
 <div id="comp-criteria-view" style="display:none;"></div>
+<div id="comp-settings-view" style="display:none;"></div>
 <div id="comp-mine-view" style="display:none;"></div>
 <div id="comp-team-view" style="display:none;"></div>
     </div>
@@ -1257,6 +1266,7 @@ document.getElementById('users-view').style.display = view === 'users' ? 'block'
 document.getElementById('items-view').style.display = view === 'items' ? 'block' : 'none';
 document.getElementById('settings-view').style.display = (view === 'settings' || view === 'settings-common') ? 'block' : 'none';
 document.getElementById('comp-criteria-view').style.display = view === 'comp-criteria' ? 'block' : 'none';
+document.getElementById('comp-settings-view').style.display = view === 'comp-settings' ? 'block' : 'none';
 document.getElementById('comp-mine-view').style.display = view === 'comp-mine' ? 'block' : 'none';
 document.getElementById('comp-team-view').style.display = view === 'comp-team' ? 'block' : 'none';
 openNavGroupOf_(view);
@@ -1293,6 +1303,9 @@ loadSettingsPage('공통');
 }
 if (view === 'comp-criteria') {
 loadCompCriteriaPage();
+}
+if (view === 'comp-settings') {
+loadCompSettingsPage();
 }
 if (view === 'comp-mine') {
 loadCompMinePage();
@@ -1541,6 +1554,9 @@ document.getElementById('nav-settings').style.display = 'flex';
 document.getElementById('nav-gas-admin').style.display = 'flex';
 document.getElementById('nav-settings-common').style.display = 'flex';
 document.getElementById('nav-group-admin').style.display = '';
+// 인사평가 설정(보기 전용, 설계서 2-1): 인사평가 묶음 안, 관리자만. 관리자 역할이 무엇이든 묶음이 보이게.
+document.getElementById('nav-comp-settings').style.display = 'flex';
+document.getElementById('nav-group-hr').style.display = '';
 }
 // 1단계-라-나 (설계서 2-1): 인사평가 묶음 — 일반·담당·팀장·임원 모두. 1-라-나에서는 평가 기준 보기만(나머지 화면은 1-라-다·라).
 if (['일반', '담당', '팀장', '임원'].indexOf(session.role) >= 0) {
@@ -4146,6 +4162,60 @@ if (res.error === 'SESSION_EXPIRED' || res.error === 'SESSION_NOT_FOUND') return
 if (res.error === 'FORBIDDEN' || res.error === 'USER_NOT_FOUND') return '이 화면을 볼 권한이 없어요.';
 return (what || '기준') + '을 불러오지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
 }
+// ==== 인사평가 › 인사평가 설정 (보기 전용, 설계서 2-1·4-5·5장 252행) ====
+// 서버는 그대로: getCompetencyTest view=ping(관리자만, 읽기만)의 year·fileId·settings(인사평가설정 탭 A~C)·tabs(자동 인식한 기록 탭).
+// ping은 탭 머리글 점검이 하나라도 안 맞으면 ok:false를 주므로, settings가 오면 화면은 그대로 그린다.
+// 고치기·저장은 2단계(saveCompetencyTest action updateSettings). 그 전에는 시트에서 직접 고친다.
+const COMP_SETTING_ROWS_ = [
+{ key: '전년도입력마감일', label: '전년도 입력 마감일', desc: function (v) { return '1월 ' + v + '일까지 전년도 기록·평가 입력을 허용'; }, def: '15' },
+{ key: '연도전환시작일', label: '연도 전환 시작일', desc: function (v) { return '12월 ' + v + '일부터 다음 해 파일을 자동으로 만듦'; }, def: '1' },
+{ key: '기록가능기간일', label: '기록 가능 기간', desc: function (v) { return '오늘 포함 최근 ' + v + '일 안에 일어난 일만 저장(1~60)'; }, def: '14' }
+];
+let compSettingsReq_ = 0;
+async function loadCompSettingsPage() {
+const root = document.getElementById('comp-settings-view');
+const reqNo = ++compSettingsReq_;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const res = await compFetch_({ view: 'ping' });
+if (reqNo !== compSettingsReq_) return;
+if (!res || !Array.isArray(res.settings)) {
+root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '인사평가 설정'))}</div>`;
+return;
+}
+renderCompSettings_(res);
+}
+function compSettingRowHtml_(title, desc, valHtml) {
+return `<div class="settings-row"><div class="settings-row-label"><div class="settings-row-title">${escapeHtml(title)}</div>${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}</div><div class="cs-val">${valHtml}</div></div>`;
+}
+function renderCompSettings_(res) {
+const root = document.getElementById('comp-settings-view');
+const map = {}; const order = [];
+res.settings.slice(1).forEach(function (r) { const k = String((r && r[0]) || '').trim(); if (!k || k in map) return; map[k] = String((r && r[1]) || '').trim(); order.push(k); });
+const none = function (def) { return `<span class="cs-none"><b>설정 없음</b>${def ? '기본 ' + escapeHtml(def) : ''}</span>`; };
+const fid = String(res.fileId || '');
+const fileHtml = fid ? `<span class="cs-file"><a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(fid)}" target="_blank" rel="noopener">파일 열기 ↗</a></span>` : none('');
+const file = compSettingRowHtml_(escapeHtml(String(res.year || '')) + '년 인사평가 파일', '파일을 바꾸려면 관리 › 공통 설정의 인사평가파일_' + (res.year || '') + ' 줄을 고칩니다' + (fid ? ' · ID ' + fid.slice(0, 6) + '…' + fid.slice(-4) : ''), fileHtml);
+const rules = COMP_SETTING_ROWS_.map(function (m) {
+const v = map[m.key];
+return compSettingRowHtml_(m.label, m.desc(v || m.def) + (v ? '' : ' — 시트에 줄이 없어 기본값으로 봄'), v ? escapeHtml(v) : none(m.def));
+}).join('');
+const tabs = Array.isArray(res.tabs) ? res.tabs : [];
+const emojis = tabs.map(function (t) {
+const v = map['탭이모지_' + t.label];
+return compSettingRowHtml_(t.label + ' 탭', '시트 줄 이름: 탭이모지_' + t.label, v ? escapeHtml(v) : none('📝'));
+}).join('');
+// 위에 보이지 않은 줄(앞으로 새로 넣을 키, 탭이 없어진 이모지 줄)도 빠뜨리지 않고 그대로 보여준다
+const used = COMP_SETTING_ROWS_.map(function (m) { return m.key; }).concat(tabs.map(function (t) { return '탭이모지_' + t.label; }));
+const extra = order.filter(function (k) { return used.indexOf(k) < 0; }).map(function (k) { return compSettingRowHtml_(k, '', map[k] ? escapeHtml(map[k]) : none('')); }).join('');
+root.innerHTML = `<div class="settings-panel">
+<div class="settings-row-title" style="font-size:16px; margin:12px 0 2px;">인사평가 설정</div>
+<div class="settings-row-desc" style="margin-bottom:4px;">보기 전용 · 인사평가 파일 안 '인사평가설정' 탭 · 고치기는 시트에서 직접(앱에서 고치기는 2단계)</div>
+<div class="cs-sec">파일</div>${file}
+<div class="cs-sec">기간 규칙</div>${rules}
+<div class="cs-sec">탭 이모지 <span class="settings-row-desc" style="font-weight:400;">· 기록 탭 ${tabs.length}개 자동 인식</span></div>${emojis || '<div class="cm-empty">기록 탭을 찾지 못했어요.</div>'}
+${extra ? `<div class="cs-sec">그 밖의 줄</div>${extra}` : ''}
+</div>`;
+}
 async function loadCompCriteriaPage() {
 const root = document.getElementById('comp-criteria-view');
 const reqNo = ++compCriteriaReq_;
@@ -4471,7 +4541,8 @@ if (!n) return '<td class="ct-zero">0</td>';
 const c = cls ? ` class="${cls}"` : '';
 return go ? `<td${c}><button class="ct-go" onclick="${go}" title="눌러서 이 기록 보기">${n}</button></td>` : `<td${c}>${n}</td>`;
 }
-// 1단계-라-라-다: 숫자 → 갈 탭. mi = res.members 안 순서(합계 줄은 -1 = 모든 팀원). st = 그 상태 줄이 있는 첫 탭(미평가·미이행은 재직 팀원 줄만 — 표 숫자와 같은 기준), st 없으면 기록이 있는 첫 탭.
+// 1단계-라-라-다: 숫자 → 갈 탭. mi = res.members 안 순서(합계 줄은 -1 = 모든 팀원). st = 그 상태 줄이 있는 첫 탭(미평가·미이행은 재직 팀원 줄만 — 표 숫자와 같은 기준).
+// '합계' 칸은 여러 탭에 걸친 숫자라 누르지 않는다(2026-10-26 재홍님 결정 H1). 종류별 숫자를 누르면 그 탭으로 간다.
 function compLeadFirstTab_(res, mi, st) {
 const m = mi >= 0 ? res.members[mi] : null;
 const t = compLeadTabs_.filter(function (t) {
@@ -4528,9 +4599,9 @@ const ar = Number(m.awaitingReply) || 0, pr = Number(m.pendingReview) || 0;
 totSum += sum; totAr += ar; totPr += pr;
 const goPr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'pendingReview'), 'pendingReview', mi);
 const goAr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'awaitingReply'), 'awaitingReply', mi);
-return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr', goPr)}${compLeadNum_(ar, 'ct-ar', goAr)}${compLeadNum_(sum, '', compLeadGoAttr_(compLeadFirstTab_(res, mi, ''), 'all', mi))}${cells}</tr>`;
+return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr', goPr)}${compLeadNum_(ar, 'ct-ar', goAr)}${compLeadNum_(sum)}${cells}</tr>`;
 }, 5 + compLeadTabs_.length);
-const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totAr, 'ct-ar', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'awaitingReply'), 'awaitingReply', -1))}${compLeadNum_(totSum, '', compLeadGoAttr_(compLeadFirstTab_(res, -1, ''), 'all', -1))}${tot.map(function (n, i) { return compLeadNum_(n, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); }).join('')}</tr>`;
+const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totAr, 'ct-ar', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'awaitingReply'), 'awaitingReply', -1))}${compLeadNum_(totSum)}${tot.map(function (n, i) { return compLeadNum_(n, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table">${head}${body}${foot}</table></div>`;
 }
 // 월별 표(설계서 ②·⑤): 서버 byMonth(기록일시 기준). 기록일시가 없는 기존 기록은 "기존" 칸.
