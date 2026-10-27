@@ -592,3 +592,136 @@ module.exports.parseItemKeys = parseItemKeys;
 module.exports.seoulDateTimeStr = seoulDateTimeStr;
 module.exports.validateReply = validateReply;
 module.exports.planReply = planReply;
+
+// =====================================================================
+// 2-다 (설계서 v1.21 ⑳-3·㉑): 새 기록 추가(action create) — 순수 함수. 시트 입출력은 index.js saveCompetencyTest.
+// 탭마다 '내용 칸' 규칙(CREATE_RULES)을 하나씩 더한다(2026-10-27 재홍님: 탭은 개발할 때 하나씩). 지금은 대면영업만.
+// 팀원은 내용 칸만 적고, 이름(이름/담당)·사무소·순번·팀·기록ID·작성자이메일·기록일시는 서버가 채운다(공통 규칙).
+// 날짜 검사(㉑): 오늘 포함 최근 N일(인사평가설정 '기록가능기간일', 1~60, 없으면 14) · 미래 불가 · 그 파일의 연도 안.
+// 1월 유예(전년도 파일 저장)는 이번 범위 밖(연말 전 별도) — 올해 파일·올해 날짜만.
+// =====================================================================
+const RECORD_WINDOW_KEY = '기록가능기간일';
+const RECORD_WINDOW_DEFAULT = 14;
+const TEXT_MAX = 2000;
+// 인사평가설정 행([키, 값, 설명]) → 기록 가능 기간(일). 값이 없거나 1~60 정수가 아니면 14(설계서 4-5).
+function recordWindowDays(settingsRows) {
+  const row = (settingsRows || []).find(function (r) { return String((r && r[0]) || '').trim() === RECORD_WINDOW_KEY; });
+  const n = Number(String((row && row[1]) || '').trim());
+  return Number.isInteger(n) && n >= 1 && n <= 60 ? n : RECORD_WINDOW_DEFAULT;
+}
+// 서울 날짜 'YYYY-MM-DD'
+function seoulIsoDate(nowMs) {
+  const s = seoulDateStr(nowMs);
+  return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
+}
+function validIsoDate(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+// ㉑ 날짜 검사. date·today = 'YYYY-MM-DD'. 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
+function checkRecordDate(date, today, windowDays, fileYear) {
+  if (date > today) return 'DATE_FUTURE';
+  if (Number(date.slice(0, 4)) !== Number(fileYear)) return 'DATE_OTHER_YEAR';
+  const t = Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)));
+  const oldest = new Date(t - (windowDays - 1) * 86400000).toISOString().slice(0, 10);
+  if (date < oldest) return 'DATE_TOO_OLD';
+  return '';
+}
+function cleanText(v, max) {
+  const s = String(v === undefined || v === null ? '' : v).replace(/\r\n?/g, '\n').trim();
+  return s && s.length <= (max || TEXT_MAX) ? s : null;
+}
+// 탭별 내용 칸 규칙: validate(b) → { ok:true, date:'YYYY-MM-DD', cells:{ 머리글: 값 } } 또는 { ok:false, error:'BAD_INPUT', field }
+const CREATE_RULES = {
+  // 대면영업(2026-10-27 재홍님 결정): 고객사 · 대면자·직급(한 쌍씩, 시트에는 쉼표로 합침) · 미팅 일시(날짜 + 시 필수 → YYMMDD-HH)
+  // · 미팅 시간(분, 20/30/40/60 또는 기타 1~600) · 기대 성과. 모두 필수.
+  faceSales: {
+    label: '대면영업', // 이 이름의 탭(또는 기존 키 faceSales 탭)에 이 입력 칸을 쓴다 — 내년 파일에서 gid가 바뀌어도 이름으로 찾음
+    headers: ['고객사', '대면자', '직급', '미팅 일시(YYMMDD-HH)', '미팅 시간(분)', '기대 성과'],
+    validate: function (b) {
+      const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
+      const customer = cleanText(b.customer, 100);
+      if (!customer) return bad('customer');
+      const people = Array.isArray(b.people) ? b.people : [];
+      if (!people.length || people.length > 10) return bad('people');
+      const names = [], ranks = [];
+      for (let i = 0; i < people.length; i++) {
+        const n = cleanText(people[i] && people[i].name, 30), r = cleanText(people[i] && people[i].rank, 30);
+        // 시트에 쉼표로 합쳐 저장하므로 한 사람 값 안에는 쉼표·줄바꿈을 받지 않는다
+        if (!n || !r || /[,\n]/.test(n) || /[,\n]/.test(r)) return bad('people');
+        names.push(n); ranks.push(r);
+      }
+      const date = String(b.meetDate || '').trim();
+      if (!validIsoDate(date)) return bad('meetDate');
+      const hour = Number(b.meetHour);
+      if (String(b.meetHour === undefined || b.meetHour === null ? '' : b.meetHour).trim() === '' || !Number.isInteger(hour) || hour < 0 || hour > 23) return bad('meetHour');
+      const min = Number(b.minutes);
+      if (!Number.isInteger(min) || min < 1 || min > 600) return bad('minutes');
+      const expected = cleanText(b.expected, TEXT_MAX);
+      if (!expected) return bad('expected');
+      return { ok: true, date: date, cells: {
+        '고객사': customer, '대면자': names.join(','), '직급': ranks.join(','),
+        '미팅 일시(YYMMDD-HH)': date.slice(2, 4) + date.slice(5, 7) + date.slice(8, 10) + '-' + String(hour).padStart(2, '0'),
+        '미팅 시간(분)': String(min), '기대 성과': expected } };
+    }
+  }
+};
+function validateCreate(form, b) {
+  const key = String(form || '');
+  const rule = Object.prototype.hasOwnProperty.call(CREATE_RULES, key) ? CREATE_RULES[key] : null;
+  if (!rule) return { ok: false, error: 'TAB_NOT_SUPPORTED' };
+  const v = rule.validate(b || {});
+  if (v.ok) v.form = key;
+  return v;
+}
+// 기록 탭({id,label}) → 그 탭에 쓰는 입력 칸 규칙 키(없으면 ''). 기존 키가 같거나 탭 이름(항목 이름)이 같으면.
+function createFormFor(tab) {
+  if (!tab) return '';
+  const keys = Object.keys(CREATE_RULES);
+  for (let i = 0; i < keys.length; i++) if (tab.id === keys[i] || String(tab.label || '').trim() === CREATE_RULES[keys[i]].label) return keys[i];
+  return '';
+}
+// 새 줄 계획. tab = {id,title}, values = 그 탭 A1:Z, allIds = 파일 안 기존 기록ID(Set), viewer = {name,email,office},
+// v = validateCreate 결과, opts = { team, nowMs, rand }. 반환 { ok:true, writes, record } 또는 { ok:false, error:'HEADER_NOT_READY' }
+// 새 줄 = 값이 있는 마지막 줄 다음(Sheets는 끝쪽 빈 줄을 돌려주지 않음). 순번 = 그 탭 순번 칸의 가장 큰 숫자 + 1.
+function planCreate(tab, values, allIds, viewer, v, opts) {
+  opts = opts || {};
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  const nameHeader = header.indexOf('이름') >= 0 ? '이름' : (header.indexOf('담당') >= 0 ? '담당' : '');
+  const rule = CREATE_RULES[v.form];
+  const need = (rule ? rule.headers : []).concat([TEAM_HEADER, EXTRA_HEADERS[0], EXTRA_HEADERS[1], EXTRA_HEADERS[2]]);
+  if (!nameHeader || need.some(function (h) { return header.indexOf(h) < 0; })) return { ok: false, error: 'HEADER_NOT_READY' };
+  const rowNum = Math.max(rows.length, 1) + 1;
+  const cells = Object.assign({}, v.cells);
+  cells[nameHeader] = String(viewer.name || '').trim();
+  if (header.indexOf('사무소') >= 0) cells['사무소'] = String(viewer.office || '').trim();
+  if (header.indexOf('순번') >= 0) {
+    let max = 0;
+    for (let r = 1; r < rows.length; r++) { const n = Number(String((rows[r] || [])[header.indexOf('순번')] || '').trim()); if (Number.isInteger(n) && n > max) max = n; }
+    cells['순번'] = String(max + 1);
+  }
+  cells[TEAM_HEADER] = String(opts.team || '').trim();
+  cells[EXTRA_HEADERS[0]] = makeRecordId(seoulDateStr(opts.nowMs), allIds, opts.rand);
+  cells[EXTRA_HEADERS[1]] = normEmail(viewer.email);
+  cells[EXTRA_HEADERS[2]] = seoulDateTimeStr(opts.nowMs);
+  const writes = Object.keys(cells).filter(function (h) { return cells[h] !== ''; }).map(function (h) {
+    return { range: quoteTab(tab.title) + '!' + colLetter(header.indexOf(h)) + rowNum, value: cells[h] };
+  });
+  const fields = {};
+  header.forEach(function (h) { if (h) fields[h] = cells[h] === undefined ? '' : cells[h]; });
+  return { ok: true, writes: writes, record: { tab: tab.id, row: rowNum, recordId: cells[EXTRA_HEADERS[0]], name: cells[nameHeader],
+    authorEmail: normEmail(viewer.email), authorStatus: 'active', office: String(viewer.office || ''), recordedAt: cells[EXTRA_HEADERS[2]],
+    leaderOpinion: '', reviewState: reviewState({ fields: fields, leaderOpinion: '' }), fields: fields } };
+}
+
+module.exports.recordWindowDays = recordWindowDays;
+module.exports.seoulIsoDate = seoulIsoDate;
+module.exports.validIsoDate = validIsoDate;
+module.exports.checkRecordDate = checkRecordDate;
+module.exports.CREATE_RULES = CREATE_RULES;
+module.exports.validateCreate = validateCreate;
+module.exports.planCreate = planCreate;
+module.exports.createFormFor = createFormFor;

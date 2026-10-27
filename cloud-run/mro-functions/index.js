@@ -3958,7 +3958,12 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   const result = view === 'mine'
     ? competency.buildMine(viewer, users, recordsByTab)
     : competency.buildTeam(viewer, users, recordsByTab, { includeLeft: body.includeLeft === true, isAdmin: isAdmin });
-  res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, tabs: tabs }, result));
+  // 2-다: 팀원 화면(mine)은 기록 추가 달력에 쓸 '기록 가능 기간(일)'(인사평가설정, 없으면 14)과
+  // 기록 추가 입력 칸이 있는 탭(createForms: 탭 키 → 입력 칸 규칙 키)을 함께 받는다. 검사는 저장 때 서버가 다시 한다.
+  const createForms = {};
+  loaded.recTabs.forEach(function (t) { const f = competency.createFormFor(t); if (f) createForms[t.id] = f; });
+  const extra = view === 'mine' ? { recordWindowDays: competency.recordWindowDays(loaded.get('settings') || []), createForms: createForms } : {};
+  res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings, tabs: tabs }, result, extra));
 }
 
 // v1.11 (설계서 4-2-1): 인사평가 파일 시트 정보 — 탭 이름·gid·숨김·순서. useCache면 서버 메모리(5분)에서 먼저 찾는다.
@@ -4050,6 +4055,11 @@ exports.saveCompetencyTest = async (req, res) => {
     // 2-나: 추가매출 결과 적기(팀원) — 관리자 판정과 무관하므로 backfill 분기보다 먼저
     if (action === 'reply') {
       await competencyReply_(req, res, auth, t0, timings);
+      return;
+    }
+    // 2-다: 새 기록 추가(팀원) — 지금은 대면영업만(lib CREATE_RULES)
+    if (action === 'create') {
+      await competencyCreate_(req, res, auth, t0, timings);
       return;
     }
     if (action !== 'backfill') {
@@ -4179,6 +4189,94 @@ async function competencyReply_(req, res, auth, t0, timings) {
       const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
       if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
       return { ok: true, updatedCells: updatedCells, record: Object.assign(plan.record, { authorEmail: String(viewer.email).trim().toLowerCase(), authorStatus: 'active', name: viewer.name }) };
+    } finally {
+      await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
+    }
+  });
+  res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+}
+
+// =====================================================================
+// 역량평가 2-다: saveCompetencyTest action=create — 새 기록 추가. 설계서 v1.21 ⑳-3·㉑·㉓·5-2 쓰기 흐름.
+// - 활성 일반·담당만(㉓). 탭마다 내용 칸 규칙이 있는 탭만(lib CREATE_RULES, 지금은 대면영업) — 그 밖은 TAB_NOT_SUPPORTED.
+// - 입력 검사는 시트를 읽기 전에 → 중복 방지(idempotencyKey 필수) → 사용자 확인 → 잠금(writeLocks/competencyEval) →
+//   잠금 안에서 인사평가설정 + 기록 탭 전부를 다시 읽음(읽기 1번 — 기록ID가 파일 안에서 겹치지 않게, 순번·새 줄 위치) →
+//   ㉑ 날짜 검사(오늘 포함 최근 N일 · 미래 불가 · 그 파일 연도) → values:batchUpdate 1번(2-가·2-나와 같은 API·RAW) → 잠금 풀기.
+// - 1월 유예(전년도 파일 저장)는 이번 범위 밖 — 올해 파일만(year는 받지 않음). 시트 호출: 읽기 3번 + 쓰기 1번.
+// =====================================================================
+async function competencyCreate_(req, res, auth, t0, timings) {
+  const b = req.body || {};
+  if (!b.idempotencyKey || !b.tab || !b.form) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' });
+    return;
+  }
+  const v = competency.validateCreate(b.form, b);
+  if (!v.ok) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: v.error, field: v.field });
+    return;
+  }
+  const result = await withIdempotency(firestore, b.idempotencyKey, 'competencyCreate', async function () {
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    });
+    const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
+    if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+    if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
+    const nowMs = Date.now();
+    const targetYear = competency.seoulYear(nowMs); // 올해 파일만(1월 유예는 별도 단계)
+    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    const holderId = crypto.randomUUID();
+    const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
+      waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
+    });
+    if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+    try {
+      let recTabs, vr;
+      const c0 = Date.now();
+      try {
+        const sheets = (await competencySheetMeta_(client, fileId, false)).sheets; // 잠금 안: 메모리 저장 안 씀
+        recTabs = competency.recordTabsFromSheets(sheets);
+        const target = recTabs.find(function (t) { return t.id === String(b.tab); });
+        if (!target) return { ok: false, error: 'TAB_NOT_FOUND' };
+        if (competency.createFormFor(target) !== v.form) return { ok: false, error: 'TAB_NOT_SUPPORTED' };
+        const hasSettings = sheets.some(function (sh) { return sh && sh.properties && sh.properties.title === competency.SETTINGS_TAB; });
+        const ranges = (hasSettings ? [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C'] : [])
+          .concat(recTabs.map(function (t) { return competency.quoteTab(t.title) + '!A1:Z'; }));
+        vr = await batchGetValues(client, fileId, ranges.map(encodeURIComponent));
+        if (!hasSettings) vr = [{ values: [] }].concat(vr);
+      } catch (e) {
+        const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+        return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus };
+      }
+      timings.competencySheetMs = Date.now() - c0;
+      const windowDays = competency.recordWindowDays((vr[0] && vr[0].values) || []);
+      const dateErr = competency.checkRecordDate(v.date, competency.seoulIsoDate(nowMs), windowDays, targetYear);
+      if (dateErr) return { ok: false, error: dateErr, field: 'meetDate', windowDays: windowDays };
+      const allIds = new Set();
+      recTabs.forEach(function (t, i) {
+        competency.parseTab(t.id, (vr[i + 1] && vr[i + 1].values) || []).forEach(function (r) { if (r.recordId.trim()) allIds.add(r.recordId.trim()); });
+      });
+      const ti = recTabs.findIndex(function (t) { return t.id === String(b.tab); });
+      const plan = competency.planCreate(recTabs[ti], (vr[ti + 1] && vr[ti + 1].values) || [], allIds,
+        { name: viewer.name, email: viewer.email, office: viewer.office }, v, { team: viewer.team, nowMs: nowMs });
+      if (!plan.ok) return plan;
+      const w0 = Date.now();
+      const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+      const wclient = await wauth.getClient();
+      const resp = await wclient.request({
+        url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '/values:batchUpdate',
+        method: 'POST',
+        data: { valueInputOption: 'RAW', data: plan.writes.map(function (w) { return { range: w.range, values: [[w.value]] }; }) }
+      });
+      timings.writeMs = Date.now() - w0;
+      const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+      if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
+      return { ok: true, updatedCells: updatedCells, record: plan.record };
     } finally {
       await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
     }
