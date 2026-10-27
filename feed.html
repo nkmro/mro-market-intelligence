@@ -553,6 +553,38 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-fk { color: var(--text-muted); flex: 0 0 130px; overflow-wrap: anywhere; }
 .cm-fv { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-op { font-size: 13px; color: var(--accent); margin-top: 4px; }
+/* 2-나 추가매출 결과 적기(① 계획 카드 안) */
+.cm-card.flash { animation: flash-highlight 2s ease; } /* 결과 저장 뒤 그 카드 강조(묶음 강조와 같은 2초) */
+.rp-bar { display: flex; justify-content: flex-end; margin-top: 10px; }
+.rp-btn { border: 1px solid var(--accent); color: var(--accent); background: #fff; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.rp-form { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px; display: grid; gap: 10px; }
+.rp-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 4px 8px; font-size: 13px; }
+.rp-k { color: var(--text-muted); } .rp-k b { color: var(--danger); }
+.rp-seg { display: inline-grid; grid-template-columns: 1fr 1fr; width: 220px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.rp-seg button { border: none; background: #fff; padding: 7px 0; font-size: 13px; cursor: pointer; color: var(--text); }
+.rp-seg button + button { border-left: 1px solid var(--border); }
+.rp-seg button.on { background: var(--text); color: #fff; font-weight: 600; }
+.rp-period { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; }
+.rp-pick { border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #fff; cursor: pointer; color: var(--text); }
+.rp-pick:disabled { color: var(--text-muted); background: #f5f4f8; cursor: default; }
+.rp-pick.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.rp-open { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+.rp-cal { position: absolute; top: 40px; left: 0; z-index: 5; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12); padding: 10px; width: 230px; }
+.rp-cal-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
+.rp-cal-h button { border: none; background: none; cursor: pointer; padding: 0 8px; color: var(--text-muted); font-size: 15px; }
+.rp-cal-g { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.rp-cal-g button { border: none; background: none; text-align: center; padding: 7px 0; font-size: 13px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.rp-cal-g button:hover:not(:disabled) { background: #f1eef8; }
+.rp-cal-g button.sel { background: var(--text); color: #fff; font-weight: 600; }
+.rp-cal-g button:disabled { color: #c9c5d4; cursor: default; }
+.rp-in { border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 110px; box-sizing: border-box; }
+.rp-u { font-size: 12px; color: var(--text-muted); margin: 0 10px 0 4px; }
+.rp-help { font-size: 12px; color: var(--text-muted); grid-column: 2; }
+.rp-err { font-size: 12px; color: var(--danger); grid-column: 2; }
+.rp-act { display: flex; gap: 8px; justify-content: flex-end; }
+.rp-msg { font-size: 12px; text-align: right; }
+.rp-msg.err { color: var(--danger); }
+@media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
 @media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
 /* 1단계-라-라-다 (B3, 2026-10-26 재홍님 결정): 탭 칸이 좁아지는 폭(481~860px)에서는 이모지를 위 줄로, 이름은 낱말째 줄바꿈("자기개 / 발" 방지). 480px 이하(짧은 이름)·861px 이상은 그대로 */
 @media (min-width: 481px) and (max-width: 860px) { .cm-tab-emoji { display: block; line-height: 1.1; } .cm-tab > span:first-child { word-break: keep-all; } }
@@ -4281,7 +4313,9 @@ const s = res.summary || { cells: {} }; const cells = Number(res.cells) || 0;
 const people = (Array.isArray(res.people) ? res.people : []).slice().sort(function (a, b) { return COMP_BF_ORDER_.indexOf(a.status) - COMP_BF_ORDER_.indexOf(b.status) || (b.rows - a.rows); });
 const rows = people.map(function (p) { return `<tr><td>${escapeHtml(COMP_BF_STATUS_[p.status] || p.status)}</td><td>${escapeHtml(p.name)}</td><td class="n">${Number(p.rows) || 0}</td><td class="n">${Number(p.cells) || 0}</td></tr>`; }).join('');
 const sc = s.cells || {};
-const head = `<div class="cs-bf-msg">이름 있는 줄 <b>${Number(s.rows) || 0}</b> · 채울 칸 <b>${cells}</b> (기록ID ${Number(sc['기록ID']) || 0} · 작성자이메일 ${Number(sc['작성자이메일']) || 0} · 팀 ${Number(sc['팀']) || 0})${s.complete ? ` · 이미 다 찬 줄 ${Number(s.complete)}` : ''}</div>`;
+// 퇴사·미등록·모르는 이메일 줄은 작성자이메일을 채우지 않는 규칙(4-3) — "정리 끝난 줄" 안에서 몇 줄인지 따로 알림(2026-10-27 재홍님 지적)
+const noEmail = Math.min(Number(s.complete) || 0, (Number(s.left) || 0) + (Number(s.unregistered) || 0) + (Number(s.unknownEmail) || 0));
+const head = `<div class="cs-bf-msg">이름 있는 줄 <b>${Number(s.rows) || 0}</b> · 채울 칸 <b>${cells}</b> (기록ID ${Number(sc['기록ID']) || 0} · 작성자이메일 ${Number(sc['작성자이메일']) || 0} · 팀 ${Number(sc['팀']) || 0})${s.complete ? ` · 정리 끝난 줄 ${Number(s.complete)}${noEmail ? ` (그중 작성자이메일을 일부러 비운 줄 ${noEmail} — 퇴사·미등록)` : ''}` : ''}</div>`;
 const dup = (Array.isArray(res.duplicates) ? res.duplicates : []).map(function (d) { return `${escapeHtml(d.name)}(${Number(d.users) || 0}명) ${Number(d.rows) || 0}줄`; }).join(', ');
 const dupHtml = dup ? `<div class="cs-bf-msg err">동명이인 — 채우지 않음: ${dup}. 이 줄은 시트에서 작성자이메일을 직접 넣어 주세요.</div>` : '';
 const probs = (Array.isArray(res.headerProblems) ? res.headerProblems : []).map(function (p) { return `<li>${escapeHtml(p.tab)}: ${escapeHtml(p.problem)}</li>`; }).join('');
@@ -4466,7 +4500,10 @@ const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
 const fold = (rec.reviewState === 'done' ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
-return `<div class="cm-card${fold}"><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${rows}${opHtml}</div></div>`;
+// 2-나: ①(본인 기록, 일반·담당)의 '계획' 카드에만 [결과 적기] — opts.reply. ②는 opts.reply가 없어 그대로.
+const replyHtml = (opts && opts.reply && t.hasReply && rec.reviewState === 'awaitingReply' && rec.recordId)
+? `<div class="rp-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 결과 적기</button></div>` : '';
+return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${rows}${opHtml}${replyHtml}</div></div>`;
 }
 // 2단계 전 추가매출 카운팅(설계서 v1.15 ⑳): 서버는 달성 여부 칸이 빈 줄(계획만 있는 줄)을 건수에서 뺀다. 그 사실을 안내 문구에 덧붙인다.
 // tabs = 그 화면의 탭 목록, lead = ②(건수표에 "결과 / 계획" 칸이 있음). 달성 여부 칸이 있는 탭이 없으면 덧붙이지 않음.
@@ -4522,7 +4559,9 @@ const isAdd = t.hasReply;
 const list = (isAdd && compMineFilter_ !== 'all') ? all.filter(function (r) { return r.reviewState === compMineFilter_; }) : all;
 const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILTERS_, compMineFilter_, 'switchCompMineFilter_') : '';
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
-const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec); }).join('') : `<div class="cm-empty">${empty}</div>`;
+// 2-나: 결과 적기는 본인 기록을 쓰는 일반·담당만(㉓, 서버도 같은 판정)
+const canReply = ['일반', '담당'].indexOf(String(((res && res.viewer) || {}).role || '')) >= 0;
+const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec, canReply ? { reply: true } : undefined); }).join('') : `<div class="cm-empty">${empty}</div>`;
 return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${filters}${cards}`;
 }
 function compMineTabsHtml_(res) {
@@ -4591,10 +4630,139 @@ compMineTab_ = (n > 0 && replyTab) ? replyTab.key : (firstWith ? firstWith.key :
 }
 const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">내 역량 기록</div>
 <div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div>`;
-const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 계획 중 <b>달성 여부(Y/N) 회신이 필요한 줄이 ${n}건</b> 있어요.</div>` : '';
+const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 <b>결과를 적을 계획이 ${n}건</b> 있어요. 카드의 [결과 적기]를 눌러 주세요.</div>` : '';
 const cols = `--cm-cols:${compColsCss_(compTabs_.length, 6)}; --cm-mcols:${compColsCss_(compTabs_.length, 5)};`;
 root.innerHTML = `<div class="settings-panel" style="${cols}">${head}${notice}${compTeamHtml_(res)}
 <div class="cm-mine"><div class="cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
+}
+// ==== 2-나 추가매출 결과 적기 (설계서 v1.20 ⑳ · 2026-10-27 재홍님 결정) ====
+// ① '계획' 카드의 [결과 적기] → 카드 안 폼. Y 달성 = 실적 반영 시점(시작 달 ~ 끝 달 또는 끝 없음) + 실적결산(매출·이익 천원) + 아이템키(숫자, 쉼표) 필수,
+// N 미달성 = 그 세 칸 없음. 저장 = saveCompetencyTest action reply(서버가 같은 검사를 한 번 더). 성공하면 서버가 돌려준 기록으로
+// 그 카드만 바꾸고(계획 → 미평가) 숫자(배지·안내·필터·탭 점·팀 현황 내 줄)를 고친다 — 다시 불러오지 않음.
+// 달력: 브라우저 기본 달 고르기(input type=month)는 PC Safari·Firefox에서 지원 안 됨(caniuse) → 12개월 칸을 직접 그림.
+const compReplyState_ = {};
+function compReplyYm_(y, m) { return String(y % 100).padStart(2, '0') + String(m).padStart(2, '0'); }
+function compReplyYmText_(ym) { return ym ? '20' + ym.slice(0, 2) + '년 ' + Number(ym.slice(2)) + '월' : ''; }
+function compReplyWrap_(el) { return el && el.closest('.rp-bar, .rp-form'); }
+function compReplyOpen_(btn) {
+const bar = compReplyWrap_(btn); if (!bar) return;
+const rid = bar.dataset.rid;
+compReplyState_[rid] = { tab: bar.dataset.tab, achieved: '', from: '', to: '', open: false, cal: '', calYear: Number(new Date().getFullYear()), saving: false };
+const form = document.createElement('div');
+form.className = 'rp-form'; form.dataset.rid = rid; form.dataset.tab = bar.dataset.tab;
+bar.replaceWith(form);
+compReplyRender_(form);
+}
+function compReplyCancel_(btn) {
+const form = compReplyWrap_(btn); if (!form) return;
+delete compReplyState_[form.dataset.rid];
+form.outerHTML = `<div class="rp-bar" data-tab="${escapeHtml(form.dataset.tab)}" data-rid="${escapeHtml(form.dataset.rid)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 결과 적기</button></div>`;
+}
+// 폼 다시 그리기(입력한 매출·이익 값은 보존). errs = { field: 글자 }
+function compReplyRender_(form, errs, msg) {
+const st = compReplyState_[form.dataset.rid]; if (!st) return;
+errs = errs || {};
+const keep = function (cls) { const el = form.querySelector('.' + cls); return el ? el.value : ''; };
+const sales = keep('rp-sales'), profit = keep('rp-profit'), items = keep('rp-items');
+const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
+const seg = ['Y', 'N'].map(function (v) { return `<button type="button" class="${st.achieved === v ? 'on' : ''}" onclick="compReplySet_(this,'${v}')">${v === 'Y' ? 'Y 달성' : 'N 미달성'}</button>`; }).join('');
+let cal = '';
+if (st.cal) {
+const months = [];
+for (let m = 1; m <= 12; m++) {
+const ym = compReplyYm_(st.calYear, m);
+const cur = st.cal === 'from' ? st.from : st.to;
+const off = st.cal === 'to' && st.from && ym < st.from;
+months.push(`<button type="button" class="${ym === cur ? 'sel' : ''}" ${off ? 'disabled' : ''} onclick="compReplyPick_(this,'${ym}')">${m}월</button>`);
+}
+cal = `<div class="rp-cal"><div class="rp-cal-h"><button type="button" onclick="compReplyYear_(this,-1)" aria-label="이전 해">‹</button><b>${st.calYear}년</b><button type="button" onclick="compReplyYear_(this,1)" aria-label="다음 해">›</button></div><div class="rp-cal-g">${months.join('')}</div>${st.cal === 'to' && st.from ? `<div class="rp-help" style="margin-top:6px">시작 달(${escapeHtml(compReplyYmText_(st.from))})보다 앞선 달은 고를 수 없습니다</div>` : ''}</div>`;
+}
+const yes = st.achieved === 'Y';
+const yHtml = yes ? `<div class="rp-row"><span class="rp-k">실적 반영 시점 <b>*</b></span><span class="rp-period">
+<button type="button" class="rp-pick${st.cal === 'from' ? ' on' : ''}" onclick="compReplyCal_(this,'from')">📅 ${st.from ? escapeHtml(compReplyYmText_(st.from)) : '시작 달 고르기'}</button><span>~</span>
+<button type="button" class="rp-pick${st.cal === 'to' ? ' on' : ''}" ${st.open ? 'disabled' : ''} onclick="compReplyCal_(this,'to')">📅 ${st.open ? '끝 없음' : (st.to ? escapeHtml(compReplyYmText_(st.to)) : '끝 달 고르기')}</button>
+<label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compReplyOpenEnd_(this)"> 끝 없음(계속)</label>${cal}</span>
+<span class="rp-help">언제부터 언제까지 실적에 반영되는지</span>${err('reflectFrom')}${err('reflectTo')}</div>
+<div class="rp-row"><span class="rp-k">당해년도 실적결산 <b>*</b></span><span>매출 <input class="rp-in rp-sales" inputmode="numeric" placeholder="숫자" value="${escapeHtml(sales)}"><span class="rp-u">천원</span>이익 <input class="rp-in rp-profit" inputmode="numeric" placeholder="숫자" value="${escapeHtml(profit)}"><span class="rp-u">천원</span></span>
+<span class="rp-help">숫자만 · 단위 천원 (0도 가능, 이익은 손해면 -)</span>${err('settleSales')}${err('settleProfit')}</div>
+<div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in rp-items" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(items)}">
+<span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
+const nHtml = st.achieved === 'N' ? '<div class="rp-help" style="grid-column:1/-1">미달성(N)은 실적이 없으므로 실적 반영 시점·실적결산·아이템키 칸이 없습니다</div>' : '';
+form.innerHTML = `<div class="rp-row"><span class="rp-k">달성 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('achieved')}</div>${yHtml}${nHtml}
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compReplyCancel_(this)" ${st.saving ? 'disabled' : ''}>취소</button><button type="button" class="btn-primary" onclick="compReplySave_(this)" ${st.saving ? 'disabled' : ''}>${st.saving ? '저장하는 중...' : '저장'}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "저장하면 '미평가'로 바뀌어 팀장님 평가를 기다립니다")}</div>`;
+}
+function compReplySt_(el) { const f = compReplyWrap_(el); return f ? { form: f, st: compReplyState_[f.dataset.rid] } : {}; }
+function compReplySet_(el, v) { const o = compReplySt_(el); if (!o.st || o.st.saving) return; o.st.achieved = v; o.st.cal = ''; compReplyRender_(o.form); }
+function compReplyCal_(el, which) {
+const o = compReplySt_(el); if (!o.st || o.st.saving) return;
+o.st.cal = o.st.cal === which ? '' : which;
+const base = which === 'to' ? (o.st.to || o.st.from) : o.st.from;
+o.st.calYear = base ? 2000 + Number(base.slice(0, 2)) : Number(new Date().getFullYear());
+compReplyRender_(o.form);
+}
+function compReplyYear_(el, d) { const o = compReplySt_(el); if (!o.st) return; o.st.calYear += d; compReplyRender_(o.form); }
+function compReplyPick_(el, ym) {
+const o = compReplySt_(el); if (!o.st) return;
+if (o.st.cal === 'from') { o.st.from = ym; if (o.st.to && o.st.to < ym) o.st.to = ''; } else { o.st.to = ym; }
+o.st.cal = '';
+compReplyRender_(o.form);
+}
+function compReplyOpenEnd_(el) { const o = compReplySt_(el); if (!o.st) return; o.st.open = !!el.checked; if (o.st.open) o.st.to = ''; o.st.cal = ''; compReplyRender_(o.form); }
+// 화면 검사(서버 validateReply와 같은 규칙)
+function compReplyCheck_(st, sales, profit, items) {
+const e = {};
+if (st.achieved !== 'Y' && st.achieved !== 'N') e.achieved = '달성 여부를 골라 주세요.';
+if (st.achieved !== 'Y') return e;
+if (!st.from) e.reflectFrom = '시작 달을 골라 주세요.';
+if (!st.open && !st.to) e.reflectTo = "끝 달을 고르거나 '끝 없음(계속)'에 체크해 주세요.";
+const num = function (v, neg) { const x = String(v || '').replace(/[,\s]/g, ''); return /^-?\d+$/.test(x) && (neg || x.charAt(0) !== '-') && Math.abs(Number(x)) <= 1000000000; };
+if (!num(sales, false)) e.settleSales = '매출을 숫자로 적어 주세요(천원, 0 이상).';
+if (!num(profit, true)) e.settleProfit = '이익을 숫자로 적어 주세요(천원).';
+// 아이템키: 숫자만(자릿수 상관없음), 여러 개는 쉼표 — 서버 parseItemKeys와 같은 규칙
+const keys = String(items || '').split(',').map(function (x) { return x.trim(); });
+if (!String(items || '').trim() || keys.some(function (x) { return !/^\d{1,30}$/.test(x); })) e.itemKeys = '아이템키를 숫자로 적어 주세요(여러 개는 쉼표로 구분).';
+return e;
+}
+async function compReplySave_(el) {
+const o = compReplySt_(el); if (!o.st || o.st.saving) return;
+const st = o.st, form = o.form, rid = form.dataset.rid;
+const sales = (form.querySelector('.rp-sales') || {}).value || '', profit = (form.querySelector('.rp-profit') || {}).value || '', items = (form.querySelector('.rp-items') || {}).value || '';
+const errs = compReplyCheck_(st, sales, profit, items);
+if (Object.keys(errs).length) { compReplyRender_(form, errs); return; }
+st.saving = true; compReplyRender_(form);
+const res = await compSaveFetch_({ action: 'reply', tab: st.tab, recordId: rid, idempotencyKey: generateIdempotencyKey_(), year: compMineRes_ && compMineRes_.year,
+achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: sales, settleProfit: profit, itemKeys: items }, 30000);
+st.saving = false;
+if (res && res.ok && res.record) { compReplyApply_(res.record); return; }
+const f = document.querySelector(`.rp-form[data-rid="${CSS.escape(rid)}"]`);
+if (!f) return;
+const m = { ALREADY_REPLIED: '이미 결과가 적혀 있어요. 화면을 새로 열면 보입니다.', NOT_YOUR_RECORD: '본인 기록에만 결과를 적을 수 있어요.', FORBIDDEN: '팀원(일반·담당)만 결과를 적을 수 있어요.',
+RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.', DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 팀장님께 알려 주세요.',
+CELL_NOT_EMPTY: '시트의 실적 칸에 이미 값이 있어요. 팀장님께 확인해 주세요.', HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.',
+LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
+BAD_INPUT: '입력값을 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.' };
+const text = !res ? '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요.' : (m[res.error] || ('저장하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')'));
+compReplyRender_(f, res && res.field ? { [res.field]: '이 칸을 확인해 주세요.' } : null, { err: true, text: text });
+}
+// 저장 성공: 서버가 돌려준 기록으로 compMineRes_를 고치고 화면을 다시 그림(서버 다시 안 부름) → 그 카드로 내려가 잠깐 강조
+function compReplyApply_(rec) {
+const res = compMineRes_; if (!res) return;
+delete compReplyState_[rec.recordId];
+const list = compMineList_(res, rec.tab);
+const i = list.findIndex(function (r) { return r.recordId === rec.recordId; });
+if (i >= 0) list[i] = Object.assign({}, list[i], rec);
+res.awaitingReply = Math.max(0, (Number(res.awaitingReply) || 0) - 1);
+// 팀 현황 내 줄: 결과를 적은 줄부터 건수에 들어감(v1.15) → 내 줄 그 탭 +1
+const me = String((res.viewer && res.viewer.name) || '').replace(/\s+/g, '');
+(res.teamCounts || []).forEach(function (m) { if (me && String(m.name || '').replace(/\s+/g, '') === me) { m.byTab = m.byTab || {}; m.byTab[rec.tab] = (Number(m.byTab[rec.tab]) || 0) + 1; } });
+compSetBadge_(res.awaitingReply);
+compMineTab_ = rec.tab;
+renderCompMine_(res);
+let card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`);
+// '계획' 필터를 보고 있었다면 바뀐 카드가 목록에서 빠지므로 '전체'로 바꿔서 보여준다
+if (!card && compMineFilter_ !== 'all') { compMineFilter_ = 'all'; renderCompMine_(res); card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`); }
+if (card) compScrollFlash_(card, true);
 }
 
 // ==== 인사평가 › 팀 역량평가 (1단계-라-라, 설계서 3장 ② v1.9 · 2-2 · 부록 B) ====
