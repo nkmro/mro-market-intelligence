@@ -469,6 +469,17 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cs-none b { display: inline-block; font-size: 11px; font-weight: 700; color: var(--danger); border: 1px solid var(--danger); border-radius: 8px; padding: 0 6px; margin-right: 4px; }
 .cs-file a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .cs-sec { font-size: 13px; font-weight: 700; color: var(--accent); margin: 18px 0 0; padding-top: 4px; }
+/* 2-가 기존 기록 정리(관리자): 팀 칸 점검 · 미리보기 표 · 채우기 */
+.cs-ok { color: var(--text); font-weight: 600; }
+.cs-warn { color: var(--danger); font-weight: 600; }
+.cs-bf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.cs-bf-msg { font-size: 13px; margin: 8px 0; line-height: 1.5; }
+.cs-bf-msg.err { color: var(--danger); }
+.cs-bf-wrap { overflow-x: auto; }
+.cs-bf-table { border-collapse: collapse; font-size: 13px; margin: 6px 0; min-width: 320px; }
+.cs-bf-table th, .cs-bf-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.cs-bf-table th { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.cs-bf-table td.n { text-align: right; }
 @media (max-width: 480px) { .cs-val { width: 132px; } }
 .cc-section { font-size: 12px; font-weight: 700; color: var(--text-muted); margin: 14px 0 6px; }
 .cc-comp { border-top: 1px solid var(--border); padding: 12px 0; }
@@ -994,6 +1005,8 @@ const CLOUD_RUN_UNPIN_COMMENT_URL = 'https://asia-northeast3-mro-market-intellig
 const CLOUD_RUN_SUGGEST_MATERIALS_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/suggestMaterialsTest';
 // 1단계-라-나: 인사평가 읽기(view=mine/team/criteria). 대체 경로 없음 — 실패 시 화면 안내만(설계서 7장, 읽기 대체는 3단계).
 const CLOUD_RUN_GET_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCompetencyTest';
+// 역량평가 2-가: 쓰기(saveCompetencyTest). 지금은 관리자 '기존 기록 정리'(action backfill)만.
+const CLOUD_RUN_SAVE_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/saveCompetencyTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -4221,7 +4234,86 @@ root.innerHTML = `<div class="settings-panel">
 <div class="cs-sec">기간 규칙</div>${rules}
 <div class="cs-sec">탭 이모지 <span class="settings-row-desc" style="font-weight:400;">· 기록 탭 ${tabs.length}개 자동 인식</span></div>${emojis || '<div class="cm-empty">기록 탭을 찾지 못했어요.</div>'}
 ${extra ? `<div class="cs-sec">그 밖의 줄</div>${extra}` : ''}
+${compBackfillSectionHtml_(tabs)}
 </div>`;
+}
+// ==== 인사평가 설정 › 기존 기록 정리 (2-가, 설계서 v1.19 4-3) — 관리자만 보이는 화면(이 설정 화면 자체가 관리자 전용) ====
+// 서버 saveCompetencyTest action=backfill: preview(시트에 안 씀) → apply(빈 칸만, 잠금·중복 방지, 미리보기 칸 수와 다르면 멈춤).
+// 팀 칸 점검은 이 화면을 열 때 이미 받은 ping 응답(teamColumnOk·warnings)으로 그림 — 서버를 더 부르지 않음.
+const COMP_BF_STATUS_ = { ok: '정상', left: '퇴사(비활성)', unregistered: '미등록', unknownEmail: '모르는 이메일', duplicate: '동명이인' };
+const COMP_BF_ORDER_ = ['ok', 'left', 'unregistered', 'unknownEmail', 'duplicate'];
+function compBackfillSectionHtml_(tabs) {
+// 모두 정상이면 한 줄("모두 정상"), 아니면 문제 있는 탭만 한 줄씩
+const bad = tabs.filter(function (t) { return t.teamColumnOk !== true; });
+const teamRows = !bad.length
+? compSettingRowHtml_("'팀' 칸 위치", "기록 탭 " + tabs.length + "개 · '기록ID' 바로 왼쪽이면 정상", '<span class="cs-ok">모두 정상</span>')
+: bad.map(function (t) {
+const w = (t.warnings || []).filter(function (x) { return /'팀'/.test(x); })[0] || '점검 결과 없음(서버 업데이트 전)';
+return compSettingRowHtml_(t.label + " 탭 '팀' 칸", "'기록ID' 바로 왼쪽이면 정상", `<span class="cs-warn">${escapeHtml(w)}</span>`);
+}).join('');
+return `<div class="cs-sec">기존 기록 정리 <span class="settings-row-desc" style="font-weight:400;">· 빈 칸만 채움</span></div>
+<div class="settings-row-desc" style="margin-top:4px;">시트에 이미 있는 기록에 기록ID · 작성자이메일 · 팀(동부)을 채웁니다. 값이 있는 칸은 그대로 두고, 기록일시는 비워 둡니다. 퇴사·미등록은 기록ID·팀만, 동명이인은 채우지 않습니다.</div>
+${teamRows}
+<div class="cs-bf-bar"><button class="btn-secondary" id="cs-bf-preview-btn" onclick="compBackfillPreview_()">미리보기</button><span class="settings-row-desc">시트에 쓰지 않고 채울 칸만 셉니다</span></div>
+<div id="cs-bf-out"></div>`;
+}
+async function compSaveFetch_(body, ms) {
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, ms || 45000);
+const res = await fetch(CLOUD_RUN_SAVE_COMPETENCY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+return res;
+} catch (e) { return null; }
+}
+function compBackfillErrText_(res) {
+if (!res) return '응답을 받지 못했어요. 채워졌을 수도 있으니 먼저 미리보기로 확인해 주세요.';
+const m = { FORBIDDEN: '관리자만 할 수 있어요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 해 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '같은 요청을 처리하는 중이에요. 잠시 후 미리보기로 확인해 주세요.',
+PLAN_CHANGED: '미리보기 뒤에 시트가 바뀌어 채우지 않았어요. 아래 새 미리보기를 확인하고 다시 눌러 주세요.', HEADER_NOT_READY: '탭 머리글이 맞지 않아 채우지 않았어요. 아래 문제를 시트에서 고친 뒤 다시 미리보기를 눌러 주세요.',
+PARTIAL_WRITE: '일부 칸만 채워졌을 수 있어요. 미리보기로 남은 칸을 확인해 주세요.' };
+if (m[res.error]) return m[res.error];
+if (['SESSION_EXPIRED', 'SESSION_NOT_FOUND', 'SHEET_ACCESS_FAILED', 'COMPETENCY_SETTINGS_MISSING'].indexOf(res.error) >= 0) return compErrorText_(res);
+return '처리하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
+}
+// 미리보기 결과(서버가 apply 실패 때도 같은 모양을 함께 돌려줌) → 요약 · 사람별 표 · 동명이인 · 머리글 문제 · 채우기 버튼
+function compBackfillPlanHtml_(res) {
+const s = res.summary || { cells: {} }; const cells = Number(res.cells) || 0;
+const people = (Array.isArray(res.people) ? res.people : []).slice().sort(function (a, b) { return COMP_BF_ORDER_.indexOf(a.status) - COMP_BF_ORDER_.indexOf(b.status) || (b.rows - a.rows); });
+const rows = people.map(function (p) { return `<tr><td>${escapeHtml(COMP_BF_STATUS_[p.status] || p.status)}</td><td>${escapeHtml(p.name)}</td><td class="n">${Number(p.rows) || 0}</td><td class="n">${Number(p.cells) || 0}</td></tr>`; }).join('');
+const sc = s.cells || {};
+const head = `<div class="cs-bf-msg">이름 있는 줄 <b>${Number(s.rows) || 0}</b> · 채울 칸 <b>${cells}</b> (기록ID ${Number(sc['기록ID']) || 0} · 작성자이메일 ${Number(sc['작성자이메일']) || 0} · 팀 ${Number(sc['팀']) || 0})${s.complete ? ` · 이미 다 찬 줄 ${Number(s.complete)}` : ''}</div>`;
+const dup = (Array.isArray(res.duplicates) ? res.duplicates : []).map(function (d) { return `${escapeHtml(d.name)}(${Number(d.users) || 0}명) ${Number(d.rows) || 0}줄`; }).join(', ');
+const dupHtml = dup ? `<div class="cs-bf-msg err">동명이인 — 채우지 않음: ${dup}. 이 줄은 시트에서 작성자이메일을 직접 넣어 주세요.</div>` : '';
+const probs = (Array.isArray(res.headerProblems) ? res.headerProblems : []).map(function (p) { return `<li>${escapeHtml(p.tab)}: ${escapeHtml(p.problem)}</li>`; }).join('');
+const probHtml = probs ? `<div class="cs-bf-msg err">탭 머리글을 먼저 고쳐야 채울 수 있어요.<ul style="margin:4px 0 0 18px; padding:0;">${probs}</ul></div>` : '';
+const btn = !res.canApply ? '' : (cells > 0
+? `<div class="cs-bf-bar"><button class="btn-primary" id="cs-bf-apply-btn" onclick="compBackfillApply_(${cells})">빈 칸 채우기 (${cells}칸)</button><span class="settings-row-desc">시트 사본을 먼저 만들어 두세요</span></div>`
+: '<div class="cs-bf-msg">채울 칸이 없어요.</div>');
+return `${head}${people.length ? `<div class="cs-bf-wrap"><table class="cs-bf-table"><tr><th>상태</th><th>이름</th><th>줄</th><th>채울 칸</th></tr>${rows}</table></div>` : ''}${dupHtml}${probHtml}${btn}`;
+}
+async function compBackfillPreview_() {
+const out = document.getElementById('cs-bf-out'); const b = document.getElementById('cs-bf-preview-btn');
+if (!out) return;
+if (b) b.disabled = true;
+out.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>시트를 읽는 중...</div>`;
+const res = await compSaveFetch_({ action: 'backfill', mode: 'preview' }, 30000);
+if (b) b.disabled = false;
+out.innerHTML = (res && res.ok) ? compBackfillPlanHtml_(res) : `<div class="cs-bf-msg err">${escapeHtml(compBackfillErrText_(res))}</div>`;
+}
+async function compBackfillApply_(cells) {
+if (!confirm(`빈 칸 ${cells}칸을 채울까요? 인사평가 시트에 바로 씁니다. 이미 값이 있는 칸은 그대로 둡니다.`)) return;
+const out = document.getElementById('cs-bf-out'); const b = document.getElementById('cs-bf-apply-btn'); const pb = document.getElementById('cs-bf-preview-btn');
+if (b) { b.disabled = true; b.textContent = '채우는 중...'; }
+if (pb) pb.disabled = true;
+const res = await compSaveFetch_({ action: 'backfill', mode: 'apply', idempotencyKey: generateIdempotencyKey_(), expectCells: cells }, 45000);
+if (pb) pb.disabled = false;
+if (!out) return;
+if (res && res.ok) {
+out.innerHTML = `<div class="cs-bf-msg"><b>✓ ${Number(res.updatedCells) || 0}칸을 채웠어요.</b> 미리보기를 다시 누르면 남은 칸(동명이인 등)을 볼 수 있어요.</div>`;
+return;
+}
+// 실패: 서버가 새로 읽은 계획(summary 등)을 함께 주면 그 표를 아래에 다시 그림(채우기 버튼 포함 — 새 칸 수로)
+out.innerHTML = `<div class="cs-bf-msg err">${escapeHtml(compBackfillErrText_(res))}</div>` + (res && res.summary ? compBackfillPlanHtml_(res) : '');
 }
 async function loadCompCriteriaPage() {
 const root = document.getElementById('comp-criteria-view');

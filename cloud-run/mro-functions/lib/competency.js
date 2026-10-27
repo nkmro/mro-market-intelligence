@@ -359,3 +359,119 @@ module.exports.linkCriteria = linkCriteria;
 module.exports.titleFieldOf = titleFieldOf;
 module.exports.describeTabs = describeTabs;
 module.exports.makeTtlCache = makeTtlCache;
+
+// =====================================================================
+// 2-가 (설계서 v1.19 4-3): 기존 기록 정리(backfill) — 순수 함수. 시트 입출력은 index.js saveCompetencyTest.
+// 빈 칸만 채운다(이미 값이 있는 칸은 절대 덮어쓰지 않음). 기록일시는 비워 둔다(⑤ — 월별 표 '기존' 칸).
+//   정상(이름이 사용자팀마스터에 딱 1명·활성, 또는 작성자이메일이 활성 사용자) → 기록ID·작성자이메일·팀
+//   퇴사(비활성)·미등록·모르는 이메일 → 기록ID·팀만(작성자이메일 비움, 2-2 퇴사자 기록)
+//   동명이인(같은 이름 2명 이상) → 채우지 않음, 따로 알림
+// 팀 칸 = 기록할 때의 소속팀(v1.6). 기존 기록은 모두 동부(지금까지 동부 전용 파일, 2026-10-27 재홍님 확인).
+// =====================================================================
+const TEAM_HEADER = '팀';
+const BACKFILL_TEAM = '동부';
+const RECORD_ID_PREFIX = 'CE-';
+
+// v1.19: '팀' 칸은 '기록ID' 바로 왼쪽(끝 6칸은 맨 끝 그대로 — checkHeaderRow). ping 경고·채우기 전 점검에 쓴다.
+function checkTeamColumn(headerRow) {
+  const h = (headerRow || []).map(function (v) { return String(v === undefined ? '' : v).trim(); });
+  const teamIndex = h.indexOf(TEAM_HEADER); const idIndex = h.indexOf(EXTRA_HEADERS[0]);
+  let warning = '';
+  if (teamIndex < 0) warning = "'팀' 칸 없음('기록ID' 바로 왼쪽에 추가)";
+  else if (h.lastIndexOf(TEAM_HEADER) !== teamIndex) warning = "'팀' 칸이 2개";
+  else if (idIndex < 0 || teamIndex !== idIndex - 1) warning = "'팀' 칸 위치: '기록ID' 바로 왼쪽이 아님";
+  return { ok: !warning, teamIndex: teamIndex, idIndex: idIndex, warning: warning };
+}
+// 0 → A, 25 → Z, 26 → AA
+function colLetter(i) {
+  let n = Number(i) + 1; let s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+// 서울 날짜 'YYYYMMDD'
+function seoulDateStr(nowMs) {
+  const d = new Date((nowMs === undefined ? Date.now() : nowMs) + 9 * 3600 * 1000);
+  return String(d.getUTCFullYear()) + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0');
+}
+// 기록ID: CE-YYYYMMDD-xxxx(4-3 표의 모양). taken(Set)에 없는 값이 나올 때까지 다시 뽑는다 — 파일 안에서 겹치지 않게.
+// rand() → 0 이상 1 미만(시험에서 바꿔 넣음). 64번 안에 못 찾으면 8자리로 늘린다.
+function makeRecordId(dateStr, taken, rand) {
+  const r = rand || Math.random;
+  for (let k = 0; k < 64; k++) {
+    const id = RECORD_ID_PREFIX + dateStr + '-' + Math.floor(r() * 0x10000).toString(16).padStart(4, '0');
+    if (!taken.has(id)) { taken.add(id); return id; }
+  }
+  for (;;) {
+    const id = RECORD_ID_PREFIX + dateStr + '-' + Math.floor(r() * 0x100000000).toString(16).padStart(8, '0');
+    if (!taken.has(id)) { taken.add(id); return id; }
+  }
+}
+// 작성자 찾기(채우기용): resolveAuthor와 같은 규칙이지만 동명이인·미등록을 나눠서 돌려준다.
+function backfillAuthor(rec, users) {
+  if (rec.authorEmail) {
+    const u = users.find(function (x) { return normEmail(x.email) === rec.authorEmail; });
+    return u ? { status: u.status === '활성' ? 'ok' : 'left', user: u } : { status: 'unknownEmail', user: null };
+  }
+  const hits = users.filter(function (u) { return normName(u.name) && normName(u.name) === normName(rec.name); });
+  if (hits.length === 0) return { status: 'unregistered', user: null, count: 0 };
+  if (hits.length > 1) return { status: 'duplicate', user: null, count: hits.length };
+  return { status: hits[0].status === '활성' ? 'ok' : 'left', user: hits[0] };
+}
+// tabs = [{ id, title, values }] (values = 'A1:Z' 그대로, 1행 머리글). users = 사용자팀마스터.
+// 반환: headerProblems(있으면 채우기 금지) · writes([{ range, value, tab, row, col }]) · people · summary · duplicates.
+function planBackfill(tabs, users, opts) {
+  opts = opts || {};
+  const team = opts.team || BACKFILL_TEAM;
+  const dateStr = seoulDateStr(opts.nowMs);
+  const headerProblems = []; const parsed = [];
+  const taken = new Set();
+  (tabs || []).forEach(function (t) {
+    const header = ((t.values || [])[0]) || [];
+    const hc = checkHeaderRow(header); const tc = checkTeamColumn(header);
+    if (!hc.ok) headerProblems.push({ tab: t.title, problem: '끝 6칸(기록ID~첨부) 이름·순서가 맞지 않음' + (hc.missing.length ? ' — 없음: ' + hc.missing.join(', ') : '') });
+    if (!tc.ok) headerProblems.push({ tab: t.title, problem: tc.warning });
+    const recs = parseTab(t.id, t.values || []);
+    recs.forEach(function (rec) { if (rec.recordId.trim()) taken.add(rec.recordId.trim()); });
+    parsed.push({ t: t, header: header.map(function (v) { return String(v === undefined ? '' : v).trim(); }), recs: recs });
+  });
+  const writes = []; const people = {}; const duplicates = {};
+  const summary = { rows: 0, ok: 0, left: 0, unregistered: 0, unknownEmail: 0, duplicate: 0, complete: 0, cells: { '기록ID': 0, '작성자이메일': 0, '팀': 0 } };
+  parsed.forEach(function (p) {
+    p.recs.forEach(function (rec) {
+      summary.rows++;
+      const a = backfillAuthor(rec, users);
+      summary[a.status]++;
+      const key = rec.name + '|' + a.status;
+      if (!people[key]) people[key] = { name: rec.name, status: a.status, rows: 0, cells: 0 };
+      people[key].rows++;
+      if (a.status === 'duplicate') { duplicates[rec.name] = { name: rec.name, users: a.count, rows: (duplicates[rec.name] ? duplicates[rec.name].rows : 0) + 1 }; return; }
+      const fill = [];
+      const empty = function (h) { return !String(rec.fields[h] === undefined ? '' : rec.fields[h]).trim(); };
+      if (empty('기록ID')) fill.push(['기록ID', function () { return makeRecordId(dateStr, taken, opts.rand); }]);
+      if (a.status === 'ok' && empty('작성자이메일')) fill.push(['작성자이메일', function () { return normEmail(a.user.email); }]);
+      if (empty(TEAM_HEADER)) fill.push([TEAM_HEADER, function () { return team; }]);
+      if (!fill.length) { summary.complete++; return; }
+      fill.forEach(function (f) {
+        const col = p.header.indexOf(f[0]);
+        if (col < 0) return; // 머리글 문제 → headerProblems에 이미 있음(채우기 금지)
+        writes.push({ range: quoteTab(p.t.title) + '!' + colLetter(col) + rec.row, value: f[1](), tab: p.t.title, row: rec.row, col: f[0] });
+        summary.cells[f[0]]++; people[key].cells++;
+      });
+    });
+  });
+  return {
+    headerProblems: headerProblems, writes: writes, summary: summary,
+    people: Object.keys(people).map(function (k) { return people[k]; }),
+    duplicates: Object.keys(duplicates).map(function (k) { return duplicates[k]; }),
+    canApply: headerProblems.length === 0
+  };
+}
+
+module.exports.TEAM_HEADER = TEAM_HEADER;
+module.exports.BACKFILL_TEAM = BACKFILL_TEAM;
+module.exports.checkTeamColumn = checkTeamColumn;
+module.exports.colLetter = colLetter;
+module.exports.seoulDateStr = seoulDateStr;
+module.exports.makeRecordId = makeRecordId;
+module.exports.backfillAuthor = backfillAuthor;
+module.exports.planBackfill = planBackfill;
