@@ -4615,7 +4615,8 @@ const pr = compLeadPr_(res);
 const n = compLeadTabs_.length;
 const recs = Array.isArray(res.records) ? res.records : [];
 const planOf = function (t, email) { return recs.filter(function (r) { return r.tab === t.key && (!email || r.authorEmail === email); }).length; };
-const withPlan = function (c, plan) { return c.replace(/<\/td>$/, `<span class="ct-of"> / ${plan}</span></td>`); };
+// "/ 계획" 숫자도 누르면 그 탭 '전체' 필터로 이동(2026-10-27 재홍님 요청) — 그 팀원 묶음 '총 N' = 계획 수라 누른 숫자와 카드 수가 같음. 결과가 0이어도 계획 숫자는 누를 수 있음.
+const withPlan = function (c, plan, go) { return c.replace(/<\/td>$/, `<span class="ct-of"> / ${go ? `<button class="ct-go" onclick="${go}" title="눌러서 이 계획 보기">${plan}</button>` : plan}</span></td>`); };
 const sep2 = function (c, i) { return i === 0 ? c.replace('<td', '<td data-sep2') : c; };
 const tot = compLeadTabs_.map(function () { return 0; }); const totPlan = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totPr = 0, totDone = 0;
 const head = `<tr><th>이름</th><th>사무소</th><th>${pr}</th><th>평가 완료</th><th class="ct-sum">기록 합계</th>${compLeadTabs_.map(function (t, i) { const cls = (i === 0 ? 'ct-sep2' : '') + (t.hasReply ? ' ct-plan-th' : ''); return `<th${cls.trim() ? ` class="${cls.trim()}"` : ''}${t.hasReply ? '' : ` title="${escapeHtml(t.label)}"`}>${t.hasReply ? `<button class="ct-plan-btn" onclick="toggleCompLeadPlan_()" aria-expanded="${compLeadShowPlan_ ? 'true' : 'false'}" title="눌러서 계획 수 ${compLeadShowPlan_ ? '숨기기' : '보기'}">` : ''}${(t.hasReply && compLeadShowPlan_) ? `${escapeHtml(t.label)}<span class="ct-plan-caret">▾</span><span class="ct-th-label">결과 / 계획</span>` : `${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}${t.hasReply ? '<span class="ct-plan-caret">▸</span>' : ''}</span>`}${t.hasReply ? '</button>' : ''}</th>`; }).join('')}</tr>`;
@@ -4625,7 +4626,7 @@ const by = m.byTab || {}; let sum = 0; const mi = members.indexOf(m); const left
 const cells = compLeadTabs_.map(function (t, i) {
 const v = Number(by[t.key]) || 0; sum += v; if (!left) tot[i] += v;
 let c = sep2(compLeadNum_(v, '', compLeadGoAttr_(t.key, 'all', mi)), i);
-if (t.hasReply) { const plan = planOf(t, m.email); if (!left) totPlan[i] += plan; if (plan) c = withPlan(c, plan); }
+if (t.hasReply) { const plan = planOf(t, m.email); if (!left) totPlan[i] += plan; if (plan) c = withPlan(c, plan, compLeadGoAttr_(t.key, 'all', mi)); }
 return c;
 }).join('');
 if (left) return `<tr class="ct-left">${compLeadWho_(m)}${dash}${dash}${compLeadNum_(sum, 'ct-sum')}${cells}</tr>`;
@@ -4637,7 +4638,7 @@ const goDone = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'done'), 'done', mi);
 return `<tr>${compLeadWho_(m)}${compLeadNum_(p, 'ct-pr', goPr)}${compLeadNum_(done, 'ct-done', goDone)}${compLeadNum_(sum, 'ct-sum')}${cells}</tr>`;
 }, 5 + n);
 const hasLeft = members.some(function (m) { return m.status === 'left'; });
-const foot = `<tr class="ct-total"><td>${hasLeft ? '재직 합계' : '합계'}</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totDone, 'ct-done', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'done'), 'done', -1))}${compLeadNum_(totSum, 'ct-sum')}${tot.map(function (v, i) { let c = sep2(compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)), i); if (compLeadTabs_[i].hasReply && totPlan[i]) c = withPlan(c, totPlan[i]); return c; }).join('')}</tr>`;
+const foot = `<tr class="ct-total"><td>${hasLeft ? '재직 합계' : '합계'}</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totDone, 'ct-done', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'done'), 'done', -1))}${compLeadNum_(totSum, 'ct-sum')}${tot.map(function (v, i) { let c = sep2(compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)), i); if (compLeadTabs_[i].hasReply && totPlan[i]) c = withPlan(c, totPlan[i], compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); return c; }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table${compLeadShowPlan_ ? ' ct-show-plan' : ''}">${head}${body}${foot}</table></div>`;
 }
 // 추가매출 제목을 누르면 "/ 계획" 숫자를 보이거나 숨긴다(2026-10-27 재홍님 요청 — 평소엔 결과 숫자만). 펼치면 제목은 이모지 대신 "추가매출 ▾ / 결과 / 계획". 표만 다시 그림, 서버 다시 안 부름. 메뉴로 새로 열면 숨김.
