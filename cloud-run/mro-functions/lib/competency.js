@@ -475,3 +475,120 @@ module.exports.seoulDateStr = seoulDateStr;
 module.exports.makeRecordId = makeRecordId;
 module.exports.backfillAuthor = backfillAuthor;
 module.exports.planBackfill = planBackfill;
+
+// =====================================================================
+// 2-나 (설계서 v1.20 ⑳·4-3): 추가매출 결과 적기(action reply) — 순수 함수. 시트 입출력은 index.js saveCompetencyTest.
+// 팀원(일반·담당)이 본인 '계획' 줄(달성 여부 칸이 빈 줄)에 결과를 적는다. 빈 칸만 쓴다 — 이미 결과가 있으면 거부(고치기는 2-라).
+//   Y 달성 : 달성 여부 · 실적 반영 시점(기간, 필수) · 당해년도 실적결산(매출·이익 천원, 필수) · 아이템키(숫자, 쉼표로 여러 개, 필수) · 수정일시
+//   N 미달성: 달성 여부 · 수정일시 (시점·결산 칸은 건드리지 않음)
+// 실적 반영 시점 = 'YYMM~YYMM'(끝 달까지) 또는 'YYMM~'(끝 없음, 계속) — 시트 머리글 '(YYMM~)' 모양 그대로(2026-10-27 재홍님 결정).
+// ㉑ 날짜 검사는 하지 않는다(계획 줄이 이미 있음).
+// =====================================================================
+const REPLY_PERIOD_HEADER = '실적 반영 시점(YYMM~)';         // 2026-10-27 실제 1행 확인
+const REPLY_SETTLE_HEADER = '당해년도 실적결산 (매출/이익)'; // 2026-10-27 실제 1행 확인
+const MODIFIED_AT_HEADER = '수정일시';
+const ITEM_KEY_HEADER = '아이템키';                         // 2026-10-27 재홍님이 추가매출·원가개선 탭 '팀장 의견' 앞에 추가(회사 시스템 키로 실적 추적)
+const ITEM_KEY_MAX = 50;                                   // 한 줄에 키 50개·키 하나 30자리 넘으면 잘못 친 것으로 봄
+const SETTLE_MAX = 1000000000; // 천원 단위 10억(= 1조원) 넘는 값은 잘못 친 것으로 봄
+
+function validYymm(s) {
+  const m = String(s === undefined || s === null ? '' : s).trim().match(/^(\d{2})(\d{2})$/);
+  return !!m && Number(m[2]) >= 1 && Number(m[2]) <= 12;
+}
+// '3,200' · 3200 · ' 3200 ' → 3200. 정수가 아니면 null. allowNegative = 이익(손해일 수 있음)
+function parseThousand(v, allowNegative) {
+  const s = String(v === undefined || v === null ? '' : v).replace(/[,\s]/g, '');
+  if (!/^-?\d+$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isSafeInteger(n) || Math.abs(n) > SETTLE_MAX) return null;
+  if (n < 0 && !allowNegative) return null;
+  return n;
+}
+// '1234567, 2345678 ,1234567' → '1234567,2345678' (숫자만 — 자릿수는 보지 않음, 같은 키는 하나로). 잘못되면 null.
+function parseItemKeys(v) {
+  const parts = String(v === undefined || v === null ? '' : v).split(',').map(function (x) { return x.trim(); });
+  if (!parts.length || parts.some(function (x) { return !/^\d{1,30}$/.test(x); })) return null;
+  const out = [];
+  parts.forEach(function (x) { if (out.indexOf(x) < 0) out.push(x); });
+  return out.length <= ITEM_KEY_MAX ? out.join(',') : null;
+}
+function comma(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+// 서울 시각 'YYYY-MM-DD HH:mm' (기록일시·수정일시 모양 — monthOf와 같은 앞부분)
+function seoulDateTimeStr(nowMs) {
+  const d = new Date((nowMs === undefined ? Date.now() : nowMs) + 9 * 3600 * 1000);
+  const p = function (x) { return String(x).padStart(2, '0'); };
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+}
+// 화면 입력 → 시트에 쓸 값. 반환 { ok:true, achieved, period, settle } 또는 { ok:false, error:'BAD_INPUT', field }
+function validateReply(b) {
+  b = b || {};
+  const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
+  const achieved = String(b.achieved === undefined || b.achieved === null ? '' : b.achieved).trim().toUpperCase();
+  if (achieved !== 'Y' && achieved !== 'N') return bad('achieved');
+  if (achieved === 'N') return { ok: true, achieved: 'N', period: '', settle: '', itemKeys: '' };
+  const from = String(b.reflectFrom || '').trim();
+  const to = String(b.reflectTo || '').trim();
+  const open = b.reflectOpen === true;
+  if (!validYymm(from)) return bad('reflectFrom');
+  if (open && to) return bad('reflectTo');
+  if (!open && !to) return bad('reflectTo');
+  if (to && (!validYymm(to) || to < from)) return bad('reflectTo');
+  const sales = parseThousand(b.settleSales, false);
+  if (sales === null) return bad('settleSales');
+  const profit = parseThousand(b.settleProfit, true);
+  if (profit === null) return bad('settleProfit');
+  const itemKeys = parseItemKeys(b.itemKeys);
+  if (itemKeys === null) return bad('itemKeys');
+  return { ok: true, achieved: 'Y', period: from + '~' + to, itemKeys: itemKeys,
+    settle: '매출 ' + comma(sales) + '천원 / 이익 ' + (profit < 0 ? '-' + comma(-profit) : comma(profit)) + '천원' };
+}
+// 탭 값(A1:Z, 1행 머리글)에서 기록ID 줄을 찾아 쓸 칸을 정한다.
+// 반환 { ok:true, writes:[{range,value}], record } 또는 { ok:false, error }
+//   HEADER_NOT_READY  필요한 칸(기록ID·작성자이메일·수정일시·달성 여부·시점·결산, Y면 아이템키도) 중 없는 칸이 있음
+//   RECORD_NOT_FOUND  그 기록ID 줄이 없음(지워졌거나 바뀜) · DUPLICATE_RECORD_ID 같은 기록ID가 2줄 이상
+//   NOT_YOUR_RECORD   작성자이메일이 본인이 아님(비어 있는 줄 포함)
+//   ALREADY_REPLIED   달성 여부가 이미 있음 · CELL_NOT_EMPTY Y인데 시점·결산·아이템키 칸에 이미 값이 있음(덮어쓰지 않음)
+function planReply(tab, values, recordId, viewerEmail, v, nowMs) {
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  const need = [EXTRA_HEADERS[0], EXTRA_HEADERS[1], MODIFIED_AT_HEADER, ADD_SALES_REPLY_HEADER, REPLY_PERIOD_HEADER, REPLY_SETTLE_HEADER];
+  if (v.achieved === 'Y') need.push(ITEM_KEY_HEADER);
+  if (need.some(function (h) { return header.indexOf(h) < 0; })) return { ok: false, error: 'HEADER_NOT_READY' };
+  const col = function (h) { return header.indexOf(h); };
+  const cell = function (row, h) { const x = row[col(h)]; return String(x === undefined || x === null ? '' : x).trim(); };
+  const rid = String(recordId || '').trim();
+  const hits = [];
+  for (let r = 1; r < rows.length; r++) { if (rid && cell(rows[r] || [], EXTRA_HEADERS[0]) === rid) hits.push(r); }
+  if (!hits.length) return { ok: false, error: 'RECORD_NOT_FOUND' };
+  if (hits.length > 1) return { ok: false, error: 'DUPLICATE_RECORD_ID' };
+  const r = hits[0]; const row = (rows[r] || []).slice();
+  if (normEmail(cell(row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail) || !normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
+  if (cell(row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'ALREADY_REPLIED' };
+  if (v.achieved === 'Y' && (cell(row, REPLY_PERIOD_HEADER) || cell(row, REPLY_SETTLE_HEADER) || cell(row, ITEM_KEY_HEADER))) return { ok: false, error: 'CELL_NOT_EMPTY' };
+  const set = [[ADD_SALES_REPLY_HEADER, v.achieved]];
+  if (v.achieved === 'Y') set.push([REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, v.settle], [ITEM_KEY_HEADER, v.itemKeys]);
+  set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
+  const writes = set.map(function (s) {
+    while (row.length <= col(s[0])) row.push('');
+    row[col(s[0])] = s[1];
+    return { range: quoteTab(tab.title) + '!' + colLetter(col(s[0])) + (r + 1), value: s[1] };
+  });
+  // 화면이 다시 불러오지 않고 카드를 고칠 수 있게 바뀐 기록을 돌려준다(보기 응답과 같은 모양)
+  // (parseTab과 같은 칸 읽기 — 이름 칸이 비어 있어도 돌려줄 수 있게 직접 만든다)
+  const fields = {};
+  header.forEach(function (h, i) { if (h) fields[h] = row[i] === undefined ? '' : row[i]; });
+  const leaderOpinion = String(fields['팀장 의견'] || fields['팀장 의견 (상중하)'] || '');
+  return { ok: true, writes: writes,
+    record: { tab: tab.id, row: r + 1, recordId: rid, leaderOpinion: leaderOpinion, reviewState: reviewState({ fields: fields, leaderOpinion: leaderOpinion }),
+      recordedAt: String(fields['기록일시'] || ''), fields: fields } };
+}
+
+module.exports.REPLY_PERIOD_HEADER = REPLY_PERIOD_HEADER;
+module.exports.REPLY_SETTLE_HEADER = REPLY_SETTLE_HEADER;
+module.exports.validYymm = validYymm;
+module.exports.parseThousand = parseThousand;
+module.exports.ITEM_KEY_HEADER = ITEM_KEY_HEADER;
+module.exports.parseItemKeys = parseItemKeys;
+module.exports.seoulDateTimeStr = seoulDateTimeStr;
+module.exports.validateReply = validateReply;
+module.exports.planReply = planReply;

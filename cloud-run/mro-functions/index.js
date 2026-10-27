@@ -4047,6 +4047,11 @@ exports.saveCompetencyTest = async (req, res) => {
       return;
     }
     const timings = Object.assign({}, auth.timings);
+    // 2-나: 추가매출 결과 적기(팀원) — 관리자 판정과 무관하므로 backfill 분기보다 먼저
+    if (action === 'reply') {
+      await competencyReply_(req, res, auth, t0, timings);
+      return;
+    }
     if (action !== 'backfill') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: action || null });
       return;
@@ -4106,3 +4111,77 @@ exports.saveCompetencyTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
   }
 };
+
+// =====================================================================
+// 역량평가 2-나: saveCompetencyTest action=reply — 추가매출 결과 적기. 설계서 v1.20 ⑳·㉓·5-2 쓰기 흐름.
+// - 활성 일반·담당만(㉓). 팀장·임원·관리자 역할은 FORBIDDEN(관리자 이메일이어도 역할로 판정).
+// - 본인 줄(작성자이메일 = 로그인 이메일)이면서 '계획'(달성 여부 빈칸)인 줄만. 빈 칸만 쓴다(덮어쓰기 없음, 고치기는 2-라).
+// - 입력 검사(lib validateReply)는 시트를 읽기 전에 → 중복 방지(idempotencyKey 필수) → 사용자 확인 →
+//   잠금(writeLocks/competencyEval, 2-가와 같은 잠금) → 잠금 안에서 그 탭을 다시 읽고 기록ID로 줄을 찾음 →
+//   values:batchUpdate 1번(2-가와 같은 API·RAW) → 잠금 풀기. 바뀐 기록을 돌려준다.
+// - ㉑ 날짜 검사는 하지 않는다(계획 줄이 이미 있음). 시트 호출: 읽기 3번 + 쓰기 1번.
+// =====================================================================
+async function competencyReply_(req, res, auth, t0, timings) {
+  const b = req.body || {};
+  if (!b.idempotencyKey || !b.recordId || !b.tab) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' });
+    return;
+  }
+  const v = competency.validateReply(b);
+  if (!v.ok) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: v.error, field: v.field });
+    return;
+  }
+  const result = await withIdempotency(firestore, b.idempotencyKey, 'competencyReply', async function () {
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4] };
+    });
+    const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
+    if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+    if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
+    const targetYear = Number(b.year) || competency.seoulYear();
+    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    const holderId = crypto.randomUUID();
+    const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
+      waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
+    });
+    if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+    try {
+      let tab, values;
+      const c0 = Date.now();
+      try {
+        const sheets = (await competencySheetMeta_(client, fileId, false)).sheets; // 잠금 안: 메모리 저장 안 씀
+        tab = competency.recordTabsFromSheets(sheets).find(function (t) { return t.id === String(b.tab); });
+        if (!tab) return { ok: false, error: 'TAB_NOT_FOUND' };
+        const vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(tab.title) + '!A1:Z')]);
+        values = (vr[0] && vr[0].values) || [];
+      } catch (e) {
+        const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+        return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus };
+      }
+      timings.competencySheetMs = Date.now() - c0;
+      const plan = competency.planReply(tab, values, b.recordId, viewer.email, v);
+      if (!plan.ok) return plan;
+      const w0 = Date.now();
+      const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+      const wclient = await wauth.getClient();
+      const resp = await wclient.request({
+        url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '/values:batchUpdate',
+        method: 'POST',
+        data: { valueInputOption: 'RAW', data: plan.writes.map(function (w) { return { range: w.range, values: [[w.value]] }; }) }
+      });
+      timings.writeMs = Date.now() - w0;
+      const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+      if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
+      return { ok: true, updatedCells: updatedCells, record: Object.assign(plan.record, { authorEmail: String(viewer.email).trim().toLowerCase(), authorStatus: 'active', name: viewer.name }) };
+    } finally {
+      await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
+    }
+  });
+  res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+}
