@@ -4255,8 +4255,11 @@ async function competencyCreate_(req, res, auth, t0, timings) {
       }
       timings.competencySheetMs = Date.now() - c0;
       const windowDays = competency.recordWindowDays((vr[0] && vr[0].values) || []);
-      const dateErr = competency.checkRecordDate(v.date, competency.seoulIsoDate(nowMs), windowDays, targetYear);
-      if (dateErr) return { ok: false, error: dateErr, field: 'meetDate', windowDays: windowDays };
+      // ㉑ 날짜 검사: 날짜가 있는 칸(대면영업 미팅 일시)은 날짜로, 달 단위 칸(원가개선 수행 기간)은 달로. N 미완료처럼 둘 다 없으면 검사 없음.
+      const todayIso = competency.seoulIsoDate(nowMs);
+      const dateErr = v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
+        : (v.month ? competency.checkRecordMonth(v.month, v.startMonth, todayIso, windowDays, targetYear) : '');
+      if (dateErr) return { ok: false, error: dateErr, field: v.date ? 'meetDate' : 'periodTo', windowDays: windowDays };
       const allIds = new Set();
       recTabs.forEach(function (t, i) {
         competency.parseTab(t.id, (vr[i + 1] && vr[i + 1].values) || []).forEach(function (r) { if (r.recordId.trim()) allIds.add(r.recordId.trim()); });

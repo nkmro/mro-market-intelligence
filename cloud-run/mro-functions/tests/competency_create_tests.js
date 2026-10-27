@@ -17,15 +17,16 @@ let USERS = [
   U('park@x.com', '박서준', '일반', '동부', '비활성', '양산')
 ];
 let SETTING_WINDOW = '14';
-const GIDS = { '역량-영업수행역량-대면영업': 1204504857, '역량-개선기획역량-추가매출': 772700407 }; // 지금 파일의 gid → 기존 키 faceSales·addSales
+const GIDS = { '역량-영업수행역량-대면영업': 1204504857, '역량-개선기획역량-추가매출': 772700407, '역량-개선기획역량-원가개선': 1981522387 }; // 지금 파일의 gid → 기존 키 faceSales·addSales·costSave
 const ADD = '역량-개선기획역량-추가매출', FACE = '역량-영업수행역량-대면영업', COST = '역량-개선기획역량-원가개선';
 const FACE_H = ['순번', '이름', '사무소', '고객사', '대면자', '직급', '미팅 일시(YYMMDD-HH)', '미팅 시간(분)', '기대 성과', '팀장 의견 (상중하)', '팀'].concat(EX);
+const COST_H = ['순번', '이름', '사무소', '고객사', '공급사', '원가 개선 항목', '원가 개선 사유', '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', '기대 성과', '아이템키', '팀장 의견', '팀'].concat(EX);
 const F = (no, who, cust, id, email) => [String(no), who, '양산', cust, '홍길동', '과장', '999999-99', '30', '수주', '', '동부', id, email, '2026-10-01 09:00'];
 function baseTabs() {
   return {
     [FACE]: [FACE_H, F(1, '김하늘', '가람산업', 'CE-F1', 'kim@x.com'), F(7, '이도윤', '나래기공', 'CE-F2', 'lee@x.com'), F(3, '김하늘', '다온화학', 'CE-F3', 'kim@x.com')],
     [ADD]: [['사무소', '담당', '고객사', '달성 여부 (Y/N)', '팀장 의견', '팀'].concat(EX), ['양산', '김하늘', '아라전자', '', '', '동부', 'CE-A1', 'kim@x.com']],
-    [COST]: [['순번', '이름', '원가 개선 항목', '팀장 의견', '팀'].concat(EX), ['1', '김하늘', '포장 변경', '상', '동부', 'CE-C1', 'kim@x.com']]
+    [COST]: [COST_H, ['1', '김하늘', '양산', '아라전자', '한빛상사', '포장 변경', '규격 표준화', '26년4월~', 'Y', '연 120만원', '', '중', '동부', 'CE-C1', 'kim@x.com'], ['12', '이도윤', '김해', '가람산업', '대한안전', '장갑 변경', '단가 인하', '26년 06~08월', 'Y', '연 60만원', '', '상', '동부', 'CE-C2', 'lee@x.com']]
   };
 }
 const TODAY = c.seoulIsoDate(Date.now());
@@ -69,6 +70,36 @@ t('A13 seoulIsoDate 서울 날짜(UTC 15시 = 다음 날)', c.seoulIsoDate(Date.
   t('A21 필요한 머리글(이름·대면자·미팅 일시·팀·기록ID·작성자이메일·기록일시) 없으면 HEADER_NOT_READY / 순번·사무소는 없어도 됨', ['이름', '대면자', '미팅 일시(YYMMDD-HH)', '팀', '기록ID', '작성자이메일', '기록일시'].every(h => hdr(h) === 'HEADER_NOT_READY') && !hdr('순번') && !hdr('사무소'));
   const p3 = c.planCreate({ id: 'faceSales', title: FACE }, tabs[FACE].concat([[], ['', '', '메모']]), new Set(), { name: '김', email: 'k@x', office: '' }, c.validateCreate('faceSales', GOOD), { team: '동부', nowMs: now });
   t('A22 아래쪽에 이름 없는 줄(메모 등)이 있으면 그 다음 줄(7행)에 — 기존 칸을 덮지 않음', p3.ok && p3.record.row === 7, p3.record && p3.record.row);
+}
+
+
+// ── A-원가개선 (2026-10-27 재홍님 결정: Y 완료 / N 미완료, 원가 개선액 천원, 수행 기간 달 단위) ──
+const CG = { customer: ' 나래기공 ', supplier: '대한안전', item: '안전장갑 공급사 변경', reason: '동일 사양 단가 12% 인하', done: 'Y', periodFrom: '2608', periodTo: '2610', amount: '2,400', itemKeys: '1234567, 2345678,1234567' };
+v = c.validateCreate('costSave', CG);
+t('AC1 Y 완료: 기간 2608~2610, "개선 2,400천원", 아이템키 합침, 검사 달 = 끝 달 2026-10, 시작 달 2026-08', v.ok && v.cells['수행 기간 (YYMMDD~YYMMDD)'] === '2608~2610' && v.cells['기대 성과'] === '개선 2,400천원' && v.cells['아이템키'] === '1234567,2345678' && v.cells['완료 여부 (Y/N)'] === 'Y' && v.cells['고객사'] === '나래기공' && v.month === '2026-10' && v.startMonth === '2026-08' && !v.date, v);
+v = c.validateCreate('costSave', Object.assign({}, CG, { periodTo: '', periodOpen: true }));
+t('AC2 Y + 끝 없음(계속) → "2608~", 개선액 "개선 2,400천원 / 월 평균", 검사 달 = 시작 달', v.ok && v.cells['수행 기간 (YYMMDD~YYMMDD)'] === '2608~' && v.cells['기대 성과'] === '개선 2,400천원 / 월 평균' && v.month === '2026-08', v);
+v = c.validateCreate('costSave', Object.assign({}, CG, { done: 'n', periodFrom: 'x', amount: '', itemKeys: '' }));
+t('AC3 N 미완료(소문자도): 완료 여부만 — 기간·개선액·아이템키 안 봄·안 씀, 날짜 검사 없음', v.ok && v.cells['완료 여부 (Y/N)'] === 'N' && !('수행 기간 (YYMMDD~YYMMDD)' in v.cells) && !('기대 성과' in v.cells) && !('아이템키' in v.cells) && !v.month && !v.date, v);
+const bc = o => c.validateCreate('costSave', Object.assign({}, CG, o)).field;
+t('AC4 필수 글자 칸: 고객사·공급사·항목(100자)·사유 빈칸 → 각 field', bc({ customer: '' }) === 'customer' && bc({ supplier: ' ' }) === 'supplier' && bc({ item: 'x'.repeat(101) }) === 'item' && bc({ reason: '' }) === 'reason');
+t('AC5 완료 여부 없음·다른 글자 → done', bc({ done: '' }) === 'done' && bc({ done: '완료' }) === 'done');
+t('AC6 기간: 시작 없음·월 13 → periodFrom / 끝도 끝없음도 없음·둘 다·끝<시작 → periodTo / 같은 달 허용', bc({ periodFrom: '' }) === 'periodFrom' && bc({ periodFrom: '2613' }) === 'periodFrom' && bc({ periodTo: '' }) === 'periodTo' && bc({ periodOpen: true }) === 'periodTo' && bc({ periodTo: '2607' }) === 'periodTo' && !bc({ periodTo: '2608' }));
+t('AC7 개선액: 빈칸·음수·소수·글자 → amount / 0 허용 "개선 0천원"', bc({ amount: '' }) === 'amount' && bc({ amount: '-1' }) === 'amount' && bc({ amount: '1.5' }) === 'amount' && bc({ amount: '천' }) === 'amount' && c.validateCreate('costSave', Object.assign({}, CG, { amount: 0 })).cells['기대 성과'] === '개선 0천원');
+t('AC8 Y인데 아이템키 없음·글자 → itemKeys', bc({ itemKeys: '' }) === 'itemKeys' && bc({ itemKeys: '12a' }) === 'itemKeys');
+t('AC9 createFormFor: costSave 키·이름 "원가개선"(새 gid) → costSave', c.createFormFor({ id: 'costSave', label: '원가개선' }) === 'costSave' && c.createFormFor({ id: 'g777', label: '원가개선' }) === 'costSave');
+t('AC10 달 검사(14일): 10/27에 10월 허용·9월 DATE_TOO_OLD·11월 DATE_FUTURE / 10/5에는 9월 허용(14일 전 9/22) / 시작 달 작년 → DATE_OTHER_YEAR',
+  c.checkRecordMonth('2026-10', '2026-08', '2026-10-27', 14, 2026) === '' && c.checkRecordMonth('2026-09', '2026-08', '2026-10-27', 14, 2026) === 'DATE_TOO_OLD' && c.checkRecordMonth('2026-11', '2026-10', '2026-10-27', 14, 2026) === 'DATE_FUTURE' && c.checkRecordMonth('2026-09', '2026-09', '2026-10-05', 14, 2026) === '' && c.checkRecordMonth('2026-01', '2025-12', '2026-01-05', 14, 2026) === 'DATE_OTHER_YEAR');
+{
+  const now = Date.UTC(2026, 9, 27, 3, 30);
+  const tb = baseTabs();
+  const p = c.planCreate({ id: 'costSave', title: COST }, tb[COST], new Set(), { name: '김하늘', email: 'kim@x.com', office: '양산' }, c.validateCreate('costSave', CG), { team: '동부', nowMs: now });
+  const q = "'역량-개선기획역량-원가개선'!"; const byH = {}; p.writes.forEach(w => { byH[w.range] = w.value; });
+  t('AC11 planCreate Y: 4행, 순번 13(가장 큰 12 + 1), 내용 8칸 H·I·J·K 포함, 팀장 의견(L) 비움, 쓰는 칸 15개', p.ok && p.record.row === 4 && byH[q + 'A4'] === '13' && byH[q + 'H4'] === '2608~2610' && byH[q + 'I4'] === 'Y' && byH[q + 'J4'] === '개선 2,400천원' && byH[q + 'K4'] === '1234567,2345678' && !(q + 'L4' in byH) && p.writes.length === 15 && p.record.reviewState === 'pendingReview', byH);
+  const pN = c.planCreate({ id: 'costSave', title: COST }, tb[COST], new Set(), { name: '김하늘', email: 'kim@x.com', office: '양산' }, c.validateCreate('costSave', Object.assign({}, CG, { done: 'N' })), { team: '동부', nowMs: now });
+  t('AC12 planCreate N: 기간·개선액·아이템키 칸은 안 씀(쓰는 칸 12개)', pN.ok && pN.writes.length === 12 && !pN.writes.some(w => /![HJK]4$/.test(w.range)) && pN.record.fields['완료 여부 (Y/N)'] === 'N', pN.writes.map(w => w.range));
+  const tb2 = baseTabs(); tb2[COST][0] = COST_H.filter(h => h !== '아이템키');
+  t('AC13 아이템키 칸 없는 원가개선 탭 → HEADER_NOT_READY', c.planCreate({ id: 'costSave', title: COST }, tb2[COST], new Set(), { name: '김', email: 'k@x', office: '' }, c.validateCreate('costSave', CG), { team: '동부', nowMs: now }).error === 'HEADER_NOT_READY');
 }
 
 // ── B. index.js 그대로 실행 (가짜 시트·가짜 Firestore — competency_backfill_tests.js와 같은 시험 장치) ──
@@ -220,7 +251,7 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   const mine = await e.get({ sessionToken: 'TOK_STAFF', view: 'mine' });
   const inMine = mine.records && mine.records.faceSales && mine.records.faceSales.find(r => r.recordId === res.record.recordId);
   t('B19 내 기록 보기(mine)에 같은 기록이 그대로(저장 응답 기록 = 다시 읽은 기록)', inMine && J(inMine) === J(res.record), { inMine, rec: res.record });
-  t('B20 mine 응답: recordWindowDays 14, createForms {faceSales:"faceSales"}', mine.recordWindowDays === 14 && J(mine.createForms) === J({ faceSales: 'faceSales' }), { w: mine.recordWindowDays, f: mine.createForms });
+  t('B20 mine 응답: recordWindowDays 14, createForms {faceSales, costSave}', mine.recordWindowDays === 14 && J(mine.createForms) === J({ faceSales: 'faceSales', costSave: 'costSave' }), { w: mine.recordWindowDays, f: mine.createForms });
   const team = await e.get({ sessionToken: 'TOK_ADMIN', view: 'team' });
   t('B21 팀 보기(team)에는 recordWindowDays·createForms 없음', team.ok && !('recordWindowDays' in team) && !('createForms' in team), Object.keys(team));
   res = await callCreate(e, 'TOK_LEE', { idempotencyKey: 'OK2', meetDate: TODAY, meetHour: 0, minutes: 75 });
@@ -238,7 +269,7 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   GIDS['역량-영업수행역량-대면영업'] = 555; e = makeEnv();
   const mNew = await e.get({ sessionToken: 'TOK_STAFF', view: 'mine' });
   res = await callCreate(e, 'TOK_STAFF', { tab: 'g555' });
-  t('B24b 내년 파일처럼 gid가 바뀐 대면영업 탭(g555) → createForms {g555:faceSales}, 저장 ok', J(mNew.createForms) === J({ g555: 'faceSales' }) && res.ok && res.record.tab === 'g555', { f: mNew.createForms, res });
+  t('B24b 내년 파일처럼 gid가 바뀐 대면영업 탭(g555) → createForms {g555:faceSales}, 저장 ok', J(mNew.createForms) === J({ g555: 'faceSales', costSave: 'costSave' }) && res.ok && res.record.tab === 'g555', { f: mNew.createForms, res });
   GIDS['역량-영업수행역량-대면영업'] = 1204504857;
   e = makeEnv(); e.sh.tabs[FACE][0] = FACE_H.filter(h => h !== '작성자이메일');
   res = await callCreate(e, 'TOK_STAFF');
@@ -269,6 +300,36 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   t('B31 2-나 reply 경로 그대로(이 시험 탭엔 결과 칸이 없어 HEADER_NOT_READY — reply 상세는 competency_reply_tests)', res.error === 'HEADER_NOT_READY', res);
   res = await e.save({ sessionToken: 'TOK_STAFF', action: 'update' });
   t('B32 아직 없는 action(update) → NOT_IMPLEMENTED', res.error === 'NOT_IMPLEMENTED', res);
+
+
+  // ── 원가개선 서버 (오늘 기준 달로 시험) ──
+  const ymOf = iso => iso.slice(2, 4) + iso.slice(5, 7);
+  const thisYm = ymOf(TODAY), oldYm = ymOf(daysAgo(70)), nextYm = ymOf(daysAgo(-40));
+  const callCost = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, action: 'create', form: 'costSave', idempotencyKey: 'K' + Math.random(), tab: 'costSave' }, CG, { periodFrom: TODAY.slice(5, 7) === '01' ? thisYm : ymOf(daysAgo(40)), periodTo: thisYm }, extra || {}));
+  e = makeEnv();
+  res = await callCost(e, 'TOK_LEE', { idempotencyKey: 'CS1' });
+  const crow = e.sh.tabs[COST][3];
+  t('BC1 원가개선 Y 완료(끝 달 = 이번 달) → ok 15칸, 4행: 순번 13·이도윤·김해·기간·Y·"개선 2,400천원"·아이템키·팀장 의견 빈칸', res.ok && res.updatedCells === 15 && crow[0] === '13' && crow[1] === '이도윤' && crow[2] === '김해' && crow[7].endsWith('~' + thisYm) && crow[8] === 'Y' && crow[9] === '개선 2,400천원' && crow[10] === '1234567,2345678' && (crow[11] || '') === '' && crow[14] === 'lee@x.com', { res, crow });
+  res = await callCost(e, 'TOK_LEE', { periodFrom: thisYm, periodTo: '', periodOpen: true });
+  t('BC2 Y + 끝 없음, 시작 달 = 이번 달 → ok, "YYMM~", "… / 월 평균"', res.ok && e.sh.tabs[COST][4][7] === thisYm + '~' && e.sh.tabs[COST][4][9] === '개선 2,400천원 / 월 평균', res);
+  res = await callCost(e, 'TOK_LEE', { periodFrom: oldYm, periodTo: oldYm });
+  t('BC3 끝 달이 두 달 전 → DATE_TOO_OLD(field periodTo), 쓰기 없음', res.error === 'DATE_TOO_OLD' && res.field === 'periodTo' && e.sh.tabs[COST].length === 5, res);
+  res = await callCost(e, 'TOK_LEE', { periodFrom: oldYm, periodTo: '', periodOpen: true });
+  t('BC4 끝 없음인데 시작 달이 두 달 전 → DATE_TOO_OLD', res.error === 'DATE_TOO_OLD', res);
+  res = await callCost(e, 'TOK_LEE', { periodFrom: thisYm, periodTo: nextYm });
+  t('BC5 끝 달이 앞으로의 달 → DATE_FUTURE', res.error === 'DATE_FUTURE', res);
+  res = await callCost(e, 'TOK_LEE', { done: 'N', periodFrom: '', periodTo: '', amount: '', itemKeys: '' });
+  const nrow = e.sh.tabs[COST][5];
+  t('BC6 N 미완료 → ok 12칸, 기간·개선액·아이템키 빈칸, 날짜 검사 없음', res.ok && res.updatedCells === 12 && nrow[8] === 'N' && !nrow[7] && !nrow[9] && !nrow[10], { res, nrow });
+  res = await callCost(e, 'TOK_LEE', { amount: '' });
+  t('BC7 Y인데 개선액 빈칸 → BAD_INPUT(amount)', res.error === 'BAD_INPUT' && res.field === 'amount', res);
+  res = await callCost(e, 'TOK_LEE', { tab: 'faceSales' });
+  t('BC8 원가개선 입력으로 대면영업 탭에 → TAB_NOT_SUPPORTED', res.error === 'TAB_NOT_SUPPORTED', res);
+  res = await callCost(e, 'TOK_ADMIN');
+  t('BC9 팀장 → FORBIDDEN', res.error === 'FORBIDDEN', res);
+  const mc = await e.get({ sessionToken: 'TOK_LEE', view: 'mine' });
+  const inMc = (mc.records.costSave || []).find(r => r.row === 4);
+  t('BC10 내 기록 보기에 원가개선 새 줄(미평가)', inMc && inMc.reviewState === 'pendingReview' && inMc.fields['기대 성과'] === '개선 2,400천원', inMc);
 
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);

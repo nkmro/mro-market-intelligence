@@ -39,7 +39,7 @@ const Y = { achieved: 'Y', reflectFrom: '2611', reflectTo: '2702', reflectOpen: 
 let v = c.validateReply(Y);
 t('A1 Y: 기간 2611~2702, 결산 "매출 3,200천원 / 이익 410천원", 아이템키 "1234567,2345678"', v.ok && v.achieved === 'Y' && v.period === '2611~2702' && v.settle === '매출 3,200천원 / 이익 410천원' && v.itemKeys === '1234567,2345678', v);
 v = c.validateReply(Object.assign({}, Y, { reflectTo: '', reflectOpen: true }));
-t('A2 Y + 끝 없음(계속) → "2611~"', v.ok && v.period === '2611~', v);
+t('A2 Y + 끝 없음(계속) → "2611~", 결산 끝에 " / 월 평균"', v.ok && v.period === '2611~' && v.settle === '매출 3,200천원 / 이익 410천원 / 월 평균', v);
 v = c.validateReply({ achieved: 'n', reflectFrom: '9999', settleSales: 'x' });
 t('A3 N(소문자도): 시점·결산·아이템키는 보지 않고 빈 값', v.ok && v.achieved === 'N' && v.period === '' && v.settle === '' && v.itemKeys === '', v);
 const badField = o => c.validateReply(Object.assign({}, Y, o)).field;

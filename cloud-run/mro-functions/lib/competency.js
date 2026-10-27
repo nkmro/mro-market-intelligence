@@ -540,7 +540,8 @@ function validateReply(b) {
   const itemKeys = parseItemKeys(b.itemKeys);
   if (itemKeys === null) return bad('itemKeys');
   return { ok: true, achieved: 'Y', period: from + '~' + to, itemKeys: itemKeys,
-    settle: '매출 ' + comma(sales) + '천원 / 이익 ' + (profit < 0 ? '-' + comma(-profit) : comma(profit)) + '천원' };
+    // 끝 없음(계속) = 한 달 평균 → '… / 월 평균', 끝 달 있음 = 기간 총액 (2026-10-27 재홍님, 원가개선과 같은 규칙)
+    settle: '매출 ' + comma(sales) + '천원 / 이익 ' + (profit < 0 ? '-' + comma(-profit) : comma(profit)) + '천원' + (open ? ' / 월 평균' : '') };
 }
 // 탭 값(A1:Z, 1행 머리글)에서 기록ID 줄을 찾아 쓸 칸을 정한다.
 // 반환 { ok:true, writes:[{range,value}], record } 또는 { ok:false, error }
@@ -668,6 +669,49 @@ const CREATE_RULES = {
     }
   }
 };
+// 원가개선(2026-10-27 재홍님 결정): 고객사 · 공급사 · 원가 개선 항목 · 원가 개선 사유 · 완료 여부(Y 완료 / N 미완료) 필수.
+//   Y 완료 = 수행 기간(시작 달 ~ 끝 달, 또는 끝 없음(계속) → 'YYMM~YYMM' / 'YYMM~') + 원가 개선액(천원, 0 이상, 시트 칸 '기대 성과' —
+//            끝 달 있음 = 기간 총액 '개선 2,400천원', 끝 없음 = 월 평균 '개선 200천원 / 월 평균')
+//            + 아이템키(숫자, 쉼표) 모두 필수 — 추가매출 Y 달성과 같은 모양.
+//   N 미완료 = 완료 여부만(수행 기간·개선액·아이템키 칸 없음, 날짜 검사 없음) — 추가매출 N 미달성과 같음.
+//   ㉑ 날짜 검사는 달 단위(month): 끝 달이 있으면 끝 달, 끝 없음이면 시작 달(checkRecordMonth). 시작 달은 그 파일 연도 안.
+CREATE_RULES.costSave = {
+  label: '원가개선',
+  headers: ['고객사', '공급사', '원가 개선 항목', '원가 개선 사유', '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', '기대 성과', ITEM_KEY_HEADER],
+  validate: function (b) {
+    const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
+    const customer = cleanText(b.customer, 100); if (!customer) return bad('customer');
+    const supplier = cleanText(b.supplier, 100); if (!supplier) return bad('supplier');
+    const item = cleanText(b.item, 100); if (!item) return bad('item');
+    const reason = cleanText(b.reason, TEXT_MAX); if (!reason) return bad('reason');
+    const done = String(b.done === undefined || b.done === null ? '' : b.done).trim().toUpperCase();
+    if (done !== 'Y' && done !== 'N') return bad('done');
+    const cells = { '고객사': customer, '공급사': supplier, '원가 개선 항목': item, '원가 개선 사유': reason, '완료 여부 (Y/N)': done };
+    if (done === 'N') return { ok: true, cells: cells };
+    const from = String(b.periodFrom || '').trim(), to = String(b.periodTo || '').trim(), open = b.periodOpen === true;
+    if (!validYymm(from)) return bad('periodFrom');
+    if ((open && to) || (!open && !to) || (to && (!validYymm(to) || to < from))) return bad('periodTo');
+    const amount = parseThousand(b.amount, false); if (amount === null) return bad('amount');
+    const keys = parseItemKeys(b.itemKeys); if (!keys) return bad('itemKeys');
+    cells['수행 기간 (YYMMDD~YYMMDD)'] = from + '~' + (open ? '' : to);
+    // 끝 없음(계속) = 한 달 평균 개선액 → '개선 200천원 / 월 평균', 끝 달 있음 = 기간 전체 총액 → '개선 2,400천원' (2026-10-27 재홍님)
+    cells['기대 성과'] = '개선 ' + comma(amount) + '천원' + (open ? ' / 월 평균' : '');
+    cells[ITEM_KEY_HEADER] = keys;
+    // 검사할 달: 'YYYY-MM' (끝 달, 끝 없음이면 시작 달) + 시작 달 연도
+    const ym = function (y) { return '20' + y.slice(0, 2) + '-' + y.slice(2, 4); };
+    return { ok: true, cells: cells, month: ym(open ? from : to), startMonth: ym(from) };
+  }
+};
+// ㉑ 달 단위 검사(원가개선). month·startMonth = 'YYYY-MM', today = 'YYYY-MM-DD'. 허용 = 오늘이 속한 달 ~ (오늘 - (N-1)일)이 속한 달.
+// 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
+function checkRecordMonth(month, startMonth, today, windowDays, fileYear) {
+  if (Number(startMonth.slice(0, 4)) !== Number(fileYear)) return 'DATE_OTHER_YEAR';
+  if (month > today.slice(0, 7)) return 'DATE_FUTURE';
+  const t = Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)));
+  const oldest = new Date(t - (windowDays - 1) * 86400000).toISOString().slice(0, 7);
+  if (month < oldest) return 'DATE_TOO_OLD';
+  return '';
+}
 function validateCreate(form, b) {
   const key = String(form || '');
   const rule = Object.prototype.hasOwnProperty.call(CREATE_RULES, key) ? CREATE_RULES[key] : null;
@@ -725,3 +769,4 @@ module.exports.CREATE_RULES = CREATE_RULES;
 module.exports.validateCreate = validateCreate;
 module.exports.planCreate = planCreate;
 module.exports.createFormFor = createFormFor;
+module.exports.checkRecordMonth = checkRecordMonth;
