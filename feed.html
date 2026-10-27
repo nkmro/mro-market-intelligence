@@ -614,7 +614,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cr-min { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cr-card textarea.rp-in { width: 100%; resize: vertical; font-family: inherit; }
 /* 끝 없음(계속) = 월 평균, 끝 달 있음 = 기간 총액 안내(추가매출 결과 적기·원가개선 기록 추가 같이 씀) */
-.rp-avg { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--accent); background: #f1eef8; border-radius: 10px; padding: 2px 8px; margin-left: 2px; }
+.rp-u-avg { color: var(--accent); font-weight: 700; } /* 끝 없음이면 단위가 '천원/월'(한 달 평균) — 별도 표시 대신 단위에 붙여 줄바꿈 없게 */
 .rp-guide { font-size: 12px; color: var(--accent); grid-column: 2; }
 @media (max-width: 480px) { .rp-guide { grid-column: 1; } }
 .cr-card > *, .cr-card .rp-row > * { min-width: 0; } /* 좁은 폭에서 칸이 카드 밖으로 밀리지 않게 */
@@ -4691,7 +4691,10 @@ function compReplyWrap_(el) { return el && el.closest('.rp-bar, .rp-form'); }
 function compReplyOpen_(btn) {
 const bar = compReplyWrap_(btn); if (!bar) return;
 const rid = bar.dataset.rid;
-compReplyState_[rid] = { tab: bar.dataset.tab, achieved: '', from: '', to: '', open: false, cal: '', calYear: Number(new Date().getFullYear()), saving: false };
+// 구분이 이익개선인 계획이면 결산은 이익만(매출 칸 없음) — 서버도 시트의 구분을 보고 같은 규칙(2026-10-27 재홍님)
+const rec = compMineList_(compMineRes_, bar.dataset.tab).filter(function (r) { return r.recordId === rid; })[0];
+const profitOnly = !!rec && String((rec.fields || {})['구분'] || '').trim() === '이익개선';
+compReplyState_[rid] = { tab: bar.dataset.tab, achieved: '', from: '', to: '', open: false, cal: '', calYear: Number(new Date().getFullYear()), saving: false, profitOnly: profitOnly };
 const form = document.createElement('div');
 form.className = 'rp-form'; form.dataset.rid = rid; form.dataset.tab = bar.dataset.tab;
 bar.replaceWith(form);
@@ -4727,8 +4730,8 @@ const yHtml = yes ? `<div class="rp-row"><span class="rp-k">실적 반영 시점
 <button type="button" class="rp-pick${st.cal === 'to' ? ' on' : ''}" ${st.open ? 'disabled' : ''} onclick="compReplyCal_(this,'to')">📅 ${st.open ? '끝 없음' : (st.to ? escapeHtml(compReplyYmText_(st.to)) : '끝 달 고르기')}</button>
 <label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compReplyOpenEnd_(this)"> 끝 없음(계속)</label>${cal}</span>
 <span class="rp-help">언제부터 언제까지 실적에 반영되는지</span>${err('reflectFrom')}${err('reflectTo')}</div>
-<div class="rp-row"><span class="rp-k">당해년도 실적결산 <b>*</b></span><span>매출 <input class="rp-in rp-sales" inputmode="numeric" placeholder="숫자" value="${escapeHtml(sales)}"><span class="rp-u">천원</span>이익 <input class="rp-in rp-profit" inputmode="numeric" placeholder="숫자" value="${escapeHtml(profit)}"><span class="rp-u">천원</span>${st.open ? '<span class="rp-avg">/ 월 평균</span>' : ''}</span>
-${compAvgGuide_(st.open, '매출·이익')}<span class="rp-help">숫자만 · 단위 천원 (0도 가능, 이익은 손해면 -)</span>${err('settleSales')}${err('settleProfit')}</div>
+<div class="rp-row"><span class="rp-k">당해년도 실적결산 <b>*</b></span><span>${st.profitOnly ? '' : `매출 <input class="rp-in rp-sales" inputmode="numeric" placeholder="숫자" value="${escapeHtml(sales)}">${compUnit_(st.open)}`}이익 <input class="rp-in rp-profit" inputmode="numeric" placeholder="숫자" value="${escapeHtml(profit)}">${compUnit_(st.open)}</span>
+${compAvgGuide_(st.open, st.profitOnly ? '이익' : '매출·이익')}<span class="rp-help">${st.profitOnly ? '이익개선은 매출이 늘지 않으므로 이익만 적습니다 · ' : ''}숫자만 · 단위 천원 (0도 가능, 이익은 손해면 -)</span>${err('settleSales')}${err('settleProfit')}</div>
 <div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in rp-items" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(items)}">
 <span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
 const nHtml = st.achieved === 'N' ? '<div class="rp-help" style="grid-column:1/-1">미달성(N)은 실적이 없으므로 실적 반영 시점·실적결산·아이템키 칸이 없습니다</div>' : '';
@@ -4761,7 +4764,7 @@ if (st.achieved !== 'Y') return e;
 if (!st.from) e.reflectFrom = '시작 달을 골라 주세요.';
 if (!st.open && !st.to) e.reflectTo = "끝 달을 고르거나 '끝 없음(계속)'에 체크해 주세요.";
 const num = function (v, neg) { const x = String(v || '').replace(/[,\s]/g, ''); return /^-?\d+$/.test(x) && (neg || x.charAt(0) !== '-') && Math.abs(Number(x)) <= 1000000000; };
-if (!num(sales, false)) e.settleSales = '매출을 숫자로 적어 주세요(천원, 0 이상).';
+if (!st.profitOnly && !num(sales, false)) e.settleSales = '매출을 숫자로 적어 주세요(천원, 0 이상).';
 if (!num(profit, true)) e.settleProfit = '이익을 숫자로 적어 주세요(천원).';
 // 아이템키: 숫자만(자릿수 상관없음), 여러 개는 쉼표 — 서버 parseItemKeys와 같은 규칙
 const keys = String(items || '').split(',').map(function (x) { return x.trim(); });
@@ -4776,7 +4779,7 @@ const errs = compReplyCheck_(st, sales, profit, items);
 if (Object.keys(errs).length) { compReplyRender_(form, errs); return; }
 st.saving = true; compReplyRender_(form);
 const res = await compSaveFetch_({ action: 'reply', tab: st.tab, recordId: rid, idempotencyKey: generateIdempotencyKey_(), year: compMineRes_ && compMineRes_.year,
-achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: sales, settleProfit: profit, itemKeys: items }, 30000);
+achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: st.profitOnly ? '' : sales, settleProfit: profit, itemKeys: items }, 30000);
 st.saving = false;
 if (res && res.ok && res.record) { compReplyApply_(res.record); return; }
 const f = document.querySelector(`.rp-form[data-rid="${CSS.escape(rid)}"]`);
@@ -4967,6 +4970,8 @@ st.errs = res && res.field ? { [res.field]: res.error && res.error.indexOf('DATE
 st.msg = { err: true, text: text };
 compCreateRender_();
 }
+// 금액 칸 단위: 끝 없음(계속)이면 '천원/월'(강조), 끝 달이 있으면 '천원'
+function compUnit_(open) { return open ? '<span class="rp-u rp-u-avg">천원/월</span>' : '<span class="rp-u">천원</span>'; }
 // 끝 없음(계속)이면 한 달 평균, 끝 달이 있으면 기간 전체 총액을 적도록 안내(2026-10-27 재홍님) — 추가매출 결과 적기·원가개선 같이 씀
 function compAvgGuide_(open, what) {
 return `<span class="rp-guide">💡 ${open ? `끝 없음(계속)이라 <b>한 달 평균</b> ${escapeHtml(what)}을 적어 주세요` : `끝 달이 있어 <b>기간 전체의 총</b> ${escapeHtml(what)}을 적어 주세요`}</span>`;
@@ -5005,7 +5010,7 @@ const yHtml = st.done === 'Y' ? `<div class="rp-row"><span class="rp-k">수행 �
 <button type="button" class="rp-pick${st.mcal === 'to' ? ' on' : ''}" ${st.open || st.saving ? 'disabled' : ''} onclick="compCreateMCal_('to')">📅 ${st.open ? '끝 없음' : (st.to ? escapeHtml(compReplyYmText_(st.to)) : '끝 달 고르기')}</button>
 <label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compCreateMOpen_(this)" ${dis}> 끝 없음(계속)</label>${cal}</span>
 <span class="rp-help">끝 달(끝 없음이면 시작 달)은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요${cell ? ' · 시트에는 ' + escapeHtml(cell) : ''}</span>${err('periodFrom')}${err('periodTo')}</div>
-<div class="rp-row"><span class="rp-k">원가 개선액 <b>*</b></span><span>개선 <input class="rp-in" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.amount)}" oninput="compCreateInput_(this,'amount')" ${dis}><span class="rp-u">천원</span>${st.open ? '<span class="rp-avg">/ 월 평균</span>' : ''}</span>
+<div class="rp-row"><span class="rp-k">원가 개선액 <b>*</b></span><span>개선 <input class="rp-in" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.amount)}" oninput="compCreateInput_(this,'amount')" ${dis}>${compUnit_(st.open)}</span>
 ${compAvgGuide_(st.open, '개선액')}<span class="rp-help">숫자만 · 단위 천원 (0도 가능)</span>${err('amount')}</div>
 <div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(st.keys)}" oninput="compCreateInput_(this,'keys')" ${dis}>
 <span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
