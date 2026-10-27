@@ -569,6 +569,14 @@ button.cm-tile:hover, button.cm-chip:hover { border-color: var(--accent); }
 .ct-zero { color: #c9c3dc; }
 .ct-ar { color: var(--danger); font-weight: 700; }
 .ct-pr { color: var(--accent); font-weight: 700; }
+/* 표 맞추기(2026-10-26): 위 묶음 제목 줄 · 묶음 사이 세로줄 · 완료·합계 칸 */
+.ct-table .ct-grp th { font-size: 11px; font-weight: 700; color: var(--accent); border-bottom: none; padding: 4px 6px 0; text-align: center; vertical-align: bottom; }
+.ct-table .ct-grp th.ct-g-plan { color: var(--danger); }
+.ct-table .ct-sep { border-left: 2px solid #d9d4e6; }
+.ct-table .ct-sep2, .ct-table td[data-sep2] { border-left: 1px dashed #d9d4e6; }
+.ct-done { color: var(--text); font-weight: 600; }
+.ct-table .ct-sum { font-weight: 700; background: #f1eef8; }
+.ct-dash { color: var(--text-muted); }
 .ct-left { opacity: .55; }
 .ct-left-tag { font-size: 10px; font-weight: 700; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; margin-left: 4px; }
 .ct-month-btn { border: none; background: none; padding: 6px 0 0; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
@@ -4544,7 +4552,8 @@ return (t && t.hasReply ? COMP_MINE_FILTERS_ : COMP_MINE_FILTERS_.filter(functio
 }
 // go = 누르면 부를 코드(compLeadGoAttr_). 0이거나 갈 곳이 없으면 그냥 글자(1단계-라-라-다).
 function compLeadNum_(n, cls, go) {
-if (!n) return '<td class="ct-zero">0</td>';
+// 0 칸에도 모양용 클래스(묶음 세로줄 ct-sep·합계 칸 ct-sum)는 남긴다 — 글자 색 클래스(ct-pr·ct-ar 등)는 빼서 0은 흐린 색 그대로
+if (!n) { const keep = String(cls || '').split(' ').filter(function (c) { return c === 'ct-sep' || c === 'ct-sum'; }).join(' '); return `<td class="ct-zero${keep ? ' ' + keep : ''}">0</td>`; }
 const c = cls ? ` class="${cls}"` : '';
 return go ? `<td${c}><button class="ct-go" onclick="${go}" title="눌러서 이 기록 보기">${n}</button></td>` : `<td${c}>${n}</td>`;
 }
@@ -4597,18 +4606,31 @@ return `<tr class="ct-team-row"><td colspan="${ncol}">${escapeHtml(teamLabel(tm 
 function compLeadTableHtml_(res) {
 const members = Array.isArray(res.members) ? res.members : [];
 if (!members.length) return '<div class="cm-empty">팀원이 없어요.</div>';
-const tot = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totAr = 0, totPr = 0;
-const head = `<tr><th>이름</th><th>사무소</th><th>${compLeadPr_(res)}</th><th>미이행</th><th>합계</th>${compLeadTabs_.map(function (t) { return `<th title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
+// 표 맞추기(2026-10-26 재홍님 지적): 칸을 '계획(결과 전)'과 '결과를 적은 기록' 두 묶음으로 나누고 '완료' 칸을 넣는다.
+// 줄마다 미평가 + 완료 = 합계 = 종류별 합. 미이행(결과 전 계획)은 합계에 들어가지 않는 따로 칸.
+// 완료 = 그 팀원의 '완료' 기록 수(records에서 셈 — 누르면 보이는 카드 수와 같음). v1.15 서버에서는 미평가 + 완료 = 합계(byTab 합)가 된다.
+// 퇴사자 줄은 처리 상태를 세지 않으므로(⑫) 상태 칸은 '—', 맨 아래 합계 줄은 재직 팀원만.
+const pr = compLeadPr_(res);
+const n = compLeadTabs_.length;
+const tot = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totAr = 0, totPr = 0, totDone = 0;
+const head = `<tr class="ct-grp"><th></th><th></th><th class="ct-g-plan">계획</th><th class="ct-sep" colspan="${3 + n}">결과를 적은 기록 · ${escapeHtml(pr)} + 완료 = 합계</th></tr>`
++ `<tr><th>이름</th><th>사무소</th><th title="결과(달성 여부)를 아직 적지 않은 추가매출 계획">미이행</th><th class="ct-sep">${pr}</th><th>완료</th><th class="ct-sum">합계</th>${compLeadTabs_.map(function (t, i) { return `<th${i === 0 ? ' class="ct-sep2"' : ''} title="${escapeHtml(t.label)}">${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}</span></th>`; }).join('')}</tr>`;
+const dash = '<td class="ct-dash">—</td>';
 const body = compLeadTableRows_(res, function (m) {
-const by = m.byTab || {}; let sum = 0; const mi = members.indexOf(m);
-const cells = compLeadTabs_.map(function (t, i) { const n = Number(by[t.key]) || 0; sum += n; tot[i] += n; return compLeadNum_(n, '', compLeadGoAttr_(t.key, 'all', mi)); }).join('');
-const ar = Number(m.awaitingReply) || 0, pr = Number(m.pendingReview) || 0;
-totSum += sum; totAr += ar; totPr += pr;
-const goPr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'pendingReview'), 'pendingReview', mi);
+const by = m.byTab || {}; let sum = 0; const mi = members.indexOf(m); const left = m.status === 'left';
+const nums = compLeadTabs_.map(function (t) { const v = Number(by[t.key]) || 0; sum += v; return v; });
+const cells = nums.map(function (v, i) { if (!left) tot[i] += v; const c = compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', mi)); return i === 0 ? c.replace('<td', '<td data-sep2') : c; }).join('');
+if (left) return `<tr class="ct-left">${compLeadWho_(m)}${dash}${dash.replace('<td class="', '<td class="ct-sep ')}${dash}${compLeadNum_(sum, 'ct-sum')}${cells}</tr>`;
+const ar = Number(m.awaitingReply) || 0, p = Number(m.pendingReview) || 0;
+const done = (Array.isArray(res.records) ? res.records : []).filter(function (r) { return r.authorEmail === m.email && r.reviewState === 'done'; }).length;
+totSum += sum; totAr += ar; totPr += p; totDone += done;
 const goAr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'awaitingReply'), 'awaitingReply', mi);
-return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${compLeadNum_(pr, 'ct-pr', goPr)}${compLeadNum_(ar, 'ct-ar', goAr)}${compLeadNum_(sum)}${cells}</tr>`;
-}, 5 + compLeadTabs_.length);
-const foot = `<tr class="ct-total"><td>합계</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totAr, 'ct-ar', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'awaitingReply'), 'awaitingReply', -1))}${compLeadNum_(totSum)}${tot.map(function (n, i) { return compLeadNum_(n, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); }).join('')}</tr>`;
+const goPr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'pendingReview'), 'pendingReview', mi);
+const goDone = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'done'), 'done', mi);
+return `<tr>${compLeadWho_(m)}${compLeadNum_(ar, 'ct-ar', goAr)}${compLeadNum_(p, 'ct-pr ct-sep', goPr)}${compLeadNum_(done, 'ct-done', goDone)}${compLeadNum_(sum, 'ct-sum')}${cells}</tr>`;
+}, 6 + n);
+const hasLeft = members.some(function (m) { return m.status === 'left'; });
+const foot = `<tr class="ct-total"><td>${hasLeft ? '재직 합계' : '합계'}</td><td></td>${compLeadNum_(totAr, 'ct-ar', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'awaitingReply'), 'awaitingReply', -1))}${compLeadNum_(totPr, 'ct-pr ct-sep', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totDone, 'ct-done', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'done'), 'done', -1))}${compLeadNum_(totSum, 'ct-sum')}${tot.map(function (v, i) { const c = compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); return i === 0 ? c.replace('<td', '<td data-sep2') : c; }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table">${head}${body}${foot}</table></div>`;
 }
 // 월별 표(설계서 ②·⑤): 서버 byMonth(기록일시 기준). 기록일시가 없는 기존 기록은 "기존" 칸.
