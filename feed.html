@@ -585,6 +585,36 @@ font-size: 13px; padding: 2px 4px; display: none;
 .rp-msg { font-size: 12px; text-align: right; }
 .rp-msg.err { color: var(--danger); }
 @media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
+/* 2-다 기록 추가(① 탭 안, 지금은 대면영업) — 2-나 rp-row·rp-k·rp-in·rp-help·rp-err·rp-act·rp-msg를 같이 쓰고, 겹치지 않는 것만 cr- */
+.cr-bar { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
+.cr-card { border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin: 6px 0 12px; background: #fff; display: grid; gap: 10px; }
+.cr-title { font-weight: 700; font-size: 14px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+.cr-card .rp-row { align-items: start; }
+.cr-card .rp-k { padding-top: 8px; }
+.cr-pair { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.cr-pair .rp-in { width: 140px; } .cr-pair .rp-in + .rp-in { width: 110px; }
+.cr-x { border: none; background: none; color: var(--text-muted); font-size: 15px; padding: 0 4px; cursor: pointer; }
+.cr-add { border: 1px dashed var(--border); background: #fff; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--accent); cursor: pointer; }
+.cr-when { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cr-when select.rp-in { width: 96px; background: #fff; }
+.cr-cal { flex-basis: 100%; max-width: 280px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12); padding: 10px; box-sizing: border-box; } /* 날짜 칸 아래 새 줄, 폭 280px까지 */
+.cr-calh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 6px; }
+.cr-calh button { border: none; background: none; cursor: pointer; padding: 0 8px; color: var(--text-muted); font-size: 15px; }
+.cr-calh button:disabled { visibility: hidden; }
+.cr-calg { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cr-calg .w { color: var(--text-muted); font-size: 11px; padding: 4px 0; }
+.cr-calg button { border: none; background: none; padding: 6px 0; font-size: 12px; border-radius: 5px; cursor: pointer; color: var(--text); }
+.cr-calg button:hover:not(:disabled) { background: #f1eef8; }
+.cr-calg button:disabled { color: #cfcbd9; cursor: default; }
+.cr-calg button.sel { background: var(--text); color: #fff; font-weight: 600; }
+.cr-seg { display: inline-grid; justify-self: start; grid-template-columns: repeat(5, 56px); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.cr-seg button { border: none; background: #fff; padding: 7px 0; font-size: 13px; cursor: pointer; color: var(--text); }
+.cr-seg button + button { border-left: 1px solid var(--border); }
+.cr-seg button.on { background: var(--text); color: #fff; font-weight: 600; }
+.cr-min { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cr-card textarea.rp-in { width: 100%; resize: vertical; font-family: inherit; }
+.cr-card > *, .cr-card .rp-row > * { min-width: 0; } /* 좁은 폭에서 칸이 카드 밖으로 밀리지 않게 */
+@media (max-width: 480px) { .cr-card { padding: 10px; } .cr-card .rp-k { padding-top: 0; } .cr-pair .rp-in { width: 0; flex: 1 1 0; min-width: 0; } .cr-pair .rp-in + .rp-in { width: 0; flex: 0 0 34%; } .cr-seg { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); } .cr-when select.rp-in { width: 84px; } }
 @media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
 /* 1단계-라-라-다 (B3, 2026-10-26 재홍님 결정): 탭 칸이 좁아지는 폭(481~860px)에서는 이모지를 위 줄로, 이름은 낱말째 줄바꿈("자기개 / 발" 방지). 480px 이하(짧은 이름)·861px 이상은 그대로 */
 @media (min-width: 481px) and (max-width: 860px) { .cm-tab-emoji { display: block; line-height: 1.1; } .cm-tab > span:first-child { word-break: keep-all; } }
@@ -4476,6 +4506,7 @@ return;
 }
 compMineRes_ = res;
 compMineFilter_ = 'all'; // 화면을 새로 열면 추가매출 필터는 "전체"로
+compCreateState_ = null; // 2-다: 화면을 새로 열면 쓰던 기록 추가 칸은 닫힘
 compSetBadge_(res.awaitingReply); // 배지도 최신 숫자로
 renderCompMine_(res);
 }
@@ -4562,7 +4593,10 @@ const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이
 // 2-나: 결과 적기는 본인 기록을 쓰는 일반·담당만(㉓, 서버도 같은 판정)
 const canReply = ['일반', '담당'].indexOf(String(((res && res.viewer) || {}).role || '')) >= 0;
 const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec, canReply ? { reply: true } : undefined); }).join('') : `<div class="cm-empty">${empty}</div>`;
-return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${filters}${cards}`;
+// 2-다: 기록 추가 — 일반·담당이고 서버가 이 탭에 입력 칸 규칙이 있다고 알려 준 탭(createForms)만
+const form = canReply && res && res.createForms && res.createForms[t.key];
+const create = form ? `<div id="cr-wrap" data-tab="${escapeHtml(t.key)}">${compCreateHtml_(t, form)}</div>` : '';
+return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${create}${filters}${cards}`;
 }
 function compMineTabsHtml_(res) {
 const n = Number(res.awaitingReply) || 0;
@@ -4762,6 +4796,174 @@ renderCompMine_(res);
 let card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`);
 // '계획' 필터를 보고 있었다면 바뀐 카드가 목록에서 빠지므로 '전체'로 바꿔서 보여준다
 if (!card && compMineFilter_ !== 'all') { compMineFilter_ = 'all'; renderCompMine_(res); card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`); }
+if (card) compScrollFlash_(card, true);
+}
+
+// ==== 2-다 기록 추가 (설계서 v1.21 ⑳-3 · 2026-10-27 재홍님 결정) — 지금은 대면영업만 ====
+// ① 그 탭 맨 위 [＋ 대면영업 기록 추가] → 같은 자리에 입력 카드. 팀원은 내용 칸만 적고(공통 규칙) 이름·사무소·순번·팀·기록ID·작성자이메일·기록일시는 서버가 채운다.
+// 대면영업 칸: 고객사 · 대면자·직급(한 쌍씩, 시트에는 쉼표로 이어서) · 미팅 일시(날짜 달력 + 시 0~23 필수) · 미팅 시간(20·30·40·60·기타 1~600분) · 기대 성과. 모두 필수.
+// 달력은 오늘 포함 최근 N일만 고를 수 있음(N = 서버 recordWindowDays, 없으면 14, 올해 날짜만). 저장 = saveCompetencyTest action create(서버가 같은 검사를 한 번 더).
+// 성공하면 서버가 돌려준 기록을 목록 끝에 붙이고 다시 그린 뒤 그 카드를 강조 — 다시 불러오지 않음. 입력 중인 값은 상태(compCreateState_)에 바로 담아 탭·필터를 바꿔도 남는다.
+let compCreateState_ = null;
+const COMP_CREATE_MINUTES_ = [20, 30, 40, 60];
+function compSeoulToday_() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); }
+function compIsoAdd_(iso, days) { return new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) + days * 86400000).toISOString().slice(0, 10); }
+function compCreateWindow_() { const n = Number(compMineRes_ && compMineRes_.recordWindowDays); return Number.isInteger(n) && n >= 1 && n <= 60 ? n : 14; }
+// 고를 수 있는 날짜 범위: 오늘 포함 최근 N일, 단 올해(1월 1일)보다 앞은 안 됨(1월 유예 없음)
+function compCreateRange_() {
+const today = compSeoulToday_();
+let from = compIsoAdd_(today, -(compCreateWindow_() - 1));
+if (from.slice(0, 4) !== today.slice(0, 4)) from = today.slice(0, 4) + '-01-01';
+return { from: from, to: today };
+}
+function compIsoText_(iso) { return iso ? Number(iso.slice(0, 4)) + '년 ' + Number(iso.slice(5, 7)) + '월 ' + Number(iso.slice(8, 10)) + '일' : ''; }
+function compCreateCell_(st) { return st.date && st.hour !== '' ? st.date.slice(2, 4) + st.date.slice(5, 7) + st.date.slice(8, 10) + '-' + String(st.hour).padStart(2, '0') : ''; }
+function compCreatePeopleText_(st) {
+const n = st.people.map(function (p) { return p.name.trim(); }), r = st.people.map(function (p) { return p.rank.trim(); });
+return n.some(Boolean) || r.some(Boolean) ? `시트에는 대면자 "${n.join(',')}" · 직급 "${r.join(',')}"로 저장` : '여러 명이면 [＋ 사람 추가] · 시트에는 쉼표(,)로 이어서 저장';
+}
+function compCreateHtml_(t, form) {
+const st = compCreateState_;
+if (!st || st.tab !== t.key) return `<div class="cr-bar"><button class="rp-btn" onclick="compCreateOpen_('${escapeHtml(t.key)}','${escapeHtml(form)}')">＋ ${escapeHtml(t.label)} 기록 추가</button></div>`;
+const errs = st.errs || {};
+const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
+const dis = st.saving ? 'disabled' : '';
+const rg = compCreateRange_();
+const pairs = st.people.map(function (p, i) {
+return `<div class="cr-pair"><input class="rp-in" maxlength="30" placeholder="대면자 이름" value="${escapeHtml(p.name)}" oninput="compCreateInput_(this,'name',${i})" ${dis}><input class="rp-in" maxlength="30" placeholder="직급" value="${escapeHtml(p.rank)}" oninput="compCreateInput_(this,'rank',${i})" ${dis}>${st.people.length > 1 ? `<button type="button" class="cr-x" aria-label="이 사람 빼기" onclick="compCreatePerson_(${i})" ${dis}>✕</button>` : ''}</div>`;
+}).join('');
+let cal = '';
+if (st.cal) {
+const y = st.calY, m = st.calM;
+const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+let g = ['일', '월', '화', '수', '목', '금', '토'].map(function (w) { return `<span class="w">${w}</span>`; }).join('');
+for (let i = 0; i < first; i++) g += '<span></span>';
+for (let d = 1; d <= last; d++) {
+const iso = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+const off = iso < rg.from || iso > rg.to;
+g += `<button type="button" class="${iso === st.date ? 'sel' : ''}" ${off ? 'disabled' : ''} onclick="compCreatePick_('${iso}')">${d}</button>`;
+}
+const ym = function (yy, mm) { return yy + '-' + String(mm).padStart(2, '0'); };
+const prevOff = ym(y, m) <= rg.from.slice(0, 7), nextOff = ym(y, m) >= rg.to.slice(0, 7);
+cal = `<div class="cr-cal"><div class="cr-calh"><button type="button" aria-label="이전 달" ${prevOff ? 'disabled' : ''} onclick="compCreateMonth_(-1)">‹</button><b>${y}년 ${m}월</b><button type="button" aria-label="다음 달" ${nextOff ? 'disabled' : ''} onclick="compCreateMonth_(1)">›</button></div><div class="cr-calg">${g}</div></div>`;
+}
+const hours = ['<option value="">시 선택</option>'].concat(Array.from({ length: 24 }, function (_, h) { return `<option value="${h}" ${String(st.hour) === String(h) ? 'selected' : ''}>${h}시</option>`; })).join('');
+const cell = compCreateCell_(st);
+const segs = COMP_CREATE_MINUTES_.map(function (n) { return `<button type="button" class="${!st.other && Number(st.minutes) === n ? 'on' : ''}" onclick="compCreateMin_(${n})" ${dis}>${n}분</button>`; }).join('') + `<button type="button" class="${st.other ? 'on' : ''}" onclick="compCreateMin_('other')" ${dis}>기타</button>`;
+const other = st.other ? `<span><input class="rp-in" style="width:80px" inputmode="numeric" placeholder="분" value="${escapeHtml(st.otherMin)}" oninput="compCreateInput_(this,'otherMin')" ${dis}><span class="rp-u">분</span></span>` : '';
+const msg = st.msg || null;
+return `<div class="cr-card"><div class="cr-title">${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가</div>
+<div class="rp-row"><span class="rp-k">고객사 <b>*</b></span><input class="rp-in" style="width:100%" maxlength="100" placeholder="고객사 이름" value="${escapeHtml(st.customer)}" oninput="compCreateInput_(this,'customer')" ${dis}>${err('customer')}</div>
+<div class="rp-row"><span class="rp-k">대면자 · 직급 <b>*</b></span><div>${pairs}${st.people.length < 10 ? `<button type="button" class="cr-add" onclick="compCreatePerson_(-1)" ${dis}>＋ 사람 추가</button>` : ''}</div><span class="rp-help cr-people-help">${escapeHtml(compCreatePeopleText_(st))}</span>${err('people')}</div>
+<div class="rp-row"><span class="rp-k">미팅 일시 <b>*</b></span><div class="cr-when"><button type="button" class="rp-pick${st.cal ? ' on' : ''}" onclick="compCreateCal_()" ${dis}>📅 ${st.date ? escapeHtml(compIsoText_(st.date)) : '날짜 고르기'}</button><select class="rp-in" aria-label="미팅 시" onchange="compCreateHour_(this)" ${dis}>${hours}</select>${cal}</div>
+<span class="rp-help">오늘 포함 최근 ${compCreateWindow_()}일(${Number(rg.from.slice(5, 7))}월 ${Number(rg.from.slice(8, 10))}일~${Number(rg.to.slice(5, 7))}월 ${Number(rg.to.slice(8, 10))}일)만 고를 수 있어요${cell ? ' · 시트에는 ' + cell : ''}</span>${err('meetDate')}${err('meetHour')}</div>
+<div class="rp-row"><span class="rp-k">미팅 시간 <b>*</b></span><div class="cr-min"><span class="cr-seg">${segs}</span>${other}</div>${st.other ? '<span class="rp-help">1~600분 숫자</span>' : ''}${err('minutes')}</div>
+<div class="rp-row"><span class="rp-k">기대 효과 <b>*</b></span><textarea class="rp-in" rows="3" maxlength="2000" placeholder="이번 미팅으로 기대하는 성과" oninput="compCreateInput_(this,'expected')" ${dis}>${escapeHtml(st.expected)}</textarea>${err('expected')}</div>
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : '기록 저장'}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다")}</div></div>`;
+}
+function compCreateRender_() {
+const wrap = document.getElementById('cr-wrap'); if (!wrap) return;
+const t = compTabs_.filter(function (x) { return x.key === wrap.dataset.tab; })[0]; if (!t) return;
+const form = compMineRes_ && compMineRes_.createForms && compMineRes_.createForms[t.key]; if (!form) return;
+wrap.innerHTML = compCreateHtml_(t, form);
+}
+function compCreateOpen_(key, form) {
+const t = compTabs_.filter(function (x) { return x.key === key; })[0]; if (!t) return;
+const today = compSeoulToday_();
+compCreateState_ = { tab: key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
+cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null };
+compCreateRender_();
+}
+function compCreateCancel_() { if (compCreateState_ && compCreateState_.saving) return; compCreateState_ = null; compCreateRender_(); }
+// 글자 입력은 다시 그리지 않고 상태에만 담는다(입력 중 커서 유지). 대면자·직급은 아래 저장 모양 안내만 바로 고친다.
+function compCreateInput_(el, k, i) {
+const st = compCreateState_; if (!st) return;
+if (k === 'name' || k === 'rank') { st.people[i][k] = el.value; const h = document.querySelector('#cr-wrap .cr-people-help'); if (h) h.textContent = compCreatePeopleText_(st); return; }
+st[k] = el.value;
+}
+function compCreatePerson_(i) {
+const st = compCreateState_; if (!st || st.saving) return;
+if (i < 0) { if (st.people.length < 10) st.people.push({ name: '', rank: '' }); } else if (st.people.length > 1) st.people.splice(i, 1);
+compCreateRender_();
+}
+function compCreateCal_() {
+const st = compCreateState_; if (!st || st.saving) return;
+st.cal = !st.cal;
+if (st.cal) { const base = st.date || compSeoulToday_(); st.calY = +base.slice(0, 4); st.calM = +base.slice(5, 7); }
+compCreateRender_();
+}
+function compCreateMonth_(d) {
+const st = compCreateState_; if (!st) return;
+st.calM += d; if (st.calM < 1) { st.calM = 12; st.calY--; } if (st.calM > 12) { st.calM = 1; st.calY++; }
+compCreateRender_();
+}
+function compCreatePick_(iso) { const st = compCreateState_; if (!st) return; st.date = iso; st.cal = false; compCreateRender_(); }
+function compCreateHour_(el) { const st = compCreateState_; if (!st) return; st.hour = el.value; compCreateRender_(); }
+function compCreateMin_(v) {
+const st = compCreateState_; if (!st || st.saving) return;
+if (v === 'other') { st.other = true; st.minutes = ''; } else { st.other = false; st.minutes = v; st.otherMin = ''; }
+compCreateRender_();
+}
+// 화면 검사(서버 CREATE_RULES.faceSales와 같은 규칙)
+function compCreateCheck_(st) {
+const e = {};
+const cu = st.customer.trim();
+if (!cu || cu.length > 100) e.customer = '고객사를 적어 주세요.';
+const bad = st.people.some(function (p) { return !p.name.trim() || !p.rank.trim(); });
+const comma = st.people.some(function (p) { return /[,\n]/.test(p.name) || /[,\n]/.test(p.rank); });
+if (comma) e.people = '이름·직급에는 쉼표(,)를 쓸 수 없어요. 여러 명이면 [＋ 사람 추가]를 눌러 주세요.';
+else if (bad) e.people = '대면자 이름과 직급을 모두 적어 주세요.';
+const rg = compCreateRange_();
+if (!st.date) e.meetDate = '미팅 날짜를 골라 주세요.';
+else if (st.date < rg.from || st.date > rg.to) e.meetDate = '고를 수 있는 기간 밖의 날짜예요. 날짜를 다시 골라 주세요.';
+if (st.hour === '') e.meetHour = '미팅 시(0~23시)를 골라 주세요.';
+const min = st.other ? String(st.otherMin).trim() : String(st.minutes);
+if (!/^\d+$/.test(min) || Number(min) < 1 || Number(min) > 600) e.minutes = st.other ? '기타 시간은 1~600분 숫자로 적어 주세요.' : '미팅 시간을 골라 주세요.';
+if (!st.expected.trim()) e.expected = '기대 효과를 적어 주세요.';
+return e;
+}
+async function compCreateSave_() {
+const st = compCreateState_; if (!st || st.saving) return;
+st.cal = false; st.msg = null;
+st.errs = compCreateCheck_(st);
+if (Object.keys(st.errs).length) { compCreateRender_(); return; }
+st.saving = true; compCreateRender_();
+// 응답을 못 받았을 때만 같은 키로 다시 보낸다(이미 저장됐다면 서버가 같은 결과를 돌려줌 — 두 줄 생기지 않음)
+st.key = st.key || generateIdempotencyKey_();
+const res = await compSaveFetch_({ action: 'create', tab: st.tab, form: st.form, idempotencyKey: st.key,
+customer: st.customer, people: st.people.map(function (p) { return { name: p.name, rank: p.rank }; }), meetDate: st.date, meetHour: Number(st.hour),
+minutes: Number(st.other ? String(st.otherMin).trim() : st.minutes), expected: st.expected }, 30000);
+if (compCreateState_ !== st) return;
+st.saving = false;
+if (res) st.key = '';
+if (res && res.ok && res.record) { compCreateApply_(res.record); return; }
+const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어요.', TAB_NOT_SUPPORTED: '이 탭은 아직 앱에서 추가할 수 없어요.', TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.',
+HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
+DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
+DATE_TOO_OLD: '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
+BAD_INPUT: '입력값을 확인해 주세요.' };
+let text;
+if (!res) text = '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요(같은 내용으로 다시 눌러도 두 번 저장되지 않아요).';
+else if (m[res.error]) text = m[res.error];
+else if (['SESSION_EXPIRED', 'SESSION_NOT_FOUND', 'SHEET_ACCESS_FAILED', 'COMPETENCY_SETTINGS_MISSING'].indexOf(res.error) >= 0) text = compErrorText_(res);
+else text = '저장하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
+st.errs = res && res.field ? { [res.field]: res.error && res.error.indexOf('DATE_') === 0 ? text : '이 칸을 확인해 주세요.' } : null;
+st.msg = { err: true, text: text };
+compCreateRender_();
+}
+// 저장 성공: 서버가 돌려준 기록을 그 탭 목록 끝에 붙이고(시트 순서와 같음) 팀 현황 내 줄 +1 → 다시 그림 → 그 카드로 내려가 강조
+function compCreateApply_(rec) {
+const res = compMineRes_; if (!res) return;
+compCreateState_ = null;
+res.records = res.records || {};
+if (!Array.isArray(res.records[rec.tab])) res.records[rec.tab] = [];
+res.records[rec.tab].push(rec);
+const me = String((res.viewer && res.viewer.name) || '').replace(/\s+/g, '');
+if (rec.reviewState !== 'awaitingReply') (res.teamCounts || []).forEach(function (m) { if (me && String(m.name || '').replace(/\s+/g, '') === me) { m.byTab = m.byTab || {}; m.byTab[rec.tab] = (Number(m.byTab[rec.tab]) || 0) + 1; } });
+compMineTab_ = rec.tab; compMineFilter_ = 'all';
+renderCompMine_(res);
+const card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`);
 if (card) compScrollFlash_(card, true);
 }
 
