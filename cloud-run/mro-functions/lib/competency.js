@@ -533,16 +533,24 @@ function validateReply(b) {
   if (open && to) return bad('reflectTo');
   if (!open && !to) return bad('reflectTo');
   if (to && (!validYymm(to) || to < from)) return bad('reflectTo');
-  const sales = parseThousand(b.settleSales, false);
-  if (sales === null) return bad('settleSales');
+  // 매출은 빈칸이면 null — 그 줄의 구분이 '이익개선'이면 매출 칸 없이 이익만(planReply가 시트의 구분을 보고 정함, 2026-10-27 재홍님)
+  const salesBlank = String(b.settleSales === undefined || b.settleSales === null ? '' : b.settleSales).trim() === '';
+  const sales = salesBlank ? null : parseThousand(b.settleSales, false);
+  if (!salesBlank && sales === null) return bad('settleSales');
   const profit = parseThousand(b.settleProfit, true);
   if (profit === null) return bad('settleProfit');
   const itemKeys = parseItemKeys(b.itemKeys);
   if (itemKeys === null) return bad('itemKeys');
-  return { ok: true, achieved: 'Y', period: from + '~' + to, itemKeys: itemKeys,
-    // 끝 없음(계속) = 한 달 평균 → '… / 월 평균', 끝 달 있음 = 기간 총액 (2026-10-27 재홍님, 원가개선과 같은 규칙)
-    settle: '매출 ' + comma(sales) + '천원 / 이익 ' + (profit < 0 ? '-' + comma(-profit) : comma(profit)) + '천원' + (open ? ' / 월 평균' : '') };
+  return { ok: true, achieved: 'Y', period: from + '~' + to, itemKeys: itemKeys, sales: sales, profit: profit, open: open,
+    settle: sales === null ? '' : settleText(sales, profit, open) };
 }
+// 당해년도 실적결산 글자. sales === null = 이익만(이익개선).
+// 끝 없음(계속) = 한 달 평균 → '… / 월 평균', 끝 달 있음 = 기간 총액 (2026-10-27 재홍님, 원가개선과 같은 규칙)
+function settleText(sales, profit, open) {
+  const p = (profit < 0 ? '-' + comma(-profit) : comma(profit)) + '천원';
+  return (sales === null ? '이익 ' + p : '매출 ' + comma(sales) + '천원 / 이익 ' + p) + (open ? ' / 월 평균' : '');
+}
+const PROFIT_ONLY_KIND = '이익개선'; // 추가매출 '구분' 값 — 매출이 늘지 않으므로 결산은 이익만
 // 탭 값(A1:Z, 1행 머리글)에서 기록ID 줄을 찾아 쓸 칸을 정한다.
 // 반환 { ok:true, writes:[{range,value}], record } 또는 { ok:false, error }
 //   HEADER_NOT_READY  필요한 칸(기록ID·작성자이메일·수정일시·달성 여부·시점·결산, Y면 아이템키도) 중 없는 칸이 있음
@@ -566,8 +574,15 @@ function planReply(tab, values, recordId, viewerEmail, v, nowMs) {
   if (normEmail(cell(row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail) || !normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
   if (cell(row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'ALREADY_REPLIED' };
   if (v.achieved === 'Y' && (cell(row, REPLY_PERIOD_HEADER) || cell(row, REPLY_SETTLE_HEADER) || cell(row, ITEM_KEY_HEADER))) return { ok: false, error: 'CELL_NOT_EMPTY' };
+  // 결산: 구분이 이익개선이면 이익만, 그 밖(신규매출·품목확대 등)은 매출·이익 둘 다 필수
+  let settle = v.settle;
+  if (v.achieved === 'Y') {
+    const profitOnly = col('구분') >= 0 && cell(row, '구분') === PROFIT_ONLY_KIND;
+    if (profitOnly) settle = settleText(null, v.profit, v.open);
+    else if (v.sales === null || v.sales === undefined) return { ok: false, error: 'BAD_INPUT', field: 'settleSales' };
+  }
   const set = [[ADD_SALES_REPLY_HEADER, v.achieved]];
-  if (v.achieved === 'Y') set.push([REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, v.settle], [ITEM_KEY_HEADER, v.itemKeys]);
+  if (v.achieved === 'Y') set.push([REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, settle], [ITEM_KEY_HEADER, v.itemKeys]);
   set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
   const writes = set.map(function (s) {
     while (row.length <= col(s[0])) row.push('');

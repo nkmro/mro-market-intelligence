@@ -30,7 +30,8 @@ function baseTabs() {
       R('김하늘', '바른기계', '', '', '', 'CE-DUP', 'kim@x.com'),
       R('최영아', '사랑물산', '', '', '', 'CE-A5', ''),                    // 8행: 이메일 없음(미등록)
       R('박서준', '아름전자', '', '', '', 'CE-A6', 'park@x.com'),          // 9행: 퇴사자 줄
-      R('김하늘', '자람테크', '', '', '', 'CE-A7', 'kim@x.com', '7654321')] // 10행: 아이템키만 이미 있음
+      R('김하늘', '자람테크', '', '', '', 'CE-A7', 'kim@x.com', '7654321'), // 10행: 아이템키만 이미 있음
+      R('김하늘', '하늘상사', '', '', '', 'CE-A8', 'kim@x.com').map((x, i) => i === 2 ? '이익개선' : x)] // 11행: 구분 이익개선
   };
 }
 const Y = { achieved: 'Y', reflectFrom: '2611', reflectTo: '2702', reflectOpen: false, settleSales: '3,200', settleProfit: 410, itemKeys: '1234567, 2345678' };
@@ -48,7 +49,7 @@ t('A5 시작 달 없음·월 13·3자리 → reflectFrom', badField({ reflectFro
 t('A6 끝 달도 끝 없음도 없음 → reflectTo', badField({ reflectTo: '' }) === 'reflectTo');
 t('A7 끝 달 + 끝 없음 둘 다 → reflectTo', badField({ reflectOpen: true }) === 'reflectTo');
 t('A8 끝 달이 시작 달보다 앞 → reflectTo (같은 달은 허용)', badField({ reflectTo: '2610' }) === 'reflectTo' && c.validateReply(Object.assign({}, Y, { reflectTo: '2611' })).period === '2611~2611');
-t('A9 매출 빈칸·음수·소수·글자 → settleSales', badField({ settleSales: '' }) === 'settleSales' && badField({ settleSales: '-1' }) === 'settleSales' && badField({ settleSales: '1.5' }) === 'settleSales' && badField({ settleSales: '백' }) === 'settleSales');
+t('A9 매출 음수·소수·글자 → settleSales / 빈칸은 화면 검사 통과(sales null — 구분은 시트에서 봄)', badField({ settleSales: '-1' }) === 'settleSales' && badField({ settleSales: '1.5' }) === 'settleSales' && badField({ settleSales: '백' }) === 'settleSales' && c.validateReply(Object.assign({}, Y, { settleSales: '' })).ok && c.validateReply(Object.assign({}, Y, { settleSales: '' })).sales === null);
 t('A10 이익 빈칸 → settleProfit, 이익 음수(손해)는 허용 "-1,500천원", 0 허용', badField({ settleProfit: '' }) === 'settleProfit' && c.validateReply(Object.assign({}, Y, { settleProfit: '-1500' })).settle === '매출 3,200천원 / 이익 -1,500천원' && c.validateReply(Object.assign({}, Y, { settleSales: 0, settleProfit: '0' })).settle === '매출 0천원 / 이익 0천원');
 t('A11 너무 큰 값(10억 천원 초과) 거부', badField({ settleSales: '1000000001' }) === 'settleSales');
 t('A11b 아이템키: 없음·글자 섞임·빈 칸(,,)·소수 → itemKeys / 자릿수 상관없음(3자리·7자리)·띄어쓰기·같은 키 합침', badField({ itemKeys: '' }) === 'itemKeys' && badField({ itemKeys: undefined }) === 'itemKeys' && badField({ itemKeys: '12a' }) === 'itemKeys' && badField({ itemKeys: '123,,456' }) === 'itemKeys' && badField({ itemKeys: '1.5' }) === 'itemKeys' && c.validateReply(Object.assign({}, Y, { itemKeys: ' 123 , 1234567,123 ' })).itemKeys === '123,1234567' && c.parseItemKeys('1234567') === '1234567');
@@ -71,6 +72,13 @@ t('A22 달성 여부 칸 없는 탭(대면영업) → HEADER_NOT_READY', c.planR
 t('A20b Y인데 아이템키 칸에 이미 값 → CELL_NOT_EMPTY', pe('CE-A7', 'kim@x.com') === 'CELL_NOT_EMPTY');
 { const tb = baseTabs(); tb[ADD] = tb[ADD].map((r, i) => r.filter((x, j) => j !== 10));
   t('A23b 아이템키 칸 없는 탭: Y → HEADER_NOT_READY, N → 허용(아이템키 안 씀)', c.planReply(TAB, tb[ADD], 'CE-A1', 'kim@x.com', c.validateReply(Y), now).error === 'HEADER_NOT_READY' && c.planReply(TAB, tb[ADD], 'CE-A1', 'kim@x.com', c.validateReply({ achieved: 'N' }), now).ok); }
+{ const vb = c.validateReply(Object.assign({}, Y, { settleSales: '' }));
+  const pb = c.planReply(TAB, baseTabs()[ADD], 'CE-A1', 'kim@x.com', vb, now);
+  t('A24 품목확대 줄에 매출 빈칸 → BAD_INPUT(settleSales), 쓰기 없음', !pb.ok && pb.error === 'BAD_INPUT' && pb.field === 'settleSales' && !pb.writes, pb);
+  const pp = c.planReply(TAB, baseTabs()[ADD], 'CE-A8', 'kim@x.com', vb, now);
+  t('A25 이익개선 줄: 매출 없이 이익만 → 결산 "이익 410천원"', pp.ok && pp.writes.find(w => /!J11$/.test(w.range)).value === '이익 410천원', pp.writes);
+  const po = c.planReply(TAB, baseTabs()[ADD], 'CE-A8', 'kim@x.com', c.validateReply(Object.assign({}, Y, { settleSales: '999', reflectTo: '', reflectOpen: true, settleProfit: '-30' })), now);
+  t('A26 이익개선 + 끝 없음, 매출을 보내도 무시 → "이익 -30천원 / 월 평균"', po.ok && po.writes.find(w => /!J11$/.test(w.range)).value === '이익 -30천원 / 월 평균', po.writes); }
 { const tb = baseTabs(); tb[ADD][0] = ADD_H.filter(h => h !== '수정일시');
   t('A23 수정일시 칸 없음 → HEADER_NOT_READY', c.planReply(TAB, tb[ADD], 'CE-A1', 'kim@x.com', c.validateReply(Y), now).error === 'HEADER_NOT_READY'); }
 
@@ -238,7 +246,7 @@ const changedCells = (a, b) => { let n = 0; Object.keys(a).forEach(tab => a[tab]
   USERS = USERS.map(u => u[0] === 'jhjoo@nkmro.com' ? ['jhjoo@nkmro.com', '주재홍', '일반', '동부', '활성'] : u);
   e = makeEnv(); e.sh.tabs[ADD].push(R('주재홍', '시험용', '', '', '', 'CE-TEST-0001', 'jhjoo@nkmro.com'));
   res = await callReply(e, 'TOK_ADMIN', { recordId: 'CE-TEST-0001', reflectTo: '', reflectOpen: true });
-  t('B24 역할을 일반으로 바꾼 관리자 → 본인 시험 줄 허용, 끝 없음 "2611~"', res.ok && e.sh.tabs[ADD][10][8] === '2611~', res);
+  t('B24 역할을 일반으로 바꾼 관리자 → 본인 시험 줄 허용, 끝 없음 "2611~"', res.ok && e.sh.tabs[ADD][11][8] === '2611~', res);
   USERS = USERS.map(u => u[0] === 'jhjoo@nkmro.com' ? ['jhjoo@nkmro.com', '주재홍', '팀장', '동부', '활성'] : u);
 
   // 잠금: 다른 저장(2-가 채우기 등)이 잠금을 쥐고 있으면 LOCK_TIMEOUT, 쓰기 0
@@ -257,6 +265,12 @@ const changedCells = (a, b) => { let n = 0; Object.keys(a).forEach(tab => a[tab]
   e = makeEnv(null, { beforeWrite: () => { throw new Error('backendError'); } });
   res = await callReply(e, 'TOK_STAFF', { idempotencyKey: 'E1' });
   t('B28 쓰기 오류 → 500, 잠금 풀림, 중복 방지 문서 지워짐(다시 시도 가능)', res.httpStatus === 500 && !('writeLocks/competencyEval' in e.fs.store) && !('writeIdempotency/E1' in e.fs.store), res);
+  // 이익개선: 이익만
+  e = makeEnv();
+  res = await callReply(e, 'TOK_STAFF', { recordId: 'CE-A8', settleSales: '', reflectTo: '', reflectOpen: true, settleProfit: '380' });
+  t('B32 이익개선 줄, 매출 빈칸 + 끝 없음 → ok, 시트 결산 "이익 380천원 / 월 평균"', res.ok && e.sh.tabs[ADD][10][9] === '이익 380천원 / 월 평균', { res, row: e.sh.tabs[ADD][10] });
+  res = await callReply(e, 'TOK_STAFF', { recordId: 'CE-A1', settleSales: '' });
+  t('B33 품목확대 줄, 매출 빈칸 → BAD_INPUT(settleSales), 쓰기 1번 그대로', res.error === 'BAD_INPUT' && res.field === 'settleSales' && fileWrites(e.sh).length === 1 && !e.sh.tabs[ADD][1][7], res);
   // 2-가 채우기는 그대로
   e = makeEnv();
   res = await e.save({ sessionToken: 'TOK_STAFF', action: 'backfill', mode: 'preview' });
