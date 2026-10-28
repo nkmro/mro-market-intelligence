@@ -587,6 +587,15 @@ font-size: 13px; padding: 2px 4px; display: none;
 @media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
 /* 2-다 기록 추가(① 탭 안, 지금은 대면영업) — 2-나 rp-row·rp-k·rp-in·rp-help·rp-err·rp-act·rp-msg를 같이 쓰고, 겹치지 않는 것만 cr- */
 .cr-bar { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
+/* 2-라 본인 기록 수정·삭제(① 미평가 카드 안) */
+.ed-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+.ed-btn { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.ed-del { color: var(--danger); border-color: var(--danger-soft); }
+.ed-confirm { margin-top: 10px; border: 1px solid var(--danger); background: var(--danger-soft); border-radius: 8px; padding: 10px 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; line-height: 1.5; }
+.ed-confirm b { color: var(--danger); }
+.ed-act { margin-left: auto; display: flex; gap: 8px; }
+.ed-confirm .rp-msg { flex-basis: 100%; }
+.btn-primary.ed-go { background: var(--danger); border-color: var(--danger); }
 .cr-card { border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin: 6px 0 12px; background: #fff; display: grid; gap: 10px; }
 .cr-title { font-weight: 700; font-size: 14px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
 .cr-card .rp-row { align-items: start; }
@@ -4517,6 +4526,7 @@ return;
 compMineRes_ = res;
 compMineFilter_ = 'all'; // 화면을 새로 열면 추가매출 필터는 "전체"로
 compCreateState_ = null; // 2-다: 화면을 새로 열면 쓰던 기록 추가 칸은 닫힘
+compEditDel_ = null; compMineMsg_ = null; // 2-라: 삭제 확인 칸·안내도 닫힘
 compSetBadge_(res.awaitingReply); // 배지도 최신 숫자로
 renderCompMine_(res);
 }
@@ -4541,10 +4551,13 @@ const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
 const fold = (rec.reviewState === 'done' ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
-// 2-나: ①(본인 기록, 일반·담당)의 '계획' 카드에만 [결과 적기] — opts.reply. ②는 opts.reply가 없어 그대로.
+// 2-나: ①(본인 기록, 일반·담당)의 '계획' 카드에만 [입력](2-라에서 '결과 적기' → '입력', 2026-10-28 재홍님) — opts.reply. ②는 opts.reply가 없어 그대로.
 const replyHtml = (opts && opts.reply && t.hasReply && rec.reviewState === 'awaitingReply' && rec.recordId)
-? `<div class="rp-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 결과 적기</button></div>` : '';
-return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${rows}${opHtml}${replyHtml}</div></div>`;
+? `<div class="rp-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 입력</button></div>` : '';
+// 2-라: ①의 '미평가' 카드에만 [수정][삭제] — opts.edit. 고치는 중이면 카드 안 값 목록 자리에 입력 폼.
+const ed = (opts && opts.edit) ? compEditHtml_(t, rec) : null;
+const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.bar : ''}`;
+return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${body}</div></div>`;
 }
 // 2단계 전 추가매출 카운팅(설계서 v1.15 ⑳): 서버는 달성 여부 칸이 빈 줄(계획만 있는 줄)을 건수에서 뺀다. 그 사실을 안내 문구에 덧붙인다.
 // tabs = 그 화면의 탭 목록, lead = ②(건수표에 "결과 / 계획" 칸이 있음). 달성 여부 칸이 있는 탭이 없으면 덧붙이지 않음.
@@ -4602,11 +4615,14 @@ const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILT
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
 // 2-나: 결과 적기는 본인 기록을 쓰는 일반·담당만(㉓, 서버도 같은 판정)
 const canReply = ['일반', '담당'].indexOf(String(((res && res.viewer) || {}).role || '')) >= 0;
-const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec, canReply ? { reply: true } : undefined); }).join('') : `<div class="cm-empty">${empty}</div>`;
+const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec, canReply ? { reply: true, edit: true } : undefined); }).join('') : `<div class="cm-empty">${empty}</div>`;
 // 2-다: 기록 추가 — 일반·담당이고 서버가 이 탭에 입력 칸 규칙이 있다고 알려 준 탭(createForms)만
 const form = canReply && res && res.createForms && res.createForms[t.key];
 const create = form ? `<div id="cr-wrap" data-tab="${escapeHtml(t.key)}">${compCreateHtml_(t, form)}</div>` : '';
-return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${create}${filters}${cards}`;
+// 2-라: 삭제 뒤 한 번만 보이는 안내(그 탭을 다시 그릴 때 1번)
+const done = compMineMsg_ && compMineMsg_.tab === t.key ? `<div class="cm-notice">${escapeHtml(compMineMsg_.text)}</div>` : '';
+compMineMsg_ = null;
+return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${done}${create}${filters}${cards}`;
 }
 function compMineTabsHtml_(res) {
 const n = Number(res.awaitingReply) || 0;
@@ -4674,7 +4690,7 @@ compMineTab_ = (n > 0 && replyTab) ? replyTab.key : (firstWith ? firstWith.key :
 }
 const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">내 역량 기록</div>
 <div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div>`;
-const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 <b>결과를 적을 계획이 ${n}건</b> 있어요. 카드의 [결과 적기]를 눌러 주세요.</div>` : '';
+const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 <b>결과를 적을 계획이 ${n}건</b> 있어요. 카드의 [입력]을 눌러 주세요.</div>` : '';
 const cols = `--cm-cols:${compColsCss_(compTabs_.length, 6)}; --cm-mcols:${compColsCss_(compTabs_.length, 5)};`;
 root.innerHTML = `<div class="settings-panel" style="${cols}">${head}${notice}${compTeamHtml_(res)}
 <div class="cm-mine"><div class="cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
@@ -4702,14 +4718,17 @@ compReplyRender_(form);
 }
 function compReplyCancel_(btn) {
 const form = compReplyWrap_(btn); if (!form) return;
+const wasEdit = compReplyState_[form.dataset.rid] && compReplyState_[form.dataset.rid].edit;
 delete compReplyState_[form.dataset.rid];
-form.outerHTML = `<div class="rp-bar" data-tab="${escapeHtml(form.dataset.tab)}" data-rid="${escapeHtml(form.dataset.rid)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 결과 적기</button></div>`;
+if (wasEdit) { form.outerHTML = compEditBarHtml_(form.dataset.tab, form.dataset.rid); return; } // 2-라: 결과 수정 취소 → [수정][삭제]로
+form.outerHTML = `<div class="rp-bar" data-tab="${escapeHtml(form.dataset.tab)}" data-rid="${escapeHtml(form.dataset.rid)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 입력</button></div>`;
 }
 // 폼 다시 그리기(입력한 매출·이익 값은 보존). errs = { field: 글자 }
 function compReplyRender_(form, errs, msg) {
 const st = compReplyState_[form.dataset.rid]; if (!st) return;
 errs = errs || {};
-const keep = function (cls) { const el = form.querySelector('.' + cls); return el ? el.value : ''; };
+// 2-라 결과 수정: 처음 그릴 때는 시트 값(st.init)으로 채운다
+const keep = function (cls) { const el = form.querySelector('.' + cls); return el ? el.value : ((st.init && st.init[cls]) || ''); };
 const sales = keep('rp-sales'), profit = keep('rp-profit'), items = keep('rp-items');
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
 const seg = ['Y', 'N'].map(function (v) { return `<button type="button" class="${st.achieved === v ? 'on' : ''}" onclick="compReplySet_(this,'${v}')">${v === 'Y' ? 'Y 달성' : 'N 미달성'}</button>`; }).join('');
@@ -4736,8 +4755,8 @@ ${compAvgGuide_(st.open, st.profitOnly ? '이익' : '매출·이익')}<span clas
 <span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
 const nHtml = st.achieved === 'N' ? '<div class="rp-help" style="grid-column:1/-1">미달성(N)은 실적이 없으므로 실적 반영 시점·실적결산·아이템키 칸이 없습니다</div>' : '';
 form.innerHTML = `<div class="rp-row"><span class="rp-k">달성 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('achieved')}</div>${yHtml}${nHtml}
-<div class="rp-act"><button type="button" class="btn-secondary" onclick="compReplyCancel_(this)" ${st.saving ? 'disabled' : ''}>취소</button><button type="button" class="btn-primary" onclick="compReplySave_(this)" ${st.saving ? 'disabled' : ''}>${st.saving ? '저장하는 중...' : '저장'}</button></div>
-<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "저장하면 '미평가'로 바뀌어 팀장님 평가를 기다립니다")}</div>`;
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compReplyCancel_(this)" ${st.saving ? 'disabled' : ''}>취소</button><button type="button" class="btn-primary" onclick="compReplySave_(this)" ${st.saving ? 'disabled' : ''}>${st.saving ? '저장하는 중...' : (st.edit ? '수정 저장' : '저장')}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || (st.edit ? '고친 칸과 수정일시만 바뀝니다 · 연초 계획 칸은 그대로' : "저장하면 '미평가'로 바뀌어 팀장님 평가를 기다립니다"))}</div>`;
 }
 function compReplySt_(el) { const f = compReplyWrap_(el); return f ? { form: f, st: compReplyState_[f.dataset.rid] } : {}; }
 function compReplySet_(el, v) { const o = compReplySt_(el); if (!o.st || o.st.saving) return; o.st.achieved = v; o.st.cal = ''; compReplyRender_(o.form); }
@@ -4778,10 +4797,10 @@ const sales = (form.querySelector('.rp-sales') || {}).value || '', profit = (for
 const errs = compReplyCheck_(st, sales, profit, items);
 if (Object.keys(errs).length) { compReplyRender_(form, errs); return; }
 st.saving = true; compReplyRender_(form);
-const res = await compSaveFetch_({ action: 'reply', tab: st.tab, recordId: rid, idempotencyKey: generateIdempotencyKey_(), year: compMineRes_ && compMineRes_.year,
+const res = await compSaveFetch_({ action: st.edit ? 'replyEdit' : 'reply', tab: st.tab, recordId: rid, idempotencyKey: generateIdempotencyKey_(), year: compMineRes_ && compMineRes_.year,
 achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: st.profitOnly ? '' : sales, settleProfit: profit, itemKeys: items }, 30000);
 st.saving = false;
-if (res && res.ok && res.record) { compReplyApply_(res.record); return; }
+if (res && res.ok && res.record) { if (st.edit) compEditApply_(res.record); else compReplyApply_(res.record); return; }
 const f = document.querySelector(`.rp-form[data-rid="${CSS.escape(rid)}"]`);
 if (!f) return;
 const m = { ALREADY_REPLIED: '이미 결과가 적혀 있어요. 화면을 새로 열면 보입니다.', NOT_YOUR_RECORD: '본인 기록에만 결과를 적을 수 있어요.', FORBIDDEN: '팀원(일반·담당)만 결과를 적을 수 있어요.',
@@ -4789,6 +4808,7 @@ RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 �
 CELL_NOT_EMPTY: '시트의 실적 칸에 이미 값이 있어요. 팀장님께 확인해 주세요.', HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
 BAD_INPUT: '입력값을 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.' };
+Object.assign(m, COMP_EDIT_ERR_); // 2-라: 결과 수정 오류(평가 완료·바뀐 칸 없음 등)
 const text = !res ? '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요.' : (m[res.error] || ('저장하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')'));
 compReplyRender_(f, res && res.field ? { [res.field]: '이 칸을 확인해 주세요.' } : null, { err: true, text: text });
 }
@@ -4835,9 +4855,10 @@ function compCreatePeopleText_(st) {
 const n = st.people.map(function (p) { return p.name.trim(); }), r = st.people.map(function (p) { return p.rank.trim(); });
 return n.some(Boolean) || r.some(Boolean) ? `시트에는 대면자 "${n.join(',')}" · 직급 "${r.join(',')}"로 저장` : '여러 명이면 [＋ 사람 추가] · 시트에는 쉼표(,)로 이어서 저장';
 }
-function compCreateHtml_(t, form) {
+function compCreateHtml_(t, form, edit) {
 const st = compCreateState_;
-if (!st || st.tab !== t.key) return `<div class="cr-bar"><button class="rp-btn" onclick="compCreateOpen_('${escapeHtml(t.key)}','${escapeHtml(form)}')">＋ ${escapeHtml(t.label)} 기록 추가</button></div>`;
+// 2-라: 같은 상태(compCreateState_)를 고치기에도 씀 — editRid가 있으면 맨 위 추가 칸은 버튼만, 그 카드 안(edit)에 폼
+if (!st || st.tab !== t.key || !!st.editRid !== !!edit) return `<div class="cr-bar"><button class="rp-btn" onclick="compCreateOpen_('${escapeHtml(t.key)}','${escapeHtml(form)}')">＋ ${escapeHtml(t.label)} 기록 추가</button></div>`;
 if (COMP_DONE_FORMS_[st.form]) return compCreateDoneHtml_(st);
 const errs = st.errs || {};
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
@@ -4866,17 +4887,25 @@ const cell = compCreateCell_(st);
 const segs = COMP_CREATE_MINUTES_.map(function (n) { return `<button type="button" class="${!st.other && Number(st.minutes) === n ? 'on' : ''}" onclick="compCreateMin_(${n})" ${dis}>${n}분</button>`; }).join('') + `<button type="button" class="${st.other ? 'on' : ''}" onclick="compCreateMin_('other')" ${dis}>기타</button>`;
 const other = st.other ? `<span><input class="rp-in" style="width:80px" inputmode="numeric" placeholder="분" value="${escapeHtml(st.otherMin)}" oninput="compCreateInput_(this,'otherMin')" ${dis}><span class="rp-u">분</span></span>` : '';
 const msg = st.msg || null;
-return `<div class="cr-card"><div class="cr-title">${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가</div>
+const tx = compCreateTexts_(st);
+return `<div class="cr-card"><div class="cr-title">${tx.title}</div>
 <div class="rp-row"><span class="rp-k">고객사 <b>*</b></span><input class="rp-in" style="width:100%" maxlength="100" placeholder="고객사 이름" value="${escapeHtml(st.customer)}" oninput="compCreateInput_(this,'customer')" ${dis}>${err('customer')}</div>
 <div class="rp-row"><span class="rp-k">대면자 · 직급 <b>*</b></span><div>${pairs}${st.people.length < 10 ? `<button type="button" class="cr-add" onclick="compCreatePerson_(-1)" ${dis}>＋ 사람 추가</button>` : ''}</div><span class="rp-help cr-people-help">${escapeHtml(compCreatePeopleText_(st))}</span>${err('people')}</div>
 <div class="rp-row"><span class="rp-k">미팅 일시 <b>*</b></span><div class="cr-when"><button type="button" class="rp-pick${st.cal ? ' on' : ''}" onclick="compCreateCal_()" ${dis}>📅 ${st.date ? escapeHtml(compIsoText_(st.date)) : '날짜 고르기'}</button><select class="rp-in" aria-label="미팅 시" onchange="compCreateHour_(this)" ${dis}>${hours}</select>${cal}</div>
 <span class="rp-help">오늘 포함 최근 ${compCreateWindow_()}일(${Number(rg.from.slice(5, 7))}월 ${Number(rg.from.slice(8, 10))}일~${Number(rg.to.slice(5, 7))}월 ${Number(rg.to.slice(8, 10))}일)만 고를 수 있어요${cell ? ' · 시트에는 ' + cell : ''}</span>${err('meetDate')}${err('meetHour')}</div>
 <div class="rp-row"><span class="rp-k">미팅 시간 <b>*</b></span><div class="cr-min"><span class="cr-seg">${segs}</span>${other}</div>${st.other ? '<span class="rp-help">1~600분 숫자</span>' : ''}${err('minutes')}</div>
 <div class="rp-row"><span class="rp-k">기대 효과 <b>*</b></span><textarea class="rp-in" rows="3" maxlength="2000" placeholder="이번 미팅으로 기대하는 성과" oninput="compCreateInput_(this,'expected')" ${dis}>${escapeHtml(st.expected)}</textarea>${err('expected')}</div>
-<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : '기록 저장'}</button></div>
-<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다")}</div></div>`;
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : tx.save}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || tx.msg)}</div></div>`;
 }
 function compCreateRender_() {
+const est = compCreateState_;
+if (est && est.editRid) { // 2-라: 고치는 중이면 그 카드 안 폼만 다시 그림
+const ew = document.querySelector(`#comp-mine-view .ed-wrap[data-rid="${CSS.escape(est.editRid)}"]`);
+const et = compTabs_.filter(function (x) { return x.key === est.tab; })[0];
+if (ew && et) ew.innerHTML = compCreateHtml_(et, est.form, true);
+return;
+}
 const wrap = document.getElementById('cr-wrap'); if (!wrap) return;
 const t = compTabs_.filter(function (x) { return x.key === wrap.dataset.tab; })[0]; if (!t) return;
 const form = compMineRes_ && compMineRes_.createForms && compMineRes_.createForms[t.key]; if (!form) return;
@@ -4884,13 +4913,25 @@ wrap.innerHTML = compCreateHtml_(t, form);
 }
 function compCreateOpen_(key, form) {
 const t = compTabs_.filter(function (x) { return x.key === key; })[0]; if (!t) return;
-const today = compSeoulToday_();
-compCreateState_ = { tab: key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
-cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null,
-supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '' };
+const prevEdit = compCreateState_ && compCreateState_.editRid;
+if (compCreateState_ && compCreateState_.saving) return;
+compCreateState_ = compCreateInit_(t, form);
+if (prevEdit) { compMineBodyRender_(); return; } // 2-라: 고치던 카드가 있으면 그 카드도 닫히도록 탭 내용을 다시 그림
 compCreateRender_();
 }
-function compCreateCancel_() { if (compCreateState_ && compCreateState_.saving) return; compCreateState_ = null; compCreateRender_(); }
+// 입력 칸 상태 처음 값(2-라: 기록 추가·수정 같이 씀)
+function compCreateInit_(t, form) {
+const today = compSeoulToday_();
+return { tab: t.key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
+cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null,
+supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '' };
+}
+function compCreateCancel_() {
+if (compCreateState_ && compCreateState_.saving) return;
+const wasEdit = compCreateState_ && compCreateState_.editRid;
+compCreateState_ = null;
+if (wasEdit) compMineBodyRender_(); else compCreateRender_(); // 2-라: 수정 취소 → 그 카드는 다시 값 목록 + [수정][삭제]
+}
 // 글자 입력은 다시 그리지 않고 상태에만 담는다(입력 중 커서 유지). 대면자·직급은 아래 저장 모양 안내만 바로 고친다.
 function compCreateInput_(el, k, i) {
 const st = compCreateState_; if (!st) return;
@@ -4931,8 +4972,10 @@ const comma = st.people.some(function (p) { return /[,\n]/.test(p.name) || /[,\n
 if (comma) e.people = '이름·직급에는 쉼표(,)를 쓸 수 없어요. 여러 명이면 [＋ 사람 추가]를 눌러 주세요.';
 else if (bad) e.people = '대면자 이름과 직급을 모두 적어 주세요.';
 const rg = compCreateRange_();
+// 2-라 수정: 미팅 일시 칸이 그대로면 날짜 범위 검사 안 함(서버도 바뀐 때만 ㉑ 검사 — 오래된 기록의 다른 칸도 고칠 수 있음)
+const dateSame = !!st.editRid && compCreateCell_(st) === st.origCell;
 if (!st.date) e.meetDate = '미팅 날짜를 골라 주세요.';
-else if (st.date < rg.from || st.date > rg.to) e.meetDate = '고를 수 있는 기간 밖의 날짜예요. 날짜를 다시 골라 주세요.';
+else if (!dateSame && (st.date < rg.from || st.date > rg.to)) e.meetDate = '고를 수 있는 기간 밖의 날짜예요. 날짜를 다시 골라 주세요.';
 if (st.hour === '') e.meetHour = '미팅 시(0~23시)를 골라 주세요.';
 const min = st.other ? String(st.otherMin).trim() : String(st.minutes);
 if (!/^\d+$/.test(min) || Number(min) < 1 || Number(min) > 600) e.minutes = st.other ? '기타 시간은 1~600분 숫자로 적어 주세요.' : '미팅 시간을 골라 주세요.';
@@ -4952,16 +4995,17 @@ const body = st.form === 'costSave'
 : COMP_DONE_FORMS_[st.form] ? { item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: false, evaluation: st.evaluation }
 : { customer: st.customer, people: st.people.map(function (p) { return { name: p.name, rank: p.rank }; }), meetDate: st.date, meetHour: Number(st.hour),
 minutes: Number(st.other ? String(st.otherMin).trim() : st.minutes), expected: st.expected };
-const res = await compSaveFetch_(Object.assign({ action: 'create', tab: st.tab, form: st.form, idempotencyKey: st.key }, body), 30000);
+const res = await compSaveFetch_(Object.assign({ action: st.editRid ? 'update' : 'create', tab: st.tab, form: st.form, idempotencyKey: st.key }, st.editRid ? { recordId: st.editRid } : {}, body), 30000);
 if (compCreateState_ !== st) return;
 st.saving = false;
 if (res) st.key = '';
-if (res && res.ok && res.record) { compCreateApply_(res.record); return; }
+if (res && res.ok && res.record) { if (st.editRid) compEditApply_(res.record); else compCreateApply_(res.record); return; }
 const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어요.', TAB_NOT_SUPPORTED: '이 탭은 아직 앱에서 추가할 수 없어요.', TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.',
 HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
 DATE_TOO_OLD: '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
 BAD_INPUT: '입력값을 확인해 주세요.' };
+if (st.editRid) Object.assign(m, COMP_EDIT_ERR_, { FORBIDDEN: '팀원(일반·담당)만 기록을 고칠 수 있어요.' }); // 2-라
 let text;
 if (!res) text = '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요(같은 내용으로 다시 눌러도 두 번 저장되지 않아요).';
 else if (m[res.error]) text = m[res.error];
@@ -5031,13 +5075,14 @@ ${openHtml}${cal}</span>
 <span class="rp-help">${periodHelp}${cell ? ' · 시트에는 ' + escapeHtml(cell) : ''}</span>${err('periodFrom')}${err('periodTo')}</div>${costHtml}${evalHtml}` : '';
 const nHtml = st.done === 'N' ? `<div class="rp-help" style="grid-column:1/-1">${escapeHtml(cfg.nText)}</div>` : '';
 const msg = st.msg || null;
-return `<div class="cr-card"><div class="cr-title">${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가</div>
+const tx = compCreateTexts_(st);
+return `<div class="cr-card"><div class="cr-title">${tx.title}</div>
 ${cfg.top.map(function (f) { return `<div class="rp-row"><span class="rp-k">${f[1]} <b>*</b></span>${inp(f[0], f[2], 100)}${err(f[0])}</div>`; }).join('')}
 <div class="rp-row"><span class="rp-k">${escapeHtml(cfg.item[0])} <b>*</b></span>${inp('item', cfg.item[1], 100)}<span class="rp-help">카드 제목으로 보입니다</span>${err('item')}</div>
 <div class="rp-row"><span class="rp-k">${escapeHtml(cfg.reason[0])} <b>*</b></span><textarea class="rp-in" rows="2" maxlength="2000" placeholder="${escapeHtml(cfg.reason[1])}" oninput="compCreateInput_(this,'reason')" ${dis}>${escapeHtml(st.reason)}</textarea>${err('reason')}</div>
 <div class="rp-row"><span class="rp-k">완료 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('done')}</div>${yHtml}${nHtml}
-<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : '기록 저장'}</button></div>
-<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다")}</div></div>`;
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : tx.save}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || tx.msg)}</div></div>`;
 }
 function compCreateDone_(v) { const st = compCreateState_; if (!st || st.saving) return; st.done = v; st.mcal = ''; compCreateRender_(); }
 function compCreateMCal_(which) {
@@ -5065,11 +5110,14 @@ if (st.done !== 'Y' && st.done !== 'N') { e.done = '완료 여부를 골라 주�
 if (st.done !== 'Y') return e;
 const mr = compCostMonths_();
 const months = compYmRangeText_(mr.oldest, mr.now);
+// 2-라 수정: 수행 기간 칸이 그대로면 달 범위 검사 안 함(서버도 바뀐 때만 ㉑ 검사)
+const same = !!st.editRid && compDonePeriod_(st) === st.origPeriod;
 if (!st.from) e.periodFrom = '시작 달을 골라 주세요.';
+else if (same) { /* 그대로 */ }
 else if (st.from < mr.yearStart || st.from > mr.now) e.periodFrom = '시작 달은 올해 1월부터 이번 달까지 고를 수 있어요.';
 else if (st.open && st.from < mr.oldest) e.periodFrom = "끝 없음(계속)이면 시작 달이 " + months + "이어야 해요.";
-if (!st.open && !st.to) e.periodTo = "끝 달을 고르거나 '끝 없음(계속)'에 체크해 주세요.";
-else if (!st.open && (st.to < mr.oldest || st.to > mr.now)) e.periodTo = '끝 달은 ' + months + '만 고를 수 있어요.';
+if (!st.open && !st.to) e.periodTo = cfg.open ? "끝 달을 고르거나 '끝 없음(계속)'에 체크해 주세요." : '끝 달을 골라 주세요.';
+else if (!same && !st.open && (st.to < mr.oldest || st.to > mr.now)) e.periodTo = '끝 달은 ' + months + '만 고를 수 있어요.';
 if (cfg.evalLabel && !String(st.evaluation || '').trim()) e.evaluation = cfg.evalMsg;
 if (!cfg.cost) return e;
 if (!/^\d+$/.test(String(st.amount || '').replace(/[,\s]/g, '')) || Number(String(st.amount).replace(/[,\s]/g, '')) > 1000000000) e.amount = '원가 개선액을 숫자로 적어 주세요(천원, 0 이상).';
@@ -5090,6 +5138,212 @@ compMineTab_ = rec.tab; compMineFilter_ = 'all';
 renderCompMine_(res);
 const card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`);
 if (card) compScrollFlash_(card, true);
+}
+
+// ==== 2-라 본인 기록 수정·삭제 (설계서 v1.25 ⑳-7 · 2026-10-28 재홍님 결정) ====
+// ① '미평가' 카드에만 [✏️ 수정][🗑 삭제]. '평가 완료'는 버튼 없음(팀장님께 1회 수정 요청 → 승인 → 미평가는 2-마). 서버도 같은 판정(ALREADY_REVIEWED).
+// 자기개발·직급역량·대면영업·원가개선 = 수정: 기록 추가 폼을 그 카드 안에 시트 값으로 채워 열기(action update) / 삭제: 그 줄 통째로(action delete).
+// 추가매출 = 수정: [입력] 폼을 결과 값으로 채워 열기(action replyEdit, 연초 계획 칸은 못 고침) / 삭제: 결과 4칸만 지우고 '계획'으로(action replyClear).
+// 삭제는 확인 칸을 카드 안에 띄움(브라우저 확인 창 안 씀). 성공하면 서버가 돌려준 값으로 화면 숫자를 고치고 다시 그림 — 다시 불러오지 않음.
+let compEditDel_ = null; // { tab, rid, saving, msg, key } — 삭제 확인 칸(한 번에 1장)
+let compMineMsg_ = null; // { tab, text } — 삭제 뒤 한 번 보이는 안내
+const COMP_EDIT_ERR_ = {
+ALREADY_REVIEWED: '팀장님 평가가 끝난 기록이라 고치거나 지울 수 없어요. 화면을 새로 열어 주세요.',
+NO_CHANGE: '바뀐 내용이 없어요. 고칠 칸을 바꾼 뒤 눌러 주세요.',
+NOT_EDITABLE: '이 탭은 앱에서 고칠 수 없어요.', NOT_DELETABLE: '이 탭의 기록은 앱에서 지울 수 없어요.',
+NOT_REPLIED: '아직 결과가 적히지 않은 계획이에요. 화면을 새로 열어 주세요.',
+NOT_YOUR_RECORD: '본인 기록만 고치거나 지울 수 있어요.',
+RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.',
+DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 팀장님께 알려 주세요.',
+HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.',
+TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.', TAB_NOT_SUPPORTED: '이 탭은 앱에서 고칠 수 없어요.',
+LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
+DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
+PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
+FORBIDDEN: '팀원(일반·담당)만 고치거나 지울 수 있어요.'
+};
+function compMineBodyRender_() {
+const body = document.getElementById('cm-tab-body');
+if (body && compMineRes_) body.innerHTML = compMineTabBody_(compMineRes_, compMineTab_);
+}
+function compMineRec_(tab, rid) { return compMineList_(compMineRes_, tab).filter(function (r) { return r.recordId === rid; })[0] || null; }
+function compMineTabOf_(key) { return compTabs_.filter(function (x) { return x.key === key; })[0] || null; }
+// 카드 아래 칸: { bar } = 버튼 줄(또는 삭제 확인 칸) / { form } = 고치는 중(값 목록 자리에 폼) / null = 버튼 없음
+function compEditHtml_(t, rec) {
+if (rec.reviewState !== 'pendingReview' || !rec.recordId) return null;
+const form = t.hasReply ? 'reply' : (compMineRes_ && compMineRes_.createForms && compMineRes_.createForms[t.key]);
+if (!form) return null; // 서버가 입력 칸 규칙을 알려 주지 않은 탭은 버튼 없음
+const rid = rec.recordId, st = compCreateState_;
+if (!t.hasReply && st && st.editRid === rid && st.tab === t.key) return { form: `<div class="ed-wrap" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rid)}">${compCreateHtml_(t, form, true)}</div>` };
+const d = compEditDel_;
+if (d && d.rid === rid && d.tab === t.key) return { bar: compEditDelHtml_(t, d) };
+return { bar: compEditBarHtml_(t.key, rid) };
+}
+function compEditBarHtml_(key, rid) {
+return `<div class="ed-bar" data-tab="${escapeHtml(key)}" data-rid="${escapeHtml(rid)}"><button type="button" class="ed-btn" onclick="compEditOpen_(this)">✏️ 수정</button><button type="button" class="ed-btn ed-del" onclick="compDelAsk_(this)">🗑 삭제</button></div>`;
+}
+function compEditDelHtml_(t, d) {
+const what = t.hasReply ? "이 기록의 <b>결과</b>(달성 여부·실적 반영 시점·실적결산·아이템키)를 지울까요?<br>연초 계획은 그대로 남고, '계획' 상태로 돌아갑니다."
+: '이 기록을 <b>삭제</b>할까요? 시트에서 이 줄이 지워지고 되돌릴 수 없어요.';
+const dis = d.saving ? 'disabled' : '';
+return `<div class="ed-confirm"><span>🗑 ${what}</span><span class="ed-act"><button type="button" class="ed-btn" onclick="compDelCancel_()" ${dis}>취소</button><button type="button" class="btn-primary ed-go" onclick="compDelGo_()" ${dis}>${d.saving ? '삭제하는 중...' : '삭제'}</button></span>${d.msg ? `<div class="rp-msg err">${escapeHtml(d.msg)}</div>` : ''}</div>`;
+}
+// 카드 1장만 다시 그림(다른 카드에 열린 [입력] 폼은 그대로)
+function compCardRerender_(tab, rid) {
+const t = compMineTabOf_(tab), rec = compMineRec_(tab, rid);
+const old = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rid)}"]`);
+if (!t || !rec || !old) return;
+old.outerHTML = compRecordCard_(t, rec, { reply: true, edit: true });
+}
+// 시트 칸 글자 → 폼 상태(앱이 쓰는 모양만 읽음 — 모양이 다른 옛 값은 빈칸으로 두고 다시 고르게)
+function compEditPrefill_(st, rec) {
+const f = rec.fields || {};
+const g = function (k) { return String(f[k] === undefined ? '' : f[k]).trim(); };
+if (!COMP_DONE_FORMS_[st.form]) { // 대면영업
+st.customer = g('고객사');
+const names = g('대면자').split(','), ranks = g('직급').split(',');
+const n = Math.min(10, Math.max(names.length, ranks.length, 1));
+st.people = Array.from({ length: n }, function (_, i) { return { name: String(names[i] || '').trim(), rank: String(ranks[i] || '').trim() }; });
+st.origCell = g('미팅 일시(YYMMDD-HH)');
+const m = /^(\d{2})(\d{2})(\d{2})-(\d{1,2})$/.exec(st.origCell);
+if (m && Number(m[4]) <= 23) { st.date = '20' + m[1] + '-' + m[2] + '-' + m[3]; st.hour = String(Number(m[4])); }
+const mins = g('미팅 시간(분)');
+if (COMP_CREATE_MINUTES_.indexOf(Number(mins)) >= 0) st.minutes = Number(mins);
+else if (/^\d+$/.test(mins)) { st.other = true; st.otherMin = mins; }
+st.expected = g('기대 성과');
+return;
+}
+const cfg = COMP_DONE_FORMS_[st.form];
+cfg.top.forEach(function (x) { st[x[0]] = g(x[1]); });
+st.item = g(cfg.item[0]); st.reason = g(cfg.reason[0]);
+const done = g('완료 여부 (Y/N)').toUpperCase();
+st.done = done === 'Y' || done === 'N' ? done : '';
+st.origPeriod = g('수행 기간 (YYMMDD~YYMMDD)');
+const p = /^(\d{4})~(\d{4})?$/.exec(st.origPeriod);
+if (p) { st.from = p[1]; st.to = p[2] || ''; st.open = !p[2] && !!cfg.open; }
+if (cfg.cost) { const a = /개선\s*([\d,]+)/.exec(g('기대 성과')); st.amount = a ? a[1].replace(/,/g, '') : ''; st.keys = g('아이템키'); }
+if (cfg.evalLabel) st.evaluation = g(cfg.evalLabel);
+}
+// 수행 기간 칸에 쓸 글자(서버 validateCreate와 같은 모양) — 바뀌었는지 비교용
+function compDonePeriod_(st) { return st.done === 'Y' && st.from ? st.from + '~' + (st.open ? '' : st.to) : ''; }
+function compCreateTexts_(st) {
+if (!st.editRid) return { title: `${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가`, save: '기록 저장', msg: "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다" };
+return { title: '✏️ 기록 수정', save: '수정 저장',
+msg: '고친 칸과 수정일시만 바뀝니다 · ' + (COMP_DONE_FORMS_[st.form] ? '수행 기간을 바꾸면 고를 수 있는 달 안이어야 해요' : '미팅 일시를 바꾸면 최근 ' + compCreateWindow_() + '일 안이어야 해요') };
+}
+function compEditOpen_(btn) {
+const bar = btn && btn.closest('.ed-bar'); if (!bar || !compMineRes_) return;
+const t = compMineTabOf_(bar.dataset.tab), rec = compMineRec_(bar.dataset.tab, bar.dataset.rid);
+if (!t || !rec) return;
+if (t.hasReply) { compReplyEditOpen_(bar, rec); return; }
+if (compCreateState_ && compCreateState_.saving) return;
+const form = compMineRes_.createForms && compMineRes_.createForms[t.key]; if (!form) return;
+const st = compCreateInit_(t, form);
+st.editRid = rec.recordId;
+compEditPrefill_(st, rec);
+compCreateState_ = st; // 쓰던 기록 추가·다른 카드 수정 칸은 닫힘(입력 칸 상태는 한 번에 1개)
+if (compEditDel_ && compEditDel_.saving !== true) compEditDel_ = null;
+compMineBodyRender_();
+}
+function compReplyEditOpen_(bar, rec) {
+const f = rec.fields || {};
+const g = function (k) { return String(f[k] === undefined ? '' : f[k]).trim(); };
+const st = { tab: bar.dataset.tab, achieved: '', from: '', to: '', open: false, cal: '', calYear: Number(new Date().getFullYear()), saving: false,
+profitOnly: g('구분') === '이익개선', edit: true, init: {} };
+const a = g('달성 여부 (Y/N)').toUpperCase(); if (a === 'Y' || a === 'N') st.achieved = a;
+const p = /^(\d{4})~(\d{4})?$/.exec(g('실적 반영 시점(YYMM~)'));
+if (p) { st.from = p[1]; st.to = p[2] || ''; st.open = !p[2]; }
+const s = g('당해년도 실적결산 (매출/이익)');
+const ms = /매출\s*([\d,]+)/.exec(s), mp = /이익\s*(-?[\d,]+)/.exec(s);
+st.init = { 'rp-sales': ms ? ms[1] : '', 'rp-profit': mp ? mp[1] : '', 'rp-items': g('아이템키') };
+compReplyState_[rec.recordId] = st;
+const form = document.createElement('div');
+form.className = 'rp-form'; form.dataset.rid = rec.recordId; form.dataset.tab = bar.dataset.tab;
+bar.replaceWith(form);
+compReplyRender_(form);
+}
+function compDelAsk_(btn) {
+const bar = btn && btn.closest('.ed-bar'); if (!bar) return;
+const prev = compEditDel_;
+if (prev && prev.saving) return;
+compEditDel_ = { tab: bar.dataset.tab, rid: bar.dataset.rid, saving: false, msg: '', key: '' };
+if (prev) compCardRerender_(prev.tab, prev.rid);
+compCardRerender_(bar.dataset.tab, bar.dataset.rid);
+}
+function compDelCancel_() {
+const d = compEditDel_; if (!d || d.saving) return;
+compEditDel_ = null;
+compCardRerender_(d.tab, d.rid);
+}
+async function compDelGo_() {
+const d = compEditDel_; if (!d || d.saving) return;
+const t = compMineTabOf_(d.tab); if (!t) return;
+d.saving = true; d.msg = ''; compCardRerender_(d.tab, d.rid);
+// 응답을 못 받았을 때만 같은 키로 다시 보냄(이미 지워졌다면 서버가 같은 결과를 돌려줌)
+d.key = d.key || generateIdempotencyKey_();
+const res = await compSaveFetch_({ action: t.hasReply ? 'replyClear' : 'delete', tab: d.tab, recordId: d.rid, idempotencyKey: d.key, year: compMineRes_ && compMineRes_.year }, 30000);
+if (compEditDel_ !== d) return;
+d.saving = false;
+if (res) d.key = '';
+if (res && res.ok) {
+compEditDel_ = null;
+if (t.hasReply) { if (res.record) compReplyClearApply_(res.record); }
+else compDelApply_(d.tab, d.rid);
+return;
+}
+d.msg = !res ? '응답을 받지 못했어요. 지워졌을 수 있으니 화면을 새로 열어 확인해 주세요.'
+: (COMP_EDIT_ERR_[res.error] || (['SESSION_EXPIRED', 'SESSION_NOT_FOUND', 'SHEET_ACCESS_FAILED', 'COMPETENCY_SETTINGS_MISSING'].indexOf(res.error) >= 0 ? compErrorText_(res) : '지우지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')'));
+compCardRerender_(d.tab, d.rid);
+}
+// 팀 현황 내 줄 그 탭 건수 ±n
+function compMyCount_(tab, n) {
+const res = compMineRes_; if (!res) return;
+const me = String((res.viewer && res.viewer.name) || '').replace(/\s+/g, '');
+(res.teamCounts || []).forEach(function (m) { if (me && String(m.name || '').replace(/\s+/g, '') === me) { m.byTab = m.byTab || {}; m.byTab[tab] = Math.max(0, (Number(m.byTab[tab]) || 0) + n); } });
+}
+// 다시 그린 뒤 그 카드로 내려가 강조(필터에 가려졌으면 '전체'로)
+function compMineFlash_(rid) {
+let card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rid)}"]`);
+if (!card && compMineFilter_ !== 'all') { compMineFilter_ = 'all'; renderCompMine_(compMineRes_); card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rid)}"]`); }
+if (card) compScrollFlash_(card, true);
+}
+// 수정 성공(update·replyEdit): 그 카드 값만 바꿈(상태는 그대로 미평가 → 숫자 변화 없음)
+function compEditApply_(rec) {
+const res = compMineRes_; if (!res) return;
+if (compCreateState_ && compCreateState_.editRid === rec.recordId) compCreateState_ = null;
+delete compReplyState_[rec.recordId];
+const list = compMineList_(res, rec.tab);
+const i = list.findIndex(function (r) { return r.recordId === rec.recordId; });
+if (i >= 0) list[i] = Object.assign({}, list[i], rec);
+compMineTab_ = rec.tab;
+renderCompMine_(res);
+compMineFlash_(rec.recordId);
+}
+// 삭제 성공(delete): 목록에서 빼고 팀 현황 내 줄 -1(미평가는 건수에 들어가 있었음)
+function compDelApply_(tab, rid) {
+const res = compMineRes_; if (!res) return;
+if (compCreateState_ && compCreateState_.editRid === rid) compCreateState_ = null;
+const list = compMineList_(res, tab);
+const i = list.findIndex(function (r) { return r.recordId === rid; });
+if (i >= 0) list.splice(i, 1);
+compMyCount_(tab, -1);
+compMineTab_ = tab;
+compMineMsg_ = { tab: tab, text: '🗑 기록을 삭제했어요.' };
+renderCompMine_(res);
+}
+// 추가매출 결과 삭제(replyClear): 그 카드 → '계획', 결과 적을 계획 +1(배지·안내·탭 점), 팀 현황 내 줄 -1(결과 있는 줄만 셈, v1.15)
+function compReplyClearApply_(rec) {
+const res = compMineRes_; if (!res) return;
+delete compReplyState_[rec.recordId];
+const list = compMineList_(res, rec.tab);
+const i = list.findIndex(function (r) { return r.recordId === rec.recordId; });
+if (i >= 0) list[i] = Object.assign({}, list[i], rec);
+res.awaitingReply = (Number(res.awaitingReply) || 0) + 1;
+compMyCount_(rec.tab, -1);
+compSetBadge_(res.awaitingReply);
+compMineTab_ = rec.tab;
+renderCompMine_(res);
+compMineFlash_(rec.recordId);
 }
 
 // ==== 인사평가 › 팀 역량평가 (1단계-라-라, 설계서 3장 ② v1.9 · 2-2 · 부록 B) ====
