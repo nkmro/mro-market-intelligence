@@ -596,6 +596,16 @@ font-size: 13px; padding: 2px 4px; display: none;
 .ed-act { margin-left: auto; display: flex; gap: 8px; }
 .ed-confirm .rp-msg { flex-basis: 100%; }
 .btn-primary.ed-go { background: var(--danger); border-color: var(--danger); }
+/* 2-마-1 평가 완료 기록 1회 수정 요청 · 팀장 승인 */
+.cm-st-wait { color: #8a5a00; border-color: #e0b84a; background: #fff6e0; }
+.rq-ask { margin-top: 10px; border: 1px solid #b9c6ee; background: #f1f4fd; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; display: grid; gap: 8px; }
+.rq-ask textarea { width: 100%; box-sizing: border-box; }
+.rq-act { display: flex; gap: 8px; justify-content: flex-end; }
+.rq-wait { margin-top: 10px; font-size: 12px; color: #8a5a00; background: #fff6e0; border: 1px solid #f0d58a; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
+.rq-lock { margin-top: 10px; font-size: 12px; color: var(--text-muted); background: var(--bg-soft, #f4f5f7); border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
+.rq-box { margin-top: 10px; border: 1px solid #f0d58a; background: #fffaf0; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.6; display: grid; gap: 6px; }
+.rq-note { font-size: 12px; color: var(--text-muted); }
+.rq-go { border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; padding: 0; }
 .cr-card { border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin: 6px 0 12px; background: #fff; display: grid; gap: 10px; }
 .cr-title { font-weight: 700; font-size: 14px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
 .cr-card .rp-row { align-items: start; }
@@ -4478,7 +4488,7 @@ const a = []; for (let i = 0; i < c; i++) a.push('minmax(0, 1fr)');
 return a.join(' ');
 }
 // 카드 상세에 보이지 않는 칸: 사람·관리용 칸(이름·담당·사무소·순번)과 앱 관리 칸(설계서 4-3), 팀장 의견(아래 따로 표시)
-const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록ID', '작성자이메일', '기록일시', '수정일시', '팀장한줄의견', '첨부', '팀', '팀장 의견', '팀장 의견 (상중하)'];
+const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록ID', '작성자이메일', '기록일시', '수정일시', '팀장한줄의견', '첨부', '팀', '팀장 의견', '팀장 의견 (상중하)', '수정 요청'];
 // 설계서 3장 공통 규칙: 화면 표시 이름 "기대 효과" = 시트 칸 "기대 성과". 입력 형식 안내 괄호(YYMMDD~·Y/N 등)는 화면 이름에서 뺀다(시트 칸 이름은 그대로).
 const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과' };
 // 탭(항목 이름)마다 다른 화면 이름 — 원가개선의 '기대 성과' 칸은 실적(개선액)이므로 '원가 개선액'(2026-10-27 재홍님)
@@ -4527,6 +4537,7 @@ compMineRes_ = res;
 compMineFilter_ = 'all'; // 화면을 새로 열면 추가매출 필터는 "전체"로
 compCreateState_ = null; // 2-다: 화면을 새로 열면 쓰던 기록 추가 칸은 닫힘
 compEditDel_ = null; compMineMsg_ = null; // 2-라: 삭제 확인 칸·안내도 닫힘
+compReqAsk_ = null; // 2-마-1: 수정 요청 상자도 닫힘
 compSetBadge_(res.awaitingReply); // 배지도 최신 숫자로
 renderCompMine_(res);
 }
@@ -4550,14 +4561,20 @@ return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k, t)
 const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
-const fold = (rec.reviewState === 'done' ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
+const rqf = compEditReq_(rec); // 2-마-1: 수정 요청 중인 평가 완료 카드는 접지 않음(①은 기다림 안내, ②는 승인·거절 버튼이 바로 보이게)
+const fold = (rec.reviewState === 'done' && !(rqf && rqf.state === '요청') ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
 // 2-나: ①(본인 기록, 일반·담당)의 '계획' 카드에만 [입력](2-라에서 '결과 적기' → '입력', 2026-10-28 재홍님) — opts.reply. ②는 opts.reply가 없어 그대로.
 const replyHtml = (opts && opts.reply && t.hasReply && rec.reviewState === 'awaitingReply' && rec.recordId)
 ? `<div class="rp-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 입력</button></div>` : '';
 // 2-라: ①의 '미평가' 카드에만 [수정][삭제] — opts.edit. 고치는 중이면 카드 안 값 목록 자리에 입력 폼.
 const ed = (opts && opts.edit) ? compEditHtml_(t, rec) : null;
-const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.bar : ''}`;
-return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${compStateChip_(rec.reviewState, opts && opts.prLabel)}</div><div class="cm-card-body">${body}</div></div>`;
+// 2-마-1: ②(팀장·임원)는 수정 요청 상자/이력 — opts.lead, 승인·거절 버튼은 opts.decide(그 팀의 팀장)
+const lead = (opts && opts.lead) ? compLeadReqHtml_(t, rec, !!opts.decide) : '';
+const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.bar : ''}${lead}`;
+// 수정 요청 중(평가 완료 + '요청')이면 상태 표시는 '승인 대기'(①·② 같음)
+const rq = compEditReq_(rec);
+const chip = rec.reviewState === 'done' && rq && rq.state === '요청' ? '<span class="cm-st cm-st-wait">승인 대기</span>' : compStateChip_(rec.reviewState, opts && opts.prLabel);
+return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${chip}</div><div class="cm-card-body">${body}</div></div>`;
 }
 // 2단계 전 추가매출 카운팅(설계서 v1.15 ⑳): 서버는 달성 여부 칸이 빈 줄(계획만 있는 줄)을 건수에서 뺀다. 그 사실을 안내 문구에 덧붙인다.
 // tabs = 그 화면의 탭 목록, lead = ②(건수표에 "결과 / 계획" 칸이 있음). 달성 여부 칸이 있는 탭이 없으면 덧붙이지 않음.
@@ -4720,7 +4737,7 @@ function compReplyCancel_(btn) {
 const form = compReplyWrap_(btn); if (!form) return;
 const wasEdit = compReplyState_[form.dataset.rid] && compReplyState_[form.dataset.rid].edit;
 delete compReplyState_[form.dataset.rid];
-if (wasEdit) { form.outerHTML = compEditBarHtml_(form.dataset.tab, form.dataset.rid); return; } // 2-라: 결과 수정 취소 → [수정][삭제]로
+if (wasEdit) { compCardRerender_(form.dataset.tab, form.dataset.rid); return; } // 2-라: 결과 수정 취소 → 카드를 다시 그림([수정][삭제], 승인된 기록은 [수정]만)
 form.outerHTML = `<div class="rp-bar" data-tab="${escapeHtml(form.dataset.tab)}" data-rid="${escapeHtml(form.dataset.rid)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 입력</button></div>`;
 }
 // 폼 다시 그리기(입력한 매출·이익 값은 보존). errs = { field: 글자 }
@@ -5160,7 +5177,8 @@ TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 �
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
 PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
-FORBIDDEN: '팀원(일반·담당)만 고치거나 지울 수 있어요.'
+FORBIDDEN: '팀원(일반·담당)만 고치거나 지울 수 있어요.',
+APPROVED_EDIT_ONLY: '팀장님이 수정을 승인한 기록은 고칠 수만 있어요(삭제는 안 돼요).'
 };
 function compMineBodyRender_() {
 const body = document.getElementById('cm-tab-body');
@@ -5170,13 +5188,23 @@ function compMineRec_(tab, rid) { return compMineList_(compMineRes_, tab).filter
 function compMineTabOf_(key) { return compTabs_.filter(function (x) { return x.key === key; })[0] || null; }
 // 카드 아래 칸: { bar } = 버튼 줄(또는 삭제 확인 칸) / { form } = 고치는 중(값 목록 자리에 폼) / null = 버튼 없음
 function compEditHtml_(t, rec) {
-if (rec.reviewState !== 'pendingReview' || !rec.recordId) return null;
+if ((rec.reviewState !== 'pendingReview' && rec.reviewState !== 'done') || !rec.recordId) return null;
 const form = t.hasReply ? 'reply' : (compMineRes_ && compMineRes_.createForms && compMineRes_.createForms[t.key]);
 if (!form) return null; // 서버가 입력 칸 규칙을 알려 주지 않은 탭은 버튼 없음
 const rid = rec.recordId, st = compCreateState_;
+const rq = compEditReq_(rec);
+// 2-마-1 평가 완료: '수정 요청' 칸이 있는 탭만. 아직 요청 안 함 → [✏️ 수정](누르면 1회 요청 상자) / 요청 중 → 승인 대기 / 그 밖 → 1회 사용함
+if (rec.reviewState === 'done') {
+if (!compHasReqCol_(rec)) return null;
+if (!rq) { const a = compReqAsk_; return { bar: a && a.rid === rid && a.tab === t.key ? compReqAskHtml_(a) : `<div class="ed-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rid)}"><button type="button" class="ed-btn" onclick="compReqOpen_(this)">✏️ 수정</button></div>` }; }
+if (rq.state === '요청') return { bar: `<div class="rq-wait">⏳ 팀장님 승인을 기다리는 중${rq.at ? ` (${escapeHtml(compReqDay_(rq.at))} 요청)` : ''}${rq.reason ? ' · 사유: ' + escapeHtml(rq.reason) : ''}<br>승인되면 '미평가'로 바뀌어 고칠 수 있어요</div>` };
+return { bar: '<div class="rq-lock">🔒 이 기록은 수정 요청 1회를 이미 사용했어요</div>' };
+}
 if (!t.hasReply && st && st.editRid === rid && st.tab === t.key) return { form: `<div class="ed-wrap" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rid)}">${compCreateHtml_(t, form, true)}</div>` };
 const d = compEditDel_;
 if (d && d.rid === rid && d.tab === t.key) return { bar: compEditDelHtml_(t, d) };
+// 2-마-1: 팀장이 수정을 승인한 기록은 고치기만(서버도 지우기 거부 APPROVED_EDIT_ONLY)
+if (rq && rq.state === '승인') return { bar: `<div class="rq-lock">✅ 팀장님이 수정을 승인했어요. 고친 뒤 다시 평가받아요(삭제는 안 돼요)</div><div class="ed-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rid)}"><button type="button" class="ed-btn" onclick="compEditOpen_(this)">✏️ 수정</button></div>` };
 return { bar: compEditBarHtml_(t.key, rid) };
 }
 function compEditBarHtml_(key, rid) {
@@ -5193,7 +5221,9 @@ function compCardRerender_(tab, rid) {
 const t = compMineTabOf_(tab), rec = compMineRec_(tab, rid);
 const old = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rid)}"]`);
 if (!t || !rec || !old) return;
+const open = !old.classList.contains('cm-fold'); // 2-마-1: 펼쳐 둔 평가 완료 카드는 다시 그려도 펼친 채로
 old.outerHTML = compRecordCard_(t, rec, { reply: true, edit: true });
+if (open) { const nw = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rid)}"]`); if (nw) nw.classList.remove('cm-fold'); }
 }
 // 시트 칸 글자 → 폼 상태(앱이 쓰는 모양만 읽음 — 모양이 다른 옛 값은 빈칸으로 두고 다시 고르게)
 function compEditPrefill_(st, rec) {
@@ -5346,6 +5376,134 @@ renderCompMine_(res);
 compMineFlash_(rec.recordId);
 }
 
+// ==== 2-마-1 평가 완료 기록 1회 수정 요청 → 팀장 승인·거절 (설계서 v1.26 ⑳-8 · 2026-10-28 재홍님 결정) ====
+// 상태는 기록 탭 '수정 요청' 칸 글자로 온다(getCompetencyTest fields 그대로): '요청 …' / '승인 …' / '거절 …' — 값이 있으면 1회 사용.
+// ① 평가 완료 카드 [✏️ 수정] → 카드 안 상자("1회에 한해 …" + 사유 필수) → action editRequest → '승인 대기'.
+// ② 팀장: 위 안내(수정 요청 N건) + 그 카드 안 [거절][승인] → action editApprove / editReject. 승인 = 팀장 평가를 지우고 미평가로(이전 평가는 칸에 남음).
+let compReqAsk_ = null;  // ① { tab, rid, reason, saving, msg, key }
+let compLeadDec_ = null; // ② { tab, rid, saving, msg, key }
+const COMP_REQ_ERR_ = {
+NOT_REVIEWED: '아직 평가 전인 기록이에요. 화면을 새로 열어 주세요.', ALREADY_REQUESTED: '이 기록은 수정 요청 1회를 이미 사용했어요.',
+NOT_REQUESTED: '수정 요청 중인 기록이 아니에요(이미 처리됨). 화면을 새로 열어 주세요.', NOT_YOUR_TEAM: '우리 팀 팀원의 기록만 승인·거절할 수 있어요.',
+HEADER_NOT_READY: "시트에 '수정 요청' 칸이 없어요. 관리자에게 알려 주세요.", BAD_INPUT: '사유를 1~200자로 적어 주세요.',
+FORBIDDEN: '이 일을 할 권한이 없어요.', NOT_YOUR_RECORD: '본인 기록만 요청할 수 있어요.',
+RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.', DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 관리자에게 알려 주세요.',
+LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '처리하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
+PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.'
+};
+function compHasReqCol_(rec) { return Object.prototype.hasOwnProperty.call((rec && rec.fields) || {}, '수정 요청'); }
+// 서버 lib parseEditRequest와 같은 규칙
+function compEditReq_(rec) {
+const s = String((((rec && rec.fields) || {})['수정 요청']) || '').trim();
+if (!s) return null;
+const m = /^(요청|승인|거절)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(s);
+const reason = /사유:\s*([\s\S]*)$/.exec(s), prev = /이전 평가:\s*([\s\S]*?)\s*·\s*사유:/.exec(s);
+return { state: m ? m[1] : '기타', at: m ? m[2] : '', reason: reason ? reason[1].trim() : '', prev: prev ? prev[1].trim() : '' };
+}
+function compReqDay_(at) { return at ? Number(at.slice(5, 7)) + '/' + Number(at.slice(8, 10)) + ' ' + at.slice(11, 16) : ''; }
+function compReqErrText_(res, what) {
+if (!res) return '응답을 받지 못했어요. ' + what + '됐을 수 있으니 화면을 새로 열어 확인해 주세요.';
+if (COMP_REQ_ERR_[res.error]) return COMP_REQ_ERR_[res.error];
+if (['SESSION_EXPIRED', 'SESSION_NOT_FOUND', 'SHEET_ACCESS_FAILED', 'COMPETENCY_SETTINGS_MISSING'].indexOf(res.error) >= 0) return compErrorText_(res);
+return what + '하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
+}
+// ① 요청 상자
+function compReqAskHtml_(a) {
+const dis = a.saving ? 'disabled' : '';
+return `<div class="rq-ask"><div>🔒 팀장님 평가가 끝난 기록이에요. <b>1회에 한해</b> 팀장님께 수정을 요청할 수 있어요. 승인되면 '미평가'로 바뀌어 고칠 수 있어요.</div>
+<textarea class="rp-in" rows="2" maxlength="200" placeholder="무엇을 왜 고치려는지 적어 주세요 (예: 끝 달을 잘못 골랐어요)" oninput="compReqInput_(this)" ${dis}>${escapeHtml(a.reason)}</textarea>
+<div class="rq-act"><button type="button" class="ed-btn" onclick="compReqCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compReqGo_()" ${dis}>${a.saving ? '요청하는 중...' : '수정 요청'}</button></div>
+${a.msg ? `<div class="rp-msg err">${escapeHtml(a.msg)}</div>` : ''}</div>`;
+}
+function compReqOpen_(btn) {
+const bar = btn && btn.closest('.ed-bar'); if (!bar) return;
+const prev = compReqAsk_;
+if (prev && prev.saving) return;
+compReqAsk_ = { tab: bar.dataset.tab, rid: bar.dataset.rid, reason: '', saving: false, msg: '', key: '' };
+if (prev) compCardRerender_(prev.tab, prev.rid);
+compCardRerender_(bar.dataset.tab, bar.dataset.rid);
+const card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(bar.dataset.rid)}"]`);
+if (card) { card.classList.remove('cm-fold'); const ta = card.querySelector('.rq-ask textarea'); if (ta) ta.focus(); }
+}
+function compReqInput_(el) { if (compReqAsk_) compReqAsk_.reason = el.value; }
+function compReqCancel_() { const a = compReqAsk_; if (!a || a.saving) return; compReqAsk_ = null; compCardRerender_(a.tab, a.rid); }
+async function compReqGo_() {
+const a = compReqAsk_; if (!a || a.saving) return;
+const reason = String(a.reason || '').trim();
+if (!reason) { a.msg = '사유를 적어 주세요.'; compCardRerender_(a.tab, a.rid); return; }
+a.saving = true; a.msg = ''; compCardRerender_(a.tab, a.rid);
+a.key = a.key || generateIdempotencyKey_();
+const res = await compSaveFetch_({ action: 'editRequest', tab: a.tab, recordId: a.rid, reason: reason, idempotencyKey: a.key, year: compMineRes_ && compMineRes_.year }, 30000);
+if (compReqAsk_ !== a) return;
+a.saving = false;
+if (res) a.key = '';
+if (res && res.ok && res.record) { compReqAsk_ = null; compEditApply_(res.record); const c2 = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(a.rid)}"]`); if (c2) c2.classList.remove('cm-fold'); return; }
+a.msg = compReqErrText_(res, '요청');
+compCardRerender_(a.tab, a.rid);
+const card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(a.rid)}"]`); if (card) card.classList.remove('cm-fold');
+}
+// ② 카드 안 상자(요청 중) / 이력 한 줄(승인·거절)
+function compLeadReqHtml_(t, rec, decide) {
+const rq = compEditReq_(rec);
+if (!rq) return '';
+if (rq.state === '승인') return `<div class="rq-lock">✏️ 수정 승인함${rq.at ? ' (' + escapeHtml(compReqDay_(rq.at)) + ')' : ''}${rq.prev ? ' · 이전 평가: ' + escapeHtml(rq.prev) : ''}${rq.reason ? ' · 사유: ' + escapeHtml(rq.reason) : ''}</div>`;
+if (rq.state === '거절') return `<div class="rq-lock">✏️ 수정 요청 거절함${rq.at ? ' (' + escapeHtml(compReqDay_(rq.at)) + ')' : ''}${rq.reason ? ' · 사유: ' + escapeHtml(rq.reason) : ''}</div>`;
+if (rq.state !== '요청' || rec.reviewState !== 'done') return '';
+const d = compLeadDec_ && compLeadDec_.rid === rec.recordId && compLeadDec_.tab === t.key ? compLeadDec_ : null;
+const dis = d && d.saving ? 'disabled' : '';
+const op = String(rec.leaderOpinion || '').trim();
+const btns = decide ? `<div class="rq-act" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button type="button" class="ed-btn" onclick="compLeadDecide_(this,false)" ${dis}>${d && d.saving && d.approve === false ? '처리하는 중...' : '거절'}</button><button type="button" class="btn-primary" onclick="compLeadDecide_(this,true)" ${dis}>${d && d.saving && d.approve ? '처리하는 중...' : '승인'}</button></div>` : '';
+return `<div class="rq-box"><div>✋ <b>수정 요청</b>${rq.at ? ' (' + escapeHtml(compReqDay_(rq.at)) + ')' : ''}</div><div>사유: ${escapeHtml(rq.reason || '-')}</div>
+<div class="rq-note">승인하면 팀장 평가${op ? '(' + escapeHtml(op) + ')' : ''}가 지워지고 '미평가'로 돌아갑니다 · 이전 평가는 기록에 남아요 · 거절해도 1회 사용</div>${btns}${d && d.msg ? `<div class="rp-msg err">${escapeHtml(d.msg)}</div>` : ''}</div>`;
+}
+function compLeadReqList_(res) {
+const out = [];
+(Array.isArray(res && res.records) ? res.records : []).forEach(function (r) { const q = compEditReq_(r); if (r.reviewState === 'done' && r.authorStatus === 'active' && q && q.state === '요청') out.push(r); });
+return out;
+}
+function compLeadReqNotice_(res) {
+const list = compLeadReqList_(res);
+if (!list.length) return '';
+const items = list.slice(0, 5).map(function (r) {
+const t = compLeadTabs_.filter(function (x) { return x.key === r.tab; })[0];
+return `<button type="button" class="rq-go" onclick="compLeadReqGo_('${escapeHtml(r.tab)}','${escapeHtml(r.recordId)}')">${t ? escapeHtml(t.emoji + ' ' + t.label) : ''} · ${escapeHtml(r.name || '')}</button>`;
+}).join(', ') + (list.length > 5 ? ` 외 ${list.length - 5}건` : '');
+return `<div class="cm-notice" style="margin:4px 0 8px">✋ <b>수정 요청 ${list.length}건</b> — ${items}${(res.viewer || {}).role === '팀장' ? ' · 카드에서 [승인]·[거절]을 눌러 주세요.' : ''}</div>`;
+}
+function compLeadReqGo_(tab, rid) {
+if (!compLeadRes_) return;
+compLeadTab_ = tab; compLeadFilter_ = 'all';
+renderCompLead_();
+compScrollFlash_(document.querySelector(`#comp-team-view .cm-card[data-rid="${CSS.escape(rid)}"]`), true);
+}
+async function compLeadDecide_(btn, approve) {
+const box = btn && btn.closest('.rq-act'); if (!box || !compLeadRes_) return;
+if (compLeadDec_ && compLeadDec_.saving) return;
+const d = compLeadDec_ && compLeadDec_.rid === box.dataset.rid ? compLeadDec_ : { tab: box.dataset.tab, rid: box.dataset.rid, key: '' };
+if (d.approve !== approve) d.key = ''; // 승인↔거절을 바꿔 누르면 새 요청
+d.approve = approve; d.saving = true; d.msg = '';
+compLeadDec_ = d; renderCompLead_();
+d.key = d.key || generateIdempotencyKey_();
+const res = await compSaveFetch_({ action: approve ? 'editApprove' : 'editReject', tab: d.tab, recordId: d.rid, idempotencyKey: d.key, year: compLeadRes_.year }, 30000);
+if (compLeadDec_ !== d) return;
+d.saving = false;
+if (res) d.key = '';
+if (res && res.ok && res.record) {
+compLeadDec_ = null;
+const r = (compLeadRes_.records || []).filter(function (x) { return x.recordId === d.rid && x.tab === d.tab; })[0];
+const wasDone = r && r.reviewState === 'done';
+if (r) Object.assign(r, { leaderOpinion: res.record.leaderOpinion, reviewState: res.record.reviewState, fields: res.record.fields });
+// 승인 → 미평가: 그 팀원 '미평가' 숫자 +1(완료 숫자는 records에서 셈)
+if (r && wasDone && res.record.reviewState === 'pendingReview') (compLeadRes_.members || []).forEach(function (m) { if (m.email === r.authorEmail) m.pendingReview = (Number(m.pendingReview) || 0) + 1; });
+compLeadFilter_ = 'all';
+renderCompLead_();
+compScrollFlash_(document.querySelector(`#comp-team-view .cm-card[data-rid="${CSS.escape(d.rid)}"]`), true);
+return;
+}
+d.msg = compReqErrText_(res, approve ? '승인' : '거절');
+renderCompLead_();
+}
+
 // ==== 인사평가 › 팀 역량평가 (1단계-라-라, 설계서 3장 ② v1.9 · 2-2 · 부록 B) ====
 // 팀장 = 자기 팀 일반·담당 / 임원 = 전체 팀(팀 › 팀원). 보기 전용(평가 입력은 3단계, 늦은 기록 허용은 2단계).
 // 서버는 그대로: getCompetencyTest view=team 의 tabs · members(byTab·byMonth·pendingReview·awaitingReply·status) · records(reviewState·authorStatus) · unresolved.
@@ -5364,6 +5522,7 @@ async function loadCompLeadPage(keep) {
 const root = document.getElementById('comp-team-view');
 const reqNo = ++compLeadReq_;
 if (!keep) { compLeadIncludeLeft_ = false; compLeadTab_ = ''; compLeadFilter_ = 'all'; compLeadShowPlan_ = false; }
+if (!(compLeadDec_ && compLeadDec_.saving)) compLeadDec_ = null; // 2-마-1: 다시 불러오면 승인·거절 안내 닫힘
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 const res = await compFetch_({ view: 'team', includeLeft: compLeadIncludeLeft_ });
 if (reqNo !== compLeadReq_) return; // 그 사이 다시 눌렀으면 늦게 온 이 응답은 버린다
@@ -5525,6 +5684,7 @@ if (!fl.some(function (f) { return f.key === compLeadFilter_; })) compLeadFilter
 const shown = compLeadFilter_ === 'all' ? all : all.filter(function (r) { return r.reviewState === compLeadFilter_; });
 const filters = all.length ? compFilterChipsHtml_(all, fl, compLeadFilter_, 'switchCompLeadFilter_') : '';
 const members = Array.isArray(res.members) ? res.members : [];
+const isLeadRole = (res.viewer || {}).role === '팀장'; // 2-마-1: 승인·거절은 팀장만(임원은 보기만, 서버도 같은 판정)
 // 팀원별 묶음(부록 B): 순서 = 서버 members 순서, 짝 = record.authorEmail = member.email. 머리 숫자는 필터와 무관하게 그 팀원의 이 탭 전체 줄 기준.
 const groupHtml = function (m) {
 const mineAll = all.filter(function (r) { return r.authorEmail === m.email; });
@@ -5532,7 +5692,7 @@ const mine = shown.filter(function (r) { return r.authorEmail === m.email; });
 if (!mine.length) return '';
 const left = m.status === 'left';
 const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `계획 ${compLeadCount_(mineAll, 'awaitingReply')} · ` : '') + `${prText} ${compLeadCount_(mineAll, 'pendingReview')} · 총 ${mineAll.length}`;
-return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}${m.office ? `<span class="cm-who-office">${escapeHtml(m.office)}</span>` : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText }); }).join('')}</div>`;
+return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}${m.office ? `<span class="cm-who-office">${escapeHtml(m.office)}</span>` : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left }); }).join('')}</div>`;
 };
 let groups;
 if ((res.viewer || {}).role === '임원') {
@@ -5582,12 +5742,12 @@ const nActive = members.filter(function (m) { return m.status === 'active'; }).l
 const nLeft = members.length - nActive;
 const sub = (isExec ? '전체 팀' : teamLabel(viewer.team || '')) + ' · 재직 팀원 ' + nActive + '명' + (nLeft ? ' · 퇴사 ' + nLeft + '명' : '');
 const head = `<div class="ct-head"><div><div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">팀 역량평가</div>
-<div class="settings-row-desc">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(sub)} · 보기 전용</div></div>
+<div class="settings-row-desc">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(sub)}${isExec ? ' · 보기 전용' : ''}</div></div>
 <label class="ct-left-toggle"><input type="checkbox" ${compLeadIncludeLeft_ ? 'checked' : ''} onchange="toggleCompLeadLeft_(this.checked)"> 퇴사자 포함</label></div>`;
 const cols = `--cm-cols:${compColsCss_(compLeadTabs_.length, 6)}; --cm-mcols:${compColsCss_(compLeadTabs_.length, 5)};`;
 root.innerHTML = `<div class="settings-panel" style="${cols}">${head}
 <div class="ct-summary">${compLeadTableHtml_(res)}${compLeadMonthHtml_(res)}<div class="cc-note">기록 수는 참고용입니다. 평가는 내용으로 합니다.${compReplyNote_(compLeadTabs_, true)}</div></div>
-<div class="cm-mine"><div class="cm-tabs" id="ct-tabs">${compLeadTabsHtml_(res)}</div><div class="cm-tab-body" id="ct-tab-body">${compLeadTabBody_(res, compLeadTab_)}</div></div></div>`;
+${compLeadReqNotice_(res)}<div class="cm-mine"><div class="cm-tabs" id="ct-tabs">${compLeadTabsHtml_(res)}</div><div class="cm-tab-body" id="ct-tab-body">${compLeadTabBody_(res, compLeadTab_)}</div></div></div>`;
 }
 
 // ==== 품목 관리 (팀장: 등록/수정 가능, 담당: 뷰어 전용 — 자기 팀 목록 조회만 가능하고 신규 등록/저장은 불가) ====
