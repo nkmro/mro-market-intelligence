@@ -4274,7 +4274,8 @@ return (what || '기준') + '을 불러오지 못했어요. (' + (res.error || '
 const COMP_SETTING_ROWS_ = [
 { key: '전년도입력마감일', label: '전년도 입력 마감일', desc: function (v) { return '1월 ' + v + '일까지 전년도 기록·평가 입력을 허용'; }, def: '15' },
 { key: '연도전환시작일', label: '연도 전환 시작일', desc: function (v) { return '12월 ' + v + '일부터 다음 해 파일을 자동으로 만듦'; }, def: '1' },
-{ key: '기록가능기간일', label: '기록 가능 기간', desc: function (v) { return '오늘 포함 최근 ' + v + '일 안에 일어난 일만 저장(1~60)'; }, def: '14' }
+{ key: '기록가능기간일', label: '기록 가능 기간', desc: function (v) { return '대면영업: 오늘 포함 최근 ' + v + '일 안에 일어난 일만 저장(1~60)'; }, def: '14' },
+{ key: '월기록마감일', label: '월 단위 기록 마감일', desc: function (v) { return '원가개선·자기개발·직급역량: 끝 달은 이번 달, 또는 지난달(이번 달 ' + v + '일까지)만 저장(1~28)'; }, def: '10' }
 ];
 let compSettingsReq_ = 0;
 async function loadCompSettingsPage() {
@@ -5020,7 +5021,7 @@ if (res && res.ok && res.record) { if (st.editRid) compEditApply_(res.record); e
 const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어요.', TAB_NOT_SUPPORTED: '이 탭은 아직 앱에서 추가할 수 없어요.', TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.',
 HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
-DATE_TOO_OLD: '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
+DATE_TOO_OLD: COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
 BAD_INPUT: '입력값을 확인해 주세요.' };
 if (st.editRid) Object.assign(m, COMP_EDIT_ERR_, { FORBIDDEN: '팀원(일반·담당)만 기록을 고칠 수 있어요.' }); // 2-라
 let text;
@@ -5039,13 +5040,24 @@ function compAvgGuide_(open, what) {
 return `<span class="rp-guide">💡 ${open ? `끝 없음(계속)이라 <b>한 달 평균</b> ${escapeHtml(what)}을 적어 주세요` : `끝 달이 있어 <b>기간 전체의 총</b> ${escapeHtml(what)}을 적어 주세요`}</span>`;
 }
 // ── 원가개선 기록 추가(설계서 v1.22 ⑳-3) ── Y 완료 = 수행 기간(달 달력, 끝 없음 가능) + 원가 개선액(천원) + 아이템키 필수 / N 미완료 = 그 세 칸 없음.
-// 달 범위(㉑ 달 단위): 시작 달 = 올해 1월~이번 달, 끝 달(끝 없음이면 시작 달) = (오늘-(N-1)일)이 속한 달 ~ 이번 달. 서버도 같은 검사(checkRecordMonth).
+// 달 범위(㉑ 달 단위, v1.27 2026-10-28 재홍님): 시작 달 = 올해 1월~이번 달, 끝 달(끝 없음이면 시작 달) = 이번 달, 또는 지난달(오늘이 이번 달 '월기록마감일'일 이하일 때만 — 서버 monthCloseDay, 없으면 10).
+// 1월의 지난달(작년 12월)은 올해 파일이 아니라 빠짐. 서버도 같은 검사(checkRecordMonth).
 function compYm_(iso) { return iso.slice(2, 4) + iso.slice(5, 7); }
+function compMonthClose_() { const n = Number(compMineRes_ && compMineRes_.monthCloseDay); return Number.isInteger(n) && n >= 1 && n <= 28 ? n : 10; }
 function compCostMonths_() {
 const today = compSeoulToday_();
-let oldest = compIsoAdd_(today, -(compCreateWindow_() - 1));
-if (oldest.slice(0, 4) !== today.slice(0, 4)) oldest = today.slice(0, 4) + '-01-01';
-return { yearStart: today.slice(2, 4) + '01', oldest: compYm_(oldest), now: compYm_(today) };
+const close = compMonthClose_();
+const y = +today.slice(0, 4), m = +today.slice(5, 7);
+const now = compYm_(today);
+const prev = m === 1 ? '' : String(y % 100).padStart(2, '0') + String(m - 1).padStart(2, '0');
+const prevOpen = !!prev && +today.slice(8, 10) <= close;
+return { yearStart: today.slice(2, 4) + '01', oldest: prevOpen ? prev : now, now: now, prev: prev, prevOpen: prevOpen, close: close };
+}
+// 끝 달 안내 뒤에 붙는 지난달 마감 글자
+function compMonthCloseText_(mr) {
+if (!mr.prev) return '';
+const pm = Number(mr.prev.slice(2)), cm = Number(mr.now.slice(2));
+return mr.prevOpen ? ` · 지난달(${pm}월)은 ${cm}월 ${mr.close}일까지만` : ` · 지난달(${pm}월)은 ${cm}월 ${mr.close}일에 마감됐어요`;
 }
 function compYmRangeText_(a, b) { return a === b ? Number(b.slice(2)) + '월' : Number(a.slice(2)) + '~' + Number(b.slice(2)) + '월'; }
 // 완료 여부(Y/N)로 칸이 바뀌는 입력 칸 3종(원가개선·자기개발·직급역량) — 같은 그리기 함수, 탭별 차이는 이 표에만.
@@ -5079,7 +5091,7 @@ cal = `<div class="rp-cal"><div class="rp-cal-h"><button type="button" onclick="
 }
 const cell = st.from ? st.from + '~' + (st.open ? '' : st.to) : '';
 const openHtml = cfg.open ? `<label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compCreateMOpen_(this)" ${dis}> 끝 없음(계속)</label>` : '';
-const periodHelp = cfg.open ? `끝 달(끝 없음이면 시작 달)은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요` : `완료한 일이므로 끝 달 필수 · 끝 달은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요`;
+const periodHelp = (cfg.open ? `끝 달(끝 없음이면 시작 달)은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요` : `완료한 일이므로 끝 달 필수 · 끝 달은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요`) + compMonthCloseText_(mr);
 const costHtml = cfg.cost ? `<div class="rp-row"><span class="rp-k">원가 개선액 <b>*</b></span><span>개선 <input class="rp-in" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.amount)}" oninput="compCreateInput_(this,'amount')" ${dis}>${compUnit_(st.open)}</span>
 ${compAvgGuide_(st.open, '개선액')}<span class="rp-help">숫자만 · 단위 천원 (0도 가능)</span>${err('amount')}</div>
 <div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(st.keys)}" oninput="compCreateInput_(this,'keys')" ${dis}>
