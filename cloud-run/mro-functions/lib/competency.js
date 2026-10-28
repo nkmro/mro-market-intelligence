@@ -717,6 +717,34 @@ CREATE_RULES.costSave = {
     return { ok: true, cells: cells, month: ym(open ? from : to), startMonth: ym(from) };
   }
 };
+// 자기개발·직급역량(2026-10-28 재홍님 결정): 원가개선과 같은 틀 — 항목(카드 제목)·사유·완료 여부(Y 완료 / N 미완료) 필수.
+//   Y 완료 = 수행 기간(시작 달 ~ 끝 달, **끝 없음 불가** — 끝난 일만) + 자기 성취 평가(글자) 필수. N 미완료 = 항목·사유·완료 여부만(날짜 검사 없음).
+//   ㉑ 달 단위 검사는 끝 달(checkRecordMonth). 시트 머리글은 2026-10-19 1행 직접 읽은 이름.
+function doneRule(label, itemH, reasonH, evalH) {
+  return {
+    label: label,
+    headers: [itemH, reasonH, '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', evalH],
+    validate: function (b) {
+      const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
+      const item = cleanText(b.item, 100); if (!item) return bad('item');
+      const reason = cleanText(b.reason, TEXT_MAX); if (!reason) return bad('reason');
+      const done = String(b.done === undefined || b.done === null ? '' : b.done).trim().toUpperCase();
+      if (done !== 'Y' && done !== 'N') return bad('done');
+      const cells = {}; cells[itemH] = item; cells[reasonH] = reason; cells['완료 여부 (Y/N)'] = done;
+      if (done === 'N') return { ok: true, cells: cells };
+      const from = String(b.periodFrom || '').trim(), to = String(b.periodTo || '').trim();
+      if (!validYymm(from)) return bad('periodFrom');
+      if (b.periodOpen === true || !validYymm(to) || to < from) return bad('periodTo');
+      const evaluation = cleanText(b.evaluation, TEXT_MAX); if (!evaluation) return bad('evaluation');
+      cells['수행 기간 (YYMMDD~YYMMDD)'] = from + '~' + to;
+      cells[evalH] = evaluation;
+      const ym = function (y) { return '20' + y.slice(0, 2) + '-' + y.slice(2, 4); };
+      return { ok: true, cells: cells, month: ym(to), startMonth: ym(from) };
+    }
+  };
+}
+CREATE_RULES.selfDev = doneRule('자기개발', '자기개발 항목', '자기개발 사유', '자기 성취 평가 요약');
+CREATE_RULES.gradeComp = doneRule('직급역량', '개선 직급 역량 항목', '직급 역량 개선 사유', '자기 성취 평가');
 // ㉑ 달 단위 검사(원가개선). month·startMonth = 'YYYY-MM', today = 'YYYY-MM-DD'. 허용 = 오늘이 속한 달 ~ (오늘 - (N-1)일)이 속한 달.
 // 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
 function checkRecordMonth(month, startMonth, today, windowDays, fileYear) {

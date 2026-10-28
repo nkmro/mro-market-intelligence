@@ -17,15 +17,20 @@ let USERS = [
   U('park@x.com', '박서준', '일반', '동부', '비활성', '양산')
 ];
 let SETTING_WINDOW = '14';
-const GIDS = { '역량-영업수행역량-대면영업': 1204504857, '역량-개선기획역량-추가매출': 772700407, '역량-개선기획역량-원가개선': 1981522387 }; // 지금 파일의 gid → 기존 키 faceSales·addSales·costSave
+const GIDS = { '역량-영업수행역량-대면영업': 1204504857, '역량-개선기획역량-추가매출': 772700407, '역량-개선기획역량-원가개선': 1981522387, '역량-직무별전문성-자기개발': 0, '역량-직급별업무역량-직급역량': 1406147068 }; // 지금 파일의 gid → 기존 키 faceSales·addSales·costSave
 const ADD = '역량-개선기획역량-추가매출', FACE = '역량-영업수행역량-대면영업', COST = '역량-개선기획역량-원가개선';
 const FACE_H = ['순번', '이름', '사무소', '고객사', '대면자', '직급', '미팅 일시(YYMMDD-HH)', '미팅 시간(분)', '기대 성과', '팀장 의견 (상중하)', '팀'].concat(EX);
+const SELF = '역량-직무별전문성-자기개발', GRADE = '역량-직급별업무역량-직급역량';
+const SELF_H = ['순번', '이름', '사무소', '자기개발 항목', '자기개발 사유', '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', '자기 성취 평가 요약', '팀장 의견', '팀'].concat(EX);
+const GRADE_H = ['순번', '이름', '사무소', '개선 직급 역량 항목', '직급 역량 개선 사유', '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', '자기 성취 평가', '팀장 의견', '팀'].concat(EX);
 const COST_H = ['순번', '이름', '사무소', '고객사', '공급사', '원가 개선 항목', '원가 개선 사유', '수행 기간 (YYMMDD~YYMMDD)', '완료 여부 (Y/N)', '기대 성과', '아이템키', '팀장 의견', '팀'].concat(EX);
 const F = (no, who, cust, id, email) => [String(no), who, '양산', cust, '홍길동', '과장', '999999-99', '30', '수주', '', '동부', id, email, '2026-10-01 09:00'];
 function baseTabs() {
   return {
     [FACE]: [FACE_H, F(1, '김하늘', '가람산업', 'CE-F1', 'kim@x.com'), F(7, '이도윤', '나래기공', 'CE-F2', 'lee@x.com'), F(3, '김하늘', '다온화학', 'CE-F3', 'kim@x.com')],
     [ADD]: [['사무소', '담당', '고객사', '달성 여부 (Y/N)', '팀장 의견', '팀'].concat(EX), ['양산', '김하늘', '아라전자', '', '', '동부', 'CE-A1', 'kim@x.com']],
+    [SELF]: [SELF_H, ['1']], // 2행: 순번 '1'만 있는 빈 줄(실제 시트와 같음)
+    [GRADE]: [GRADE_H, ['1']],
     [COST]: [COST_H, ['1', '김하늘', '양산', '아라전자', '한빛상사', '포장 변경', '규격 표준화', '26년4월~', 'Y', '연 120만원', '', '중', '동부', 'CE-C1', 'kim@x.com'], ['12', '이도윤', '김해', '가람산업', '대한안전', '장갑 변경', '단가 인하', '26년 06~08월', 'Y', '연 60만원', '', '상', '동부', 'CE-C2', 'lee@x.com']]
   };
 }
@@ -102,6 +107,26 @@ t('AC10 달 검사(14일): 10/27에 10월 허용·9월 DATE_TOO_OLD·11월 DATE_
   t('AC13 아이템키 칸 없는 원가개선 탭 → HEADER_NOT_READY', c.planCreate({ id: 'costSave', title: COST }, tb2[COST], new Set(), { name: '김', email: 'k@x', office: '' }, c.validateCreate('costSave', CG), { team: '동부', nowMs: now }).error === 'HEADER_NOT_READY');
 }
 
+
+// ── A-자기개발·직급역량 (2026-10-28 재홍님: 원가개선 틀, Y 완료는 끝 없음 불가, N 미완료는 항목·사유만) ──
+const SG = { item: ' 산업안전기사 자격 취득 ', reason: '법규 근거 설명', done: 'Y', periodFrom: '2607', periodTo: '2610', evaluation: '필기·실기 합격' };
+v = c.validateCreate('selfDev', SG);
+t('AS1 자기개발 Y: 항목·사유·완료·기간 2607~2610·자기 성취 평가 요약, 검사 달 = 끝 달', v.ok && J(v.cells) === J({ '자기개발 항목': '산업안전기사 자격 취득', '자기개발 사유': '법규 근거 설명', '완료 여부 (Y/N)': 'Y', '수행 기간 (YYMMDD~YYMMDD)': '2607~2610', '자기 성취 평가 요약': '필기·실기 합격' }) && v.month === '2026-10' && v.startMonth === '2026-07', v);
+v = c.validateCreate('gradeComp', SG);
+t('AS2 직급역량 Y: 칸 이름 개선 직급 역량 항목·직급 역량 개선 사유·자기 성취 평가', v.ok && v.cells['개선 직급 역량 항목'] === '산업안전기사 자격 취득' && v.cells['직급 역량 개선 사유'] === '법규 근거 설명' && v.cells['자기 성취 평가'] === '필기·실기 합격', v);
+const bs = (f, o) => c.validateCreate(f, Object.assign({}, SG, o)).field;
+t('AS3 Y + 끝 없음 → periodTo(허용 안 함) / 끝 달 없음·끝<시작 → periodTo / 시작 없음 → periodFrom', bs('selfDev', { periodTo: '', periodOpen: true }) === 'periodTo' && bs('selfDev', { periodTo: '' }) === 'periodTo' && bs('gradeComp', { periodTo: '2606' }) === 'periodTo' && bs('gradeComp', { periodFrom: '' }) === 'periodFrom' && bs('selfDev', { periodOpen: true }) === 'periodTo');
+t('AS4 Y인데 자기 성취 평가 빈칸 → evaluation / 항목·사유·완료 여부 빈칸 → 각 field', bs('selfDev', { evaluation: ' ' }) === 'evaluation' && bs('gradeComp', { item: '' }) === 'item' && bs('selfDev', { reason: '' }) === 'reason' && bs('selfDev', { done: '' }) === 'done');
+v = c.validateCreate('selfDev', Object.assign({}, SG, { done: 'N', periodFrom: '', periodTo: '', evaluation: '' }));
+t('AS5 N 미완료: 항목·사유·완료 여부만, 날짜 검사 없음', v.ok && J(Object.keys(v.cells)) === J(['자기개발 항목', '자기개발 사유', '완료 여부 (Y/N)']) && !v.month, v);
+t('AS6 createFormFor: 자기개발(gid 0 = selfDev)·직급역량(gradeComp), 새 gid라도 이름으로', c.createFormFor({ id: 'selfDev', label: '자기개발' }) === 'selfDev' && c.createFormFor({ id: 'gradeComp', label: '직급역량' }) === 'gradeComp' && c.createFormFor({ id: 'g9', label: '자기개발' }) === 'selfDev');
+{
+  const now = Date.UTC(2026, 9, 28, 3, 30); const tb = baseTabs();
+  const ps = c.planCreate({ id: 'selfDev', title: SELF }, tb[SELF], new Set(), { name: '김하늘', email: 'kim@x.com', office: '양산' }, c.validateCreate('selfDev', SG), { team: '동부', nowMs: now });
+  const q = "'역량-직무별전문성-자기개발'!"; const byH = {}; ps.writes.forEach(w => { byH[w.range] = w.value; });
+  t('AS7 planCreate: 순번만 있는 2행은 그대로 두고 3행에, 순번 2, D~H 내용, 팀장 의견(I) 비움', ps.ok && ps.record.row === 3 && byH[q + 'A3'] === '2' && byH[q + 'D3'] === '산업안전기사 자격 취득' && byH[q + 'F3'] === '2607~2610' && byH[q + 'G3'] === 'Y' && byH[q + 'H3'] === '필기·실기 합격' && !(q + 'I3' in byH) && byH[q + 'J3'] === '동부' && !Object.keys(byH).some(k => /2$/.test(k)), byH);
+}
+
 // ── B. index.js 그대로 실행 (가짜 시트·가짜 Firestore — competency_backfill_tests.js와 같은 시험 장치) ──
 function makeFakeFirestore() {
   const store = {}; let chain = Promise.resolve();
@@ -164,7 +189,7 @@ function makeFakeSheets(tabs, opts) {
       }
       if (url.includes(FILE_ID + '?fields=')) {
         if (st.failFileRead) { const e = new Error('403'); e.response = { status: 403 }; throw e; }
-        return { data: { sheets: titles.map((tt, i) => ({ properties: { sheetId: GIDS[tt] || 100 + i, title: tt, hidden: false, index: i } })).concat([{ properties: { sheetId: 9, title: '인사평가설정', index: 50 } }, { properties: { sheetId: 8, title: 'CRM-역량평가-기준', index: 51 } }]) } };
+        return { data: { sheets: titles.map((tt, i) => ({ properties: { sheetId: (tt in GIDS) ? GIDS[tt] : 100 + i, title: tt, hidden: false, index: i } })).concat([{ properties: { sheetId: 9, title: '인사평가설정', index: 50 } }, { properties: { sheetId: 8, title: 'CRM-역량평가-기준', index: 51 } }]) } };
       }
       const q = url.split('?')[1].split('&').filter(s => s.startsWith('ranges=')).map(s => decodeURIComponent(s.slice(7)));
       if (url.includes(MRO_ID)) {
@@ -251,7 +276,7 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   const mine = await e.get({ sessionToken: 'TOK_STAFF', view: 'mine' });
   const inMine = mine.records && mine.records.faceSales && mine.records.faceSales.find(r => r.recordId === res.record.recordId);
   t('B19 내 기록 보기(mine)에 같은 기록이 그대로(저장 응답 기록 = 다시 읽은 기록)', inMine && J(inMine) === J(res.record), { inMine, rec: res.record });
-  t('B20 mine 응답: recordWindowDays 14, createForms {faceSales, costSave}', mine.recordWindowDays === 14 && J(mine.createForms) === J({ faceSales: 'faceSales', costSave: 'costSave' }), { w: mine.recordWindowDays, f: mine.createForms });
+  t('B20 mine 응답: recordWindowDays 14, createForms {selfDev, gradeComp, faceSales, costSave}', mine.recordWindowDays === 14 && J(Object.entries(mine.createForms || {}).sort()) === J(Object.entries({ selfDev: 'selfDev', gradeComp: 'gradeComp', faceSales: 'faceSales', costSave: 'costSave' }).sort()), { w: mine.recordWindowDays, f: mine.createForms });
   const team = await e.get({ sessionToken: 'TOK_ADMIN', view: 'team' });
   t('B21 팀 보기(team)에는 recordWindowDays·createForms 없음', team.ok && !('recordWindowDays' in team) && !('createForms' in team), Object.keys(team));
   res = await callCreate(e, 'TOK_LEE', { idempotencyKey: 'OK2', meetDate: TODAY, meetHour: 0, minutes: 75 });
@@ -269,7 +294,7 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   GIDS['역량-영업수행역량-대면영업'] = 555; e = makeEnv();
   const mNew = await e.get({ sessionToken: 'TOK_STAFF', view: 'mine' });
   res = await callCreate(e, 'TOK_STAFF', { tab: 'g555' });
-  t('B24b 내년 파일처럼 gid가 바뀐 대면영업 탭(g555) → createForms {g555:faceSales}, 저장 ok', J(mNew.createForms) === J({ g555: 'faceSales', costSave: 'costSave' }) && res.ok && res.record.tab === 'g555', { f: mNew.createForms, res });
+  t('B24b 내년 파일처럼 gid가 바뀐 대면영업 탭(g555) → createForms {g555:faceSales}, 저장 ok', J(Object.entries(mNew.createForms || {}).sort()) === J(Object.entries({ selfDev: 'selfDev', gradeComp: 'gradeComp', g555: 'faceSales', costSave: 'costSave' }).sort()) && res.ok && res.record.tab === 'g555', { f: mNew.createForms, res });
   GIDS['역량-영업수행역량-대면영업'] = 1204504857;
   e = makeEnv(); e.sh.tabs[FACE][0] = FACE_H.filter(h => h !== '작성자이메일');
   res = await callCreate(e, 'TOK_STAFF');
@@ -330,6 +355,22 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   const mc = await e.get({ sessionToken: 'TOK_LEE', view: 'mine' });
   const inMc = (mc.records.costSave || []).find(r => r.row === 4);
   t('BC10 내 기록 보기에 원가개선 새 줄(미평가)', inMc && inMc.reviewState === 'pendingReview' && inMc.fields['기대 성과'] === '개선 2,400천원', inMc);
+
+
+  // ── 자기개발·직급역량 서버 ──
+  e = makeEnv();
+  res = await e.save(Object.assign({ sessionToken: 'TOK_LEE', action: 'create', form: 'selfDev', tab: 'selfDev', idempotencyKey: 'SD1' }, SG, { periodFrom: ymOf(daysAgo(40)), periodTo: thisYm }));
+  const srow = e.sh.tabs[SELF][2];
+  t('BS1 자기개발 Y(끝 달 이번 달) → ok, 3행: 순번 2·이도윤·김해·내용·Y·평가, 2행 그대로', res.ok && srow[0] === '2' && srow[1] === '이도윤' && srow[2] === '김해' && srow[5] === ymOf(daysAgo(40)) + '~' + thisYm && srow[6] === 'Y' && srow[7] === '필기·실기 합격' && J(e.sh.tabs[SELF][1]) === J(['1']), { res, srow });
+  res = await e.save(Object.assign({ sessionToken: 'TOK_LEE', action: 'create', form: 'gradeComp', tab: 'gradeComp', idempotencyKey: 'GC1' }, SG, { done: 'N', periodFrom: '', periodTo: '', evaluation: '' }));
+  const grow = e.sh.tabs[GRADE][2];
+  t('BS2 직급역량 N 미완료 → ok, 기간·평가 빈칸', res.ok && grow[6] === 'N' && !grow[5] && !grow[7] && grow[3] === '산업안전기사 자격 취득', { res, grow });
+  res = await e.save(Object.assign({ sessionToken: 'TOK_LEE', action: 'create', form: 'selfDev', tab: 'selfDev', idempotencyKey: 'SD2' }, SG, { periodFrom: oldYm, periodTo: oldYm }));
+  t('BS3 자기개발 끝 달 두 달 전 → DATE_TOO_OLD(periodTo)', res.error === 'DATE_TOO_OLD' && res.field === 'periodTo', res);
+  res = await e.save(Object.assign({ sessionToken: 'TOK_LEE', action: 'create', form: 'selfDev', tab: 'selfDev', idempotencyKey: 'SD3' }, SG, { periodFrom: thisYm, periodTo: '', periodOpen: true }));
+  t('BS4 자기개발 Y + 끝 없음 → BAD_INPUT(periodTo), 시트 접근 전', res.error === 'BAD_INPUT' && res.field === 'periodTo', res);
+  res = await e.save(Object.assign({ sessionToken: 'TOK_LEE', action: 'create', form: 'gradeComp', tab: 'selfDev', idempotencyKey: 'GC2' }, SG, { periodFrom: thisYm, periodTo: thisYm }));
+  t('BS5 직급역량 입력으로 자기개발 탭에 → TAB_NOT_SUPPORTED', res.error === 'TAB_NOT_SUPPORTED', res);
 
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);
