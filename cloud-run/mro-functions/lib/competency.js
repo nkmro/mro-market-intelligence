@@ -620,6 +620,15 @@ const RECORD_WINDOW_KEY = '기록가능기간일';
 const RECORD_WINDOW_DEFAULT = 14;
 const TEXT_MAX = 2000;
 // 인사평가설정 행([키, 값, 설명]) → 기록 가능 기간(일). 값이 없거나 1~60 정수가 아니면 14(설계서 4-5).
+// v1.27(2026-10-28 재홍님): 월 단위 항목(원가개선·자기개발·직급역량)의 지난달 마감일 — 인사평가설정 '월기록마감일'(1~28, 없거나 이상하면 10)
+const MONTH_CLOSE_KEY = '월기록마감일';
+const MONTH_CLOSE_DEFAULT = 10;
+function monthCloseDay(settingsRows) {
+  const row = (settingsRows || []).find(function (r) { return String((r && r[0]) || '').trim() === MONTH_CLOSE_KEY; });
+  const n = Number(String((row && row[1]) || '').trim());
+  return Number.isInteger(n) && n >= 1 && n <= 28 ? n : MONTH_CLOSE_DEFAULT;
+}
+module.exports.monthCloseDay = monthCloseDay;
 function recordWindowDays(settingsRows) {
   const row = (settingsRows || []).find(function (r) { return String((r && r[0]) || '').trim() === RECORD_WINDOW_KEY; });
   const n = Number(String((row && row[1]) || '').trim());
@@ -745,15 +754,19 @@ function doneRule(label, itemH, reasonH, evalH) {
 }
 CREATE_RULES.selfDev = doneRule('자기개발', '자기개발 항목', '자기개발 사유', '자기 성취 평가 요약');
 CREATE_RULES.gradeComp = doneRule('직급역량', '개선 직급 역량 항목', '직급 역량 개선 사유', '자기 성취 평가');
-// ㉑ 달 단위 검사(원가개선). month·startMonth = 'YYYY-MM', today = 'YYYY-MM-DD'. 허용 = 오늘이 속한 달 ~ (오늘 - (N-1)일)이 속한 달.
+// ㉑ 달 단위 검사(원가개선·자기개발·직급역량). month·startMonth = 'YYYY-MM', today = 'YYYY-MM-DD'.
+// v1.27(2026-10-28 재홍님): 허용 = 이번 달, 또는 지난달(오늘이 이번 달 closeDay일 이하일 때만). closeDay = monthCloseDay(인사평가설정).
+//   (예전: 오늘-(N-1)일이 속한 달까지 — 14일 규칙이 월 단위 항목에 맞지 않아 바꿈)
 // 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
-function checkRecordMonth(month, startMonth, today, windowDays, fileYear) {
+function checkRecordMonth(month, startMonth, today, closeDay, fileYear) {
   if (Number(startMonth.slice(0, 4)) !== Number(fileYear)) return 'DATE_OTHER_YEAR';
-  if (month > today.slice(0, 7)) return 'DATE_FUTURE';
-  const t = Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)));
-  const oldest = new Date(t - (windowDays - 1) * 86400000).toISOString().slice(0, 7);
-  if (month < oldest) return 'DATE_TOO_OLD';
-  return '';
+  const thisMonth = today.slice(0, 7);
+  if (month > thisMonth) return 'DATE_FUTURE';
+  if (month === thisMonth) return '';
+  const y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
+  const prev = (m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0'));
+  if (month === prev && Number(today.slice(8, 10)) <= Number(closeDay)) return '';
+  return 'DATE_TOO_OLD';
 }
 function validateCreate(form, b) {
   const key = String(form || '');

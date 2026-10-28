@@ -17,6 +17,7 @@ let USERS = [
   U('park@x.com', '박서준', '일반', '동부', '비활성', '양산')
 ];
 let SETTING_WINDOW = '14';
+let SETTING_CLOSE = ''; // v1.27 월기록마감일(빈칸 = 줄 없음)
 const GIDS = { '역량-영업수행역량-대면영업': 1204504857, '역량-개선기획역량-추가매출': 772700407, '역량-개선기획역량-원가개선': 1981522387, '역량-직무별전문성-자기개발': 0, '역량-직급별업무역량-직급역량': 1406147068 }; // 지금 파일의 gid → 기존 키 faceSales·addSales·costSave
 const ADD = '역량-개선기획역량-추가매출', FACE = '역량-영업수행역량-대면영업', COST = '역량-개선기획역량-원가개선';
 const FACE_H = ['순번', '이름', '사무소', '고객사', '대면자', '직급', '미팅 일시(YYMMDD-HH)', '미팅 시간(분)', '기대 성과', '팀장 의견 (상중하)', '팀'].concat(EX);
@@ -93,8 +94,14 @@ t('AC6 기간: 시작 없음·월 13 → periodFrom / 끝도 끝없음도 없음
 t('AC7 개선액: 빈칸·음수·소수·글자 → amount / 0 허용 "개선 0천원"', bc({ amount: '' }) === 'amount' && bc({ amount: '-1' }) === 'amount' && bc({ amount: '1.5' }) === 'amount' && bc({ amount: '천' }) === 'amount' && c.validateCreate('costSave', Object.assign({}, CG, { amount: 0 })).cells['기대 성과'] === '개선 0천원');
 t('AC8 Y인데 아이템키 없음·글자 → itemKeys', bc({ itemKeys: '' }) === 'itemKeys' && bc({ itemKeys: '12a' }) === 'itemKeys');
 t('AC9 createFormFor: costSave 키·이름 "원가개선"(새 gid) → costSave', c.createFormFor({ id: 'costSave', label: '원가개선' }) === 'costSave' && c.createFormFor({ id: 'g777', label: '원가개선' }) === 'costSave');
-t('AC10 달 검사(14일): 10/27에 10월 허용·9월 DATE_TOO_OLD·11월 DATE_FUTURE / 10/5에는 9월 허용(14일 전 9/22) / 시작 달 작년 → DATE_OTHER_YEAR',
-  c.checkRecordMonth('2026-10', '2026-08', '2026-10-27', 14, 2026) === '' && c.checkRecordMonth('2026-09', '2026-08', '2026-10-27', 14, 2026) === 'DATE_TOO_OLD' && c.checkRecordMonth('2026-11', '2026-10', '2026-10-27', 14, 2026) === 'DATE_FUTURE' && c.checkRecordMonth('2026-09', '2026-09', '2026-10-05', 14, 2026) === '' && c.checkRecordMonth('2026-01', '2025-12', '2026-01-05', 14, 2026) === 'DATE_OTHER_YEAR');
+t('AC10 달 검사(v1.27, 마감일 10): 10/27에 10월 허용·9월 DATE_TOO_OLD·11월 DATE_FUTURE / 10/5·10/10에는 9월 허용, 10/11에는 9월 거부 / 8월(두 달 전)은 10/1에도 거부 / 시작 달 작년 → DATE_OTHER_YEAR',
+  c.checkRecordMonth('2026-10', '2026-08', '2026-10-27', 10, 2026) === '' && c.checkRecordMonth('2026-09', '2026-08', '2026-10-27', 10, 2026) === 'DATE_TOO_OLD' && c.checkRecordMonth('2026-11', '2026-10', '2026-10-27', 10, 2026) === 'DATE_FUTURE' &&
+  c.checkRecordMonth('2026-09', '2026-09', '2026-10-05', 10, 2026) === '' && c.checkRecordMonth('2026-09', '2026-09', '2026-10-10', 10, 2026) === '' && c.checkRecordMonth('2026-09', '2026-09', '2026-10-11', 10, 2026) === 'DATE_TOO_OLD' &&
+  c.checkRecordMonth('2026-08', '2026-08', '2026-10-01', 10, 2026) === 'DATE_TOO_OLD' && c.checkRecordMonth('2026-01', '2025-12', '2026-01-05', 10, 2026) === 'DATE_OTHER_YEAR');
+t('AC10b 마감일 바꾸면: 20 → 10/20 9월 허용·10/21 거부 / 1월: 지난달 = 작년 12월(시작 달이 올해가 아니라 DATE_OTHER_YEAR) · 1월 1월은 허용 / 연말 12/5에 11월 허용',
+  c.checkRecordMonth('2026-09', '2026-09', '2026-10-20', 20, 2026) === '' && c.checkRecordMonth('2026-09', '2026-09', '2026-10-21', 20, 2026) === 'DATE_TOO_OLD' &&
+  c.checkRecordMonth('2025-12', '2025-12', '2026-01-05', 10, 2026) === 'DATE_OTHER_YEAR' && c.checkRecordMonth('2026-01', '2026-01', '2026-01-05', 10, 2026) === '' && c.checkRecordMonth('2026-11', '2026-10', '2026-12-05', 10, 2026) === '');
+t('AC10c 월기록마감일 설정: 없음·0·29·글자 → 10, " 15 " → 15, 1·28 허용', c.monthCloseDay([]) === 10 && c.monthCloseDay([['월기록마감일', '0']]) === 10 && c.monthCloseDay([['월기록마감일', '29']]) === 10 && c.monthCloseDay([['월기록마감일', '열흘']]) === 10 && c.monthCloseDay([['월기록마감일', ' 15 ']]) === 15 && c.monthCloseDay([['월기록마감일', '1']]) === 1 && c.monthCloseDay([['월기록마감일', '28']]) === 28);
 {
   const now = Date.UTC(2026, 9, 27, 3, 30);
   const tb = baseTabs();
@@ -167,7 +174,7 @@ function makeFakeSheets(tabs, opts) {
   const trim = rows => rows.map(r => { const x = r.slice(); while (x.length && (x[x.length - 1] === '' || x[x.length - 1] === undefined)) x.pop(); return x; });
   function readRange(a1) {
     const i = a1.lastIndexOf('!'); const tab = a1.slice(0, i).replace(/^'|'$/g, '').replace(/''/g, "'"); const rg = a1.slice(i + 1);
-    if (tab === '인사평가설정') return [['키', '값', '설명'], ['기록가능기간일', SETTING_WINDOW, '']];
+    if (tab === '인사평가설정') return [['키', '값', '설명'], ['기록가능기간일', SETTING_WINDOW, '']].concat(SETTING_CLOSE ? [['월기록마감일', SETTING_CLOSE, '']] : []);
     if (tab === 'CRM-역량평가-기준') return [];
     const rows = st.tabs[tab]; if (!rows) { const e = new Error('Unable to parse range'); e.response = { status: 400 }; throw e; }
     if (rg === '1:1') return trim([rows[0]]);
@@ -288,7 +295,7 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   res = await callCreate(e, 'TOK_STAFF', { meetDate: daysAgo(20) });
   t('B23 기록가능기간일 30 → 20일 전 허용', res.ok, res);
   const m30 = await e.get({ sessionToken: 'TOK_STAFF', view: 'mine' });
-  t('B24 mine recordWindowDays 30', m30.recordWindowDays === 30, m30.recordWindowDays);
+  t('B24 mine recordWindowDays 30, monthCloseDay(줄 없음) 10', m30.recordWindowDays === 30 && m30.monthCloseDay === 10, m30.recordWindowDays);
   SETTING_WINDOW = '14';
   // 새 gid 탭이라도 이름이 대면영업이면 입력 가능(내년 파일)
   GIDS['역량-영업수행역량-대면영업'] = 555; e = makeEnv();
@@ -343,6 +350,20 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   t('BC4 끝 없음인데 시작 달이 두 달 전 → DATE_TOO_OLD', res.error === 'DATE_TOO_OLD', res);
   res = await callCost(e, 'TOK_LEE', { periodFrom: thisYm, periodTo: nextYm });
   t('BC5 끝 달이 앞으로의 달 → DATE_FUTURE', res.error === 'DATE_FUTURE', res);
+  // v1.27 지난달: 오늘 날짜가 마감일 이하면 허용, 넘으면 DATE_TOO_OLD(monthCloseDay 함께 돌려줌). 1월은 지난달이 작년이라 건너뜀.
+  if (TODAY.slice(5, 7) !== '01') {
+    const day = Number(TODAY.slice(8, 10));
+    const prevYm = (() => { const y = +TODAY.slice(0, 4), m = +TODAY.slice(5, 7) - 1; return String(y % 100).padStart(2, '0') + String(m).padStart(2, '0'); })();
+    const n0 = e.sh.tabs[COST].length;
+    res = await callCost(e, 'TOK_LEE', { periodFrom: prevYm, periodTo: prevYm });
+    t('BC4b 끝 달 = 지난달, 설정 없음(10) → 오늘 ' + day + '일이면 ' + (day <= 10 ? 'ok' : 'DATE_TOO_OLD(monthCloseDay 10)'), day <= 10 ? res.ok : (res.error === 'DATE_TOO_OLD' && res.monthCloseDay === 10 && e.sh.tabs[COST].length === n0), res);
+    SETTING_CLOSE = '28';
+    const e28 = makeEnv();
+    res = await callCost(e28, 'TOK_LEE', { periodFrom: prevYm, periodTo: prevYm });
+    const m28 = await e28.get({ sessionToken: 'TOK_LEE', view: 'mine' });
+    t('BC4c 월기록마감일 28 → 지난달 ' + (day <= 28 ? '허용' : '거부(29일 이후)') + ', mine monthCloseDay 28', (day <= 28 ? res.ok : res.error === 'DATE_TOO_OLD') && m28.monthCloseDay === 28, { res, c: m28.monthCloseDay });
+    SETTING_CLOSE = '';
+  }
   res = await callCost(e, 'TOK_LEE', { done: 'N', periodFrom: '', periodTo: '', amount: '', itemKeys: '' });
   const nrow = e.sh.tabs[COST][5];
   t('BC6 N 미완료 → ok 12칸, 기간·개선액·아이템키 빈칸, 날짜 검사 없음', res.ok && res.updatedCells === 12 && nrow[8] === 'N' && !nrow[7] && !nrow[9] && !nrow[10], { res, nrow });
