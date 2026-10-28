@@ -4062,6 +4062,15 @@ exports.saveCompetencyTest = async (req, res) => {
       await competencyCreate_(req, res, auth, t0, timings);
       return;
     }
+    // 2-라: 본인 기록 고치기·지우기(팀원) — 설계서 v1.25 ⑳-7
+    if (action === 'replyEdit' || action === 'replyClear') {
+      await competencyReplyEdit_(req, res, auth, t0, timings, action);
+      return;
+    }
+    if (action === 'update' || action === 'delete') {
+      await competencyEdit_(req, res, auth, t0, timings, action);
+      return;
+    }
     if (action !== 'backfill') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: action || null });
       return;
@@ -4280,6 +4289,169 @@ async function competencyCreate_(req, res, auth, t0, timings) {
       const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
       if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
       return { ok: true, updatedCells: updatedCells, record: plan.record };
+    } finally {
+      await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
+    }
+  });
+  res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+}
+
+// =====================================================================
+// 역량평가 2-라: saveCompetencyTest action=update / delete — 팀원 본인 기록 고치기·지우기. 설계서 v1.25 ⑳-7·㉑·㉓·5-2 쓰기 흐름.
+// - 활성 일반·담당만(㉓). 입력 칸 규칙이 있는 탭만(추가매출은 NOT_EDITABLE / NOT_DELETABLE).
+// - update: 입력 검사(lib validateCreate — 추가와 같은 규칙)는 시트를 읽기 전에 → 중복 방지 → 잠금 → 잠금 안에서 인사평가설정 + 그 탭 다시 읽기
+//   → lib planUpdate(바뀐 칸 + 수정일시, 평가 완료 줄은 ALREADY_REVIEWED) → 날짜·기간 칸이 바뀐 때만 ㉑ 검사
+//   → values:batchUpdate 1번(RAW).
+// - delete: 평가 전 본인 줄만(lib planDelete) → spreadsheets.batchUpdate deleteDimension 1번(그 줄 통째로).
+//   문서: https://developers.google.com/workspace/sheets/api/samples/rowcolumn (deleteDimension, sheetId·ROWS·startIndex·endIndex)
+// =====================================================================
+async function competencyEdit_(req, res, auth, t0, timings, action) {
+  const b = req.body || {};
+  if (!b.idempotencyKey || !b.tab || !b.recordId || (action === 'update' && !b.form)) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' });
+    return;
+  }
+  let v = null;
+  if (action === 'update') {
+    v = competency.validateCreate(b.form, b);
+    if (!v.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: v.error, field: v.field }); return; }
+  }
+  const result = await withIdempotency(firestore, b.idempotencyKey, action === 'update' ? 'competencyUpdate' : 'competencyDelete', async function () {
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    });
+    const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
+    if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+    if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
+    const nowMs = Date.now();
+    const targetYear = competency.seoulYear(nowMs);
+    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    const holderId = crypto.randomUUID();
+    const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
+      waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
+    });
+    if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+    try {
+      let target, vr;
+      const c0 = Date.now();
+      try {
+        const sheets = (await competencySheetMeta_(client, fileId, false)).sheets; // 잠금 안: 메모리 저장 안 씀
+        target = competency.recordTabsFromSheets(sheets).find(function (t) { return t.id === String(b.tab); });
+        if (!target) return { ok: false, error: 'TAB_NOT_FOUND' };
+        if (action === 'update' && competency.createFormFor(target) !== v.form) return { ok: false, error: 'TAB_NOT_SUPPORTED' };
+        const hasSettings = sheets.some(function (sh) { return sh && sh.properties && sh.properties.title === competency.SETTINGS_TAB; });
+        const ranges = (hasSettings ? [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C'] : []).concat([competency.quoteTab(target.title) + '!A1:Z']);
+        vr = await batchGetValues(client, fileId, ranges.map(encodeURIComponent));
+        if (!hasSettings) vr = [{ values: [] }].concat(vr);
+      } catch (e) {
+        const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+        return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus };
+      }
+      timings.competencySheetMs = Date.now() - c0;
+      const values = (vr[1] && vr[1].values) || [];
+      const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+      if (action === 'delete') {
+        const pd = competency.planDelete(values, b.recordId, viewer.email);
+        if (!pd.ok) return pd;
+        const w0 = Date.now();
+        const wclient = await wauth.getClient();
+        await wclient.request({
+          url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + ':batchUpdate',
+          method: 'POST',
+          data: { requests: [{ deleteDimension: { range: { sheetId: Number(target.gid), dimension: 'ROWS', startIndex: pd.rowIndex, endIndex: pd.rowIndex + 1 } } }] }
+        });
+        timings.writeMs = Date.now() - w0;
+        return { ok: true, deleted: { tab: target.id, recordId: String(b.recordId), row: pd.rowIndex + 1 } };
+      }
+      const plan = competency.planUpdate(target, values, b.recordId, viewer.email, v, nowMs);
+      if (!plan.ok) return plan;
+      if (plan.needDateCheck) {
+        const windowDays = competency.recordWindowDays((vr[0] && vr[0].values) || []);
+        const todayIso = competency.seoulIsoDate(nowMs);
+        const dateErr = v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
+          : (v.month ? competency.checkRecordMonth(v.month, v.startMonth, todayIso, windowDays, targetYear) : '');
+        if (dateErr) return { ok: false, error: dateErr, field: v.date ? 'meetDate' : 'periodTo', windowDays: windowDays };
+      }
+      const w0 = Date.now();
+      const wclient = await wauth.getClient();
+      const resp = await wclient.request({
+        url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '/values:batchUpdate',
+        method: 'POST',
+        data: { valueInputOption: 'RAW', data: plan.writes.map(function (w) { return { range: w.range, values: [[w.value]] }; }) }
+      });
+      timings.writeMs = Date.now() - w0;
+      const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+      if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
+      return { ok: true, updatedCells: updatedCells, record: plan.record };
+    } finally {
+      await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
+    }
+  });
+  res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+}
+
+// 2-라 추가매출: action replyEdit(결과 고치기) / replyClear(결과 지우기 → 다시 계획). 흐름은 2-나 reply와 같고 줄 고르기·쓸 칸은 lib planReplyEdit.
+async function competencyReplyEdit_(req, res, auth, t0, timings, action) {
+  const b = req.body || {};
+  if (!b.idempotencyKey || !b.recordId || !b.tab) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' });
+    return;
+  }
+  const clear = action === 'replyClear';
+  const v = clear ? null : competency.validateReply(b);
+  if (v && !v.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: v.error, field: v.field }); return; }
+  const result = await withIdempotency(firestore, b.idempotencyKey, clear ? 'competencyReplyClear' : 'competencyReplyEdit', async function () {
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4] };
+    });
+    const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
+    if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+    if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
+    const targetYear = competency.seoulYear();
+    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    const holderId = crypto.randomUUID();
+    const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
+      waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
+    });
+    if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+    try {
+      let tab, values;
+      const c0 = Date.now();
+      try {
+        const sheets = (await competencySheetMeta_(client, fileId, false)).sheets;
+        tab = competency.recordTabsFromSheets(sheets).find(function (t) { return t.id === String(b.tab); });
+        if (!tab) return { ok: false, error: 'TAB_NOT_FOUND' };
+        const vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(tab.title) + '!A1:Z')]);
+        values = (vr[0] && vr[0].values) || [];
+      } catch (e) {
+        const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+        return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus };
+      }
+      timings.competencySheetMs = Date.now() - c0;
+      const plan = competency.planReplyEdit(tab, values, b.recordId, viewer.email, v, undefined, clear);
+      if (!plan.ok) return plan;
+      const w0 = Date.now();
+      const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+      const wclient = await wauth.getClient();
+      const resp = await wclient.request({
+        url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '/values:batchUpdate',
+        method: 'POST',
+        data: { valueInputOption: 'RAW', data: plan.writes.map(function (w) { return { range: w.range, values: [[w.value]] }; }) }
+      });
+      timings.writeMs = Date.now() - w0;
+      const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+      if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
+      return { ok: true, updatedCells: updatedCells, record: Object.assign({ name: viewer.name, authorEmail: String(viewer.email).trim().toLowerCase(), authorStatus: 'active' }, plan.record) };
     } finally {
       await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
     }

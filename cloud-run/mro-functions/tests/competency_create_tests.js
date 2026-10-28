@@ -323,8 +323,8 @@ const callCreate = (e, tok, extra) => e.save(Object.assign({ sessionToken: tok, 
   t('B30 2-가 backfill: 관리자 아니면 FORBIDDEN 그대로', res.error === 'FORBIDDEN', res);
   res = await e.save({ sessionToken: 'TOK_STAFF', action: 'reply', idempotencyKey: 'R1', tab: 'addSales', recordId: 'CE-A1', achieved: 'N' });
   t('B31 2-나 reply 경로 그대로(이 시험 탭엔 결과 칸이 없어 HEADER_NOT_READY — reply 상세는 competency_reply_tests)', res.error === 'HEADER_NOT_READY', res);
-  res = await e.save({ sessionToken: 'TOK_STAFF', action: 'update' });
-  t('B32 아직 없는 action(update) → NOT_IMPLEMENTED', res.error === 'NOT_IMPLEMENTED', res);
+  res = await e.save({ sessionToken: 'TOK_STAFF', action: 'review' });
+  t('B32 아직 없는 action(review) → NOT_IMPLEMENTED', res.error === 'NOT_IMPLEMENTED', res);
 
 
   // ── 원가개선 서버 (오늘 기준 달로 시험) ──

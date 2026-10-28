@@ -813,3 +813,117 @@ module.exports.validateCreate = validateCreate;
 module.exports.planCreate = planCreate;
 module.exports.createFormFor = createFormFor;
 module.exports.checkRecordMonth = checkRecordMonth;
+
+// =====================================================================
+// 2-라 (설계서 v1.25 ⑳-7): 팀원 본인 기록 고치기(action update)·지우기(action delete) — 순수 함수.
+// - 대상: 입력 칸 규칙(CREATE_RULES)이 있는 탭(대면영업·원가개선·자기개발·직급역량). 추가매출(달성 여부 칸 있는 탭)은 여기서 다루지 않음.
+// - 본인 줄(작성자이메일 = 로그인)만. 고치기: 규칙의 내용 칸 중 바뀐 칸 + 수정일시만 쓴다(같은 값이면 NO_CHANGE).
+//   평가 완료 줄(팀장 의견 있음)은 고치지도 지우지도 못한다(ALREADY_REVIEWED, 2026-10-28 재홍님) — 고칠 일이 있으면 팀장에게 1회 요청(2-마에서).
+//   ㉑ 날짜 검사는 날짜·기간 칸이 바뀐 때만(needDateCheck) — 내용만 고치면 오래된 기록도 고칠 수 있음.
+// - 지우기: 평가 전(팀장 의견 빈칸)만. 시트에서 그 줄을 통째로 지운다(deleteDimension, index.js).
+// =====================================================================
+const OPINION_HEADERS = ['팀장 의견', '팀장 의견 (상중하)'];
+const DATE_HEADERS = ['미팅 일시(YYMMDD-HH)', '수행 기간 (YYMMDD~YYMMDD)']; // 바뀌면 ㉑ 검사
+function findOwnRow_(values, recordId, viewerEmail) {
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  if (header.indexOf(EXTRA_HEADERS[0]) < 0 || header.indexOf(EXTRA_HEADERS[1]) < 0) return { ok: false, error: 'HEADER_NOT_READY' };
+  if (header.indexOf(ADD_SALES_REPLY_HEADER) >= 0) return { ok: false, error: 'NOT_EDITABLE' };
+  const col = function (h) { return header.indexOf(h); };
+  const cell = function (row, h) { const i = col(h); const x = i < 0 ? '' : row[i]; return String(x === undefined || x === null ? '' : x).trim(); };
+  const rid = String(recordId || '').trim();
+  const hits = [];
+  for (let r = 1; r < rows.length; r++) { if (rid && cell(rows[r] || [], EXTRA_HEADERS[0]) === rid) hits.push(r); }
+  if (!hits.length) return { ok: false, error: 'RECORD_NOT_FOUND' };
+  if (hits.length > 1) return { ok: false, error: 'DUPLICATE_RECORD_ID' };
+  const r = hits[0]; const row = (rows[r] || []).slice();
+  if (!normEmail(viewerEmail) || normEmail(cell(row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
+  const opH = OPINION_HEADERS.filter(function (h) { return col(h) >= 0; })[0] || '';
+  return { ok: true, header: header, row: row, r: r, col: col, cell: cell, opH: opH, opinion: opH ? cell(row, opH) : '' };
+}
+function planUpdate(tab, values, recordId, viewerEmail, v, nowMs) {
+  const f = findOwnRow_(values, recordId, viewerEmail);
+  if (!f.ok) return f;
+  if (f.opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  const rule = CREATE_RULES[v.form];
+  if (!rule || rule.headers.some(function (h) { return f.col(h) < 0; }) || f.col(MODIFIED_AT_HEADER) < 0) return { ok: false, error: 'HEADER_NOT_READY' };
+  const set = [];
+  let needDateCheck = false;
+  rule.headers.forEach(function (h) {
+    const nv = v.cells[h] === undefined ? '' : String(v.cells[h]);
+    if (nv !== f.cell(f.row, h)) { set.push([h, nv]); if (DATE_HEADERS.indexOf(h) >= 0 && nv) needDateCheck = true; }
+  });
+  if (!set.length) return { ok: false, error: 'NO_CHANGE' };
+  set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
+  const row = f.row;
+  const writes = set.map(function (s) {
+    while (row.length <= f.col(s[0])) row.push('');
+    row[f.col(s[0])] = s[1];
+    return { range: quoteTab(tab.title) + '!' + colLetter(f.col(s[0])) + (f.r + 1), value: s[1] };
+  });
+  const parsed = parseTab(tab.id, [f.header, row])[0];
+  const fields = {}; f.header.forEach(function (h, i) { if (h) fields[h] = row[i] === undefined ? '' : row[i]; });
+  const rec = parsed || { tab: tab.id, recordId: f.cell(row, EXTRA_HEADERS[0]), leaderOpinion: '', fields: fields };
+  return { ok: true, writes: writes, needDateCheck: needDateCheck,
+    record: { tab: tab.id, row: f.r + 1, recordId: rec.recordId, name: rec.name, authorEmail: normEmail(viewerEmail), authorStatus: 'active',
+      office: rec.office, recordedAt: rec.recordedAt, leaderOpinion: rec.leaderOpinion, reviewState: reviewState(rec), fields: fields } };
+}
+function planDelete(values, recordId, viewerEmail) {
+  const f = findOwnRow_(values, recordId, viewerEmail);
+  if (!f.ok) return f.error === 'NOT_EDITABLE' ? { ok: false, error: 'NOT_DELETABLE' } : f;
+  if (f.opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  return { ok: true, rowIndex: f.r }; // 0부터 센 줄 번호(1행 머리글 = 0) — deleteDimension startIndex
+}
+module.exports.planUpdate = planUpdate;
+module.exports.planDelete = planDelete;
+
+// 2-라 추가매출: 결과 고치기(action replyEdit)·결과 지우기(action replyClear) — 계획 칸은 그대로, 결과 4칸(달성 여부·시점·결산·아이템키)만.
+// - 본인 줄이면서 결과가 이미 있는 줄만(없으면 NOT_REPLIED — [결과 적기]를 쓰면 됨).
+// - 고치기: validateReply 결과로 4칸을 새로 정함(N이면 시점·결산·아이템키 비움, 이익개선 줄은 이익만). 바뀐 칸 + 수정일시만 쓴다(같으면 NO_CHANGE).
+// - 고치기·지우기 모두 평가 전(미평가)만 — 평가 완료면 ALREADY_REVIEWED(planUpdate와 같음).
+// - 지우기: 4칸 비우고 수정일시 → 다시 '계획'.
+function planReplyEdit(tab, values, recordId, viewerEmail, v, nowMs, clear) {
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  const need = [EXTRA_HEADERS[0], EXTRA_HEADERS[1], MODIFIED_AT_HEADER, ADD_SALES_REPLY_HEADER, REPLY_PERIOD_HEADER, REPLY_SETTLE_HEADER, ITEM_KEY_HEADER];
+  if (need.some(function (h) { return header.indexOf(h) < 0; })) return { ok: false, error: 'HEADER_NOT_READY' };
+  const col = function (h) { return header.indexOf(h); };
+  const cell = function (row, h) { const i = col(h); const x = i < 0 ? '' : row[i]; return String(x === undefined || x === null ? '' : x).trim(); };
+  const rid = String(recordId || '').trim();
+  const hits = [];
+  for (let r = 1; r < rows.length; r++) { if (rid && cell(rows[r] || [], EXTRA_HEADERS[0]) === rid) hits.push(r); }
+  if (!hits.length) return { ok: false, error: 'RECORD_NOT_FOUND' };
+  if (hits.length > 1) return { ok: false, error: 'DUPLICATE_RECORD_ID' };
+  const r = hits[0]; const row = (rows[r] || []).slice();
+  if (!normEmail(viewerEmail) || normEmail(cell(row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
+  if (!cell(row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'NOT_REPLIED' };
+  const opH = OPINION_HEADERS.filter(function (h) { return col(h) >= 0; })[0] || '';
+  const opinion = opH ? cell(row, opH) : '';
+  if (opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  let target;
+  if (clear) {
+    target = [[ADD_SALES_REPLY_HEADER, ''], [REPLY_PERIOD_HEADER, ''], [REPLY_SETTLE_HEADER, ''], [ITEM_KEY_HEADER, '']];
+  } else if (v.achieved === 'N') {
+    target = [[ADD_SALES_REPLY_HEADER, 'N'], [REPLY_PERIOD_HEADER, ''], [REPLY_SETTLE_HEADER, ''], [ITEM_KEY_HEADER, '']];
+  } else {
+    const profitOnly = col('구분') >= 0 && cell(row, '구분') === PROFIT_ONLY_KIND;
+    if (!profitOnly && (v.sales === null || v.sales === undefined)) return { ok: false, error: 'BAD_INPUT', field: 'settleSales' };
+    const settle = profitOnly ? settleText(null, v.profit, v.open) : v.settle;
+    target = [[ADD_SALES_REPLY_HEADER, 'Y'], [REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, settle], [ITEM_KEY_HEADER, v.itemKeys]];
+  }
+  const set = target.filter(function (s) { return s[1] !== cell(row, s[0]); });
+  if (!set.length) return { ok: false, error: 'NO_CHANGE' };
+  set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
+  const writes = set.map(function (s) {
+    while (row.length <= col(s[0])) row.push('');
+    row[col(s[0])] = s[1];
+    return { range: quoteTab(tab.title) + '!' + colLetter(col(s[0])) + (r + 1), value: s[1] };
+  });
+  const fields = {};
+  header.forEach(function (h, i) { if (h) fields[h] = row[i] === undefined ? '' : row[i]; });
+  const leaderOpinion = String(fields['팀장 의견'] || fields['팀장 의견 (상중하)'] || '');
+  return { ok: true, writes: writes,
+    record: { tab: tab.id, row: r + 1, recordId: rid, leaderOpinion: leaderOpinion, reviewState: reviewState({ fields: fields, leaderOpinion: leaderOpinion }),
+      recordedAt: String(fields['기록일시'] || ''), fields: fields } };
+}
+module.exports.planReplyEdit = planReplyEdit;
