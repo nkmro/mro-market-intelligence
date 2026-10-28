@@ -4071,6 +4071,11 @@ exports.saveCompetencyTest = async (req, res) => {
       await competencyEdit_(req, res, auth, t0, timings, action);
       return;
     }
+    // 2-마-1: 평가 완료 기록 1회 수정 요청(팀원) · 승인/거절(팀장) — 설계서 v1.26 ⑳-8
+    if (action === 'editRequest' || action === 'editApprove' || action === 'editReject') {
+      await competencyEditReq_(req, res, auth, t0, timings, action);
+      return;
+    }
     if (action !== 'backfill') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: action || null });
       return;
@@ -4452,6 +4457,88 @@ async function competencyReplyEdit_(req, res, auth, t0, timings, action) {
       const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
       if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
       return { ok: true, updatedCells: updatedCells, record: Object.assign({ name: viewer.name, authorEmail: String(viewer.email).trim().toLowerCase(), authorStatus: 'active' }, plan.record) };
+    } finally {
+      await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
+    }
+  });
+  res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+}
+
+// 2-마-1: saveCompetencyTest action editRequest(팀원) / editApprove·editReject(팀장). 설계서 v1.26 ⑳-8.
+// - editRequest: 활성 일반·담당, 본인 평가 완료 줄, '수정 요청' 칸이 빈 줄만(1회). 사유 필수(시트를 읽기 전에 검사).
+// - editApprove·editReject: 활성 팀장만(임원·관리자 역할은 FORBIDDEN), 그 줄 작성자(작성자이메일)가 같은 팀이어야 함(NOT_YOUR_TEAM), 칸이 '요청'일 때만.
+//   승인 = 팀장 의견·팀장한줄의견 비움 + 칸 '승인 …'(이전 평가 남김) → 미평가. 거절 = 칸 '거절 …'(1회 사용).
+// - 흐름은 2-라와 같음: 중복 방지 → 사용자 확인 → 잠금 → 잠금 안에서 그 탭 다시 읽기 → values:batchUpdate 1번(RAW).
+async function competencyEditReq_(req, res, auth, t0, timings, action) {
+  const b = req.body || {};
+  if (!b.idempotencyKey || !b.tab || !b.recordId) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' });
+    return;
+  }
+  const isReq = action === 'editRequest';
+  let reason = '';
+  if (isReq) {
+    const vr0 = competency.validateEditReason(b.reason);
+    if (!vr0.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: vr0.error, field: vr0.field }); return; }
+    reason = vr0.reason;
+  }
+  const result = await withIdempotency(firestore, b.idempotencyKey, 'competency' + action.charAt(0).toUpperCase() + action.slice(1), async function () {
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    });
+    const norm = function (e) { return String(e || '').trim().toLowerCase(); };
+    const viewer = users.find(function (u) { return norm(u.email) === norm(auth.email); });
+    if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+    if (viewer.status !== '활성') return { ok: false, error: 'FORBIDDEN' };
+    if (isReq ? competency.MEMBER_ROLES.indexOf(viewer.role) < 0 : viewer.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
+    const nowMs = Date.now();
+    const targetYear = competency.seoulYear(nowMs);
+    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
+    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    const holderId = crypto.randomUUID();
+    const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
+      waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
+    });
+    if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+    try {
+      let tab, values;
+      const c0 = Date.now();
+      try {
+        const sheets = (await competencySheetMeta_(client, fileId, false)).sheets;
+        tab = competency.recordTabsFromSheets(sheets).find(function (t) { return t.id === String(b.tab); });
+        if (!tab) return { ok: false, error: 'TAB_NOT_FOUND' };
+        const vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(tab.title) + '!A1:Z')]);
+        values = (vr[0] && vr[0].values) || [];
+      } catch (e) {
+        const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+        return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus };
+      }
+      timings.competencySheetMs = Date.now() - c0;
+      const plan = isReq ? competency.planEditRequest(tab, values, b.recordId, viewer.email, reason, nowMs)
+        : competency.planEditDecide(tab, values, b.recordId, action === 'editApprove', nowMs);
+      if (!plan.ok) return plan;
+      let author = viewer;
+      if (!isReq) {
+        author = users.find(function (u) { return norm(u.email) === plan.authorEmail; });
+        if (!author || String(author.team || '').trim() !== String(viewer.team || '').trim()) return { ok: false, error: 'NOT_YOUR_TEAM' };
+      }
+      const w0 = Date.now();
+      const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+      const wclient = await wauth.getClient();
+      const resp = await wclient.request({
+        url: 'https://sheets.googleapis.com/v4/spreadsheets/' + fileId + '/values:batchUpdate',
+        method: 'POST',
+        data: { valueInputOption: 'RAW', data: plan.writes.map(function (w) { return { range: w.range, values: [[w.value]] }; }) }
+      });
+      timings.writeMs = Date.now() - w0;
+      const updatedCells = Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+      if (updatedCells !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: updatedCells };
+      return { ok: true, updatedCells: updatedCells, record: Object.assign({ name: String(plan.record.fields['이름'] || plan.record.fields['담당'] || author.name || ''),
+        authorEmail: norm(author.email), authorStatus: author.status === '활성' ? 'active' : 'left' }, plan.record) };
     } finally {
       await releaseLock(firestore, COMPETENCY_LOCK_NAME, holderId);
     }

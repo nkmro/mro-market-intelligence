@@ -872,6 +872,7 @@ function planDelete(values, recordId, viewerEmail) {
   const f = findOwnRow_(values, recordId, viewerEmail);
   if (!f.ok) return f.error === 'NOT_EDITABLE' ? { ok: false, error: 'NOT_DELETABLE' } : f;
   if (f.opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  if (editApproved_(f.cell(f.row, EDIT_REQ_HEADER))) return { ok: false, error: 'APPROVED_EDIT_ONLY' }; // 2-마-1: 팀장이 수정을 승인한 기록은 고치기만(지우기 불가)
   return { ok: true, rowIndex: f.r }; // 0부터 센 줄 번호(1행 머리글 = 0) — deleteDimension startIndex
 }
 module.exports.planUpdate = planUpdate;
@@ -900,6 +901,7 @@ function planReplyEdit(tab, values, recordId, viewerEmail, v, nowMs, clear) {
   const opH = OPINION_HEADERS.filter(function (h) { return col(h) >= 0; })[0] || '';
   const opinion = opH ? cell(row, opH) : '';
   if (opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  if (clear && editApproved_(cell(row, EDIT_REQ_HEADER))) return { ok: false, error: 'APPROVED_EDIT_ONLY' }; // 2-마-1: 승인 뒤 결과 지우기 불가
   let target;
   if (clear) {
     target = [[ADD_SALES_REPLY_HEADER, ''], [REPLY_PERIOD_HEADER, ''], [REPLY_SETTLE_HEADER, ''], [ITEM_KEY_HEADER, '']];
@@ -927,3 +929,92 @@ function planReplyEdit(tab, values, recordId, viewerEmail, v, nowMs, clear) {
       recordedAt: String(fields['기록일시'] || ''), fields: fields } };
 }
 module.exports.planReplyEdit = planReplyEdit;
+
+// =====================================================================
+// 2-마-1: 평가 완료 기록 1회 수정 요청 → 팀장 승인·거절 (설계서 v1.26 ⑳-8, 2026-10-28 재홍님 결정)
+// - 각 기록 탭 '수정 요청' 칸(재홍님이 '팀' 바로 왼쪽에 열 삽입 — 끝 6칸(기록ID~첨부)은 맨 끝 그대로여야 checkHeaderRow·채우기 점검이 통과) 하나에 상태를 글자로 남긴다.
+//   서버는 칸 이름으로 찾으므로 위치는 동작과 무관. 시트에서도 읽히게 글자로:
+//     요청: '요청 2026-10-28 14:20 · 사유: …'
+//     승인: '승인 2026-10-29 09:10 · 이전 평가: 중 / 한줄: … · 사유: …'  (팀장 의견·팀장한줄의견은 비움 → 미평가)
+//     거절: '거절 2026-10-29 09:10 · 사유: …'
+// - 1회: 이 칸에 값이 있으면(요청·승인·거절·그 밖의 글자) 다시 요청할 수 없다(ALREADY_REQUESTED). 거절도 1회 사용.
+// - 요청 = 본인 줄 + 평가 완료(팀장 의견 있음)만. 사유 필수(1~200자, 줄바꿈은 띄어쓰기로).
+// - 승인·거절 = 그 팀원과 같은 팀의 활성 팀장만(index.js에서 판정), 칸이 '요청'일 때만.
+// - 승인된 기록은 미평가로 돌아가 팀원이 고칠 수 있지만 지울 수는 없다(APPROVED_EDIT_ONLY — planDelete·planReplyEdit clear).
+// =====================================================================
+const EDIT_REQ_HEADER = '수정 요청';
+const EDIT_REASON_MAX = 200;
+function editApproved_(text) { return /^승인(\s|$)/.test(String(text || '').trim()); }
+function parseEditRequest(text) {
+  const s = String(text === undefined || text === null ? '' : text).trim();
+  if (!s) return null;
+  const m = /^(요청|승인|거절)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(s);
+  const reason = /사유:\s*([\s\S]*)$/.exec(s);
+  const prev = /이전 평가:\s*([\s\S]*?)\s*·\s*사유:/.exec(s);
+  return { state: m ? m[1] : '기타', at: m ? m[2] : '', reason: reason ? reason[1].trim() : '', prev: prev ? prev[1].trim() : '' };
+}
+function validateEditReason(reason) {
+  const r = String(reason === undefined || reason === null ? '' : reason).replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  if (!r || r.length > EDIT_REASON_MAX) return { ok: false, error: 'BAD_INPUT', field: 'reason' };
+  return { ok: true, reason: r };
+}
+// 기록ID로 줄 찾기(본인 여부·탭 종류는 따지지 않음)
+function rowById_(values, recordId) {
+  const rows = values || [];
+  const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
+  if (header.indexOf(EXTRA_HEADERS[0]) < 0 || header.indexOf(EXTRA_HEADERS[1]) < 0 || header.indexOf(EDIT_REQ_HEADER) < 0) return { ok: false, error: 'HEADER_NOT_READY' };
+  const col = function (h) { return header.indexOf(h); };
+  const cell = function (row, h) { const i = col(h); const x = i < 0 ? '' : row[i]; return String(x === undefined || x === null ? '' : x).trim(); };
+  const rid = String(recordId || '').trim();
+  const hits = [];
+  for (let r = 1; r < rows.length; r++) { if (rid && cell(rows[r] || [], EXTRA_HEADERS[0]) === rid) hits.push(r); }
+  if (!hits.length) return { ok: false, error: 'RECORD_NOT_FOUND' };
+  if (hits.length > 1) return { ok: false, error: 'DUPLICATE_RECORD_ID' };
+  const r = hits[0];
+  return { ok: true, header: header, row: (rows[r] || []).slice(), r: r, col: col, cell: cell };
+}
+function editPlanOut_(tab, f, set) {
+  const writes = set.map(function (s) {
+    while (f.row.length <= f.col(s[0])) f.row.push('');
+    f.row[f.col(s[0])] = s[1];
+    return { range: quoteTab(tab.title) + '!' + colLetter(f.col(s[0])) + (f.r + 1), value: s[1] };
+  });
+  const fields = {};
+  f.header.forEach(function (h, i) { if (h) fields[h] = f.row[i] === undefined ? '' : f.row[i]; });
+  const leaderOpinion = String(fields['팀장 의견'] || fields['팀장 의견 (상중하)'] || '');
+  return { ok: true, writes: writes, authorEmail: normEmail(fields[EXTRA_HEADERS[1]]),
+    record: { tab: tab.id, row: f.r + 1, recordId: String(fields[EXTRA_HEADERS[0]] || ''), leaderOpinion: leaderOpinion,
+      reviewState: reviewState({ fields: fields, leaderOpinion: leaderOpinion }), recordedAt: String(fields['기록일시'] || ''),
+      office: String(fields['사무소'] || ''), fields: fields } };
+}
+// 팀원: 수정 요청(action editRequest). reason = validateEditReason 결과의 글자.
+function planEditRequest(tab, values, recordId, viewerEmail, reason, nowMs) {
+  const f = rowById_(values, recordId);
+  if (!f.ok) return f;
+  if (!normEmail(viewerEmail) || normEmail(f.cell(f.row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
+  const opH = OPINION_HEADERS.filter(function (h) { return f.col(h) >= 0; })[0] || '';
+  if (!(opH && f.cell(f.row, opH))) return { ok: false, error: 'NOT_REVIEWED' };
+  if (f.cell(f.row, EDIT_REQ_HEADER)) return { ok: false, error: 'ALREADY_REQUESTED' };
+  return editPlanOut_(tab, f, [[EDIT_REQ_HEADER, '요청 ' + seoulDateTimeStr(nowMs) + ' · 사유: ' + reason]]);
+}
+// 팀장: 승인(approve = true) / 거절. 같은 팀인지는 index.js가 plan.authorEmail로 판정한다.
+function planEditDecide(tab, values, recordId, approve, nowMs) {
+  const f = rowById_(values, recordId);
+  if (!f.ok) return f;
+  const req = parseEditRequest(f.cell(f.row, EDIT_REQ_HEADER));
+  if (!req || req.state !== '요청') return { ok: false, error: 'NOT_REQUESTED' };
+  const now = seoulDateTimeStr(nowMs);
+  if (!approve) return editPlanOut_(tab, f, [[EDIT_REQ_HEADER, '거절 ' + now + ' · 사유: ' + req.reason]]);
+  const set = [];
+  const prev = [];
+  OPINION_HEADERS.forEach(function (h) { if (f.col(h) >= 0 && f.cell(f.row, h)) { prev.push(f.cell(f.row, h)); set.push([h, '']); } });
+  const line = f.col('팀장한줄의견') >= 0 ? f.cell(f.row, '팀장한줄의견') : '';
+  if (line) set.push(['팀장한줄의견', '']);
+  set.push([EDIT_REQ_HEADER, '승인 ' + now + ' · 이전 평가: ' + (prev.join(' / ') || '-') + (line ? ' / 한줄: ' + line : '') + ' · 사유: ' + req.reason]);
+  return editPlanOut_(tab, f, set);
+}
+module.exports.EDIT_REQ_HEADER = EDIT_REQ_HEADER;
+module.exports.parseEditRequest = parseEditRequest;
+module.exports.validateEditReason = validateEditReason;
+module.exports.planEditRequest = planEditRequest;
+module.exports.planEditDecide = planEditDecide;
