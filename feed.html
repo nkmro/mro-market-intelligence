@@ -4838,7 +4838,7 @@ return n.some(Boolean) || r.some(Boolean) ? `시트에는 대면자 "${n.join(',
 function compCreateHtml_(t, form) {
 const st = compCreateState_;
 if (!st || st.tab !== t.key) return `<div class="cr-bar"><button class="rp-btn" onclick="compCreateOpen_('${escapeHtml(t.key)}','${escapeHtml(form)}')">＋ ${escapeHtml(t.label)} 기록 추가</button></div>`;
-if (st.form === 'costSave') return compCreateCostHtml_(st);
+if (COMP_DONE_FORMS_[st.form]) return compCreateDoneHtml_(st);
 const errs = st.errs || {};
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
 const dis = st.saving ? 'disabled' : '';
@@ -4887,7 +4887,7 @@ const t = compTabs_.filter(function (x) { return x.key === key; })[0]; if (!t) r
 const today = compSeoulToday_();
 compCreateState_ = { tab: key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
 cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null,
-supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '' };
+supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '' };
 compCreateRender_();
 }
 function compCreateCancel_() { if (compCreateState_ && compCreateState_.saving) return; compCreateState_ = null; compCreateRender_(); }
@@ -4922,7 +4922,7 @@ compCreateRender_();
 }
 // 화면 검사(서버 CREATE_RULES.faceSales와 같은 규칙)
 function compCreateCheck_(st) {
-if (st.form === 'costSave') return compCreateCostCheck_(st);
+if (COMP_DONE_FORMS_[st.form]) return compCreateDoneCheck_(st);
 const e = {};
 const cu = st.customer.trim();
 if (!cu || cu.length > 100) e.customer = '고객사를 적어 주세요.';
@@ -4949,6 +4949,7 @@ st.saving = true; compCreateRender_();
 st.key = st.key || generateIdempotencyKey_();
 const body = st.form === 'costSave'
 ? { customer: st.customer, supplier: st.supplier, item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: st.open, amount: st.amount, itemKeys: st.keys }
+: COMP_DONE_FORMS_[st.form] ? { item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: false, evaluation: st.evaluation }
 : { customer: st.customer, people: st.people.map(function (p) { return { name: p.name, rank: p.rank }; }), meetDate: st.date, meetHour: Number(st.hour),
 minutes: Number(st.other ? String(st.otherMin).trim() : st.minutes), expected: st.expected };
 const res = await compSaveFetch_(Object.assign({ action: 'create', tab: st.tab, form: st.form, idempotencyKey: st.key }, body), 30000);
@@ -4986,7 +4987,18 @@ if (oldest.slice(0, 4) !== today.slice(0, 4)) oldest = today.slice(0, 4) + '-01-
 return { yearStart: today.slice(2, 4) + '01', oldest: compYm_(oldest), now: compYm_(today) };
 }
 function compYmRangeText_(a, b) { return a === b ? Number(b.slice(2)) + '월' : Number(a.slice(2)) + '~' + Number(b.slice(2)) + '월'; }
-function compCreateCostHtml_(st) {
+// 완료 여부(Y/N)로 칸이 바뀌는 입력 칸 3종(원가개선·자기개발·직급역량) — 같은 그리기 함수, 탭별 차이는 이 표에만.
+// open = Y 완료에서 '끝 없음(계속)' 허용(원가개선만), cost = 원가 개선액·아이템키, evalLabel = 자기 성취 평가 칸(자기개발·직급역량).
+const COMP_DONE_FORMS_ = {
+costSave: { top: [['customer', '고객사', '고객사 이름'], ['supplier', '공급사', '공급사 이름']], item: ['원가 개선 항목', '예: 안전장갑 공급사 변경'], reason: ['원가 개선 사유', '왜, 어떻게 원가가 줄었는지'], open: true, cost: true,
+nText: '미완료(N)는 실적이 없으므로 수행 기간·원가 개선액·아이템키 칸이 없습니다' },
+selfDev: { top: [], item: ['자기개발 항목', '예: 산업안전기사 자격 취득'], reason: ['자기개발 사유', '왜 이 자기개발을 했는지'], open: false, evalLabel: '자기 성취 평가 요약', evalMsg: '자기 성취 평가 요약을 적어 주세요.', evalPh: '무엇을 얻었고 업무에 어떻게 쓰는지',
+nText: '미완료(N)는 수행 기간·자기 성취 평가 요약 칸이 없습니다' },
+gradeComp: { top: [], item: ['개선 직급 역량 항목', '예: 견적 원가 분석 능력'], reason: ['직급 역량 개선 사유', '왜 이 역량을 키웠는지'], open: false, evalLabel: '자기 성취 평가', evalMsg: '자기 성취 평가를 적어 주세요.', evalPh: '무엇을 얻었고 업무에 어떻게 쓰는지',
+nText: '미완료(N)는 수행 기간·자기 성취 평가 칸이 없습니다' }
+};
+function compCreateDoneHtml_(st) {
+const cfg = COMP_DONE_FORMS_[st.form];
 const errs = st.errs || {};
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
 const dis = st.saving ? 'disabled' : '';
@@ -5005,22 +5017,24 @@ months.push(`<button type="button" class="${ym === cur ? 'sel' : ''}" ${off ? 'd
 cal = `<div class="rp-cal"><div class="rp-cal-h"><button type="button" onclick="compCreateMYear_(-1)" aria-label="이전 해">‹</button><b>${st.mcalY}년</b><button type="button" onclick="compCreateMYear_(1)" aria-label="다음 해">›</button></div><div class="rp-cal-g">${months.join('')}</div></div>`;
 }
 const cell = st.from ? st.from + '~' + (st.open ? '' : st.to) : '';
-const yHtml = st.done === 'Y' ? `<div class="rp-row"><span class="rp-k">수행 기간 <b>*</b></span><span class="rp-period">
-<button type="button" class="rp-pick${st.mcal === 'from' ? ' on' : ''}" onclick="compCreateMCal_('from')" ${dis}>📅 ${st.from ? escapeHtml(compReplyYmText_(st.from)) : '시작 달 고르기'}</button><span>~</span>
-<button type="button" class="rp-pick${st.mcal === 'to' ? ' on' : ''}" ${st.open || st.saving ? 'disabled' : ''} onclick="compCreateMCal_('to')">📅 ${st.open ? '끝 없음' : (st.to ? escapeHtml(compReplyYmText_(st.to)) : '끝 달 고르기')}</button>
-<label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compCreateMOpen_(this)" ${dis}> 끝 없음(계속)</label>${cal}</span>
-<span class="rp-help">끝 달(끝 없음이면 시작 달)은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요${cell ? ' · 시트에는 ' + escapeHtml(cell) : ''}</span>${err('periodFrom')}${err('periodTo')}</div>
-<div class="rp-row"><span class="rp-k">원가 개선액 <b>*</b></span><span>개선 <input class="rp-in" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.amount)}" oninput="compCreateInput_(this,'amount')" ${dis}>${compUnit_(st.open)}</span>
+const openHtml = cfg.open ? `<label class="rp-open"><input type="checkbox" ${st.open ? 'checked' : ''} onchange="compCreateMOpen_(this)" ${dis}> 끝 없음(계속)</label>` : '';
+const periodHelp = cfg.open ? `끝 달(끝 없음이면 시작 달)은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요` : `완료한 일이므로 끝 달 필수 · 끝 달은 ${compYmRangeText_(mr.oldest, mr.now)}만 고를 수 있어요`;
+const costHtml = cfg.cost ? `<div class="rp-row"><span class="rp-k">원가 개선액 <b>*</b></span><span>개선 <input class="rp-in" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.amount)}" oninput="compCreateInput_(this,'amount')" ${dis}>${compUnit_(st.open)}</span>
 ${compAvgGuide_(st.open, '개선액')}<span class="rp-help">숫자만 · 단위 천원 (0도 가능)</span>${err('amount')}</div>
 <div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(st.keys)}" oninput="compCreateInput_(this,'keys')" ${dis}>
 <span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
-const nHtml = st.done === 'N' ? '<div class="rp-help" style="grid-column:1/-1">미완료(N)는 실적이 없으므로 수행 기간·원가 개선액·아이템키 칸이 없습니다</div>' : '';
+const evalHtml = cfg.evalLabel ? `<div class="rp-row"><span class="rp-k">${escapeHtml(cfg.evalLabel)} <b>*</b></span><textarea class="rp-in" rows="3" maxlength="2000" placeholder="${escapeHtml(cfg.evalPh)}" oninput="compCreateInput_(this,'evaluation')" ${dis}>${escapeHtml(st.evaluation)}</textarea>${err('evaluation')}</div>` : '';
+const yHtml = st.done === 'Y' ? `<div class="rp-row"><span class="rp-k">수행 기간 <b>*</b></span><span class="rp-period">
+<button type="button" class="rp-pick${st.mcal === 'from' ? ' on' : ''}" onclick="compCreateMCal_('from')" ${dis}>📅 ${st.from ? escapeHtml(compReplyYmText_(st.from)) : '시작 달 고르기'}</button><span>~</span>
+<button type="button" class="rp-pick${st.mcal === 'to' ? ' on' : ''}" ${st.open || st.saving ? 'disabled' : ''} onclick="compCreateMCal_('to')">📅 ${st.open ? '끝 없음' : (st.to ? escapeHtml(compReplyYmText_(st.to)) : '끝 달 고르기')}</button>
+${openHtml}${cal}</span>
+<span class="rp-help">${periodHelp}${cell ? ' · 시트에는 ' + escapeHtml(cell) : ''}</span>${err('periodFrom')}${err('periodTo')}</div>${costHtml}${evalHtml}` : '';
+const nHtml = st.done === 'N' ? `<div class="rp-help" style="grid-column:1/-1">${escapeHtml(cfg.nText)}</div>` : '';
 const msg = st.msg || null;
 return `<div class="cr-card"><div class="cr-title">${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가</div>
-<div class="rp-row"><span class="rp-k">고객사 <b>*</b></span>${inp('customer', '고객사 이름', 100)}${err('customer')}</div>
-<div class="rp-row"><span class="rp-k">공급사 <b>*</b></span>${inp('supplier', '공급사 이름', 100)}${err('supplier')}</div>
-<div class="rp-row"><span class="rp-k">원가 개선 항목 <b>*</b></span>${inp('item', '예: 안전장갑 공급사 변경', 100)}<span class="rp-help">카드 제목으로 보입니다</span>${err('item')}</div>
-<div class="rp-row"><span class="rp-k">원가 개선 사유 <b>*</b></span><textarea class="rp-in" rows="2" maxlength="2000" placeholder="왜, 어떻게 원가가 줄었는지" oninput="compCreateInput_(this,'reason')" ${dis}>${escapeHtml(st.reason)}</textarea>${err('reason')}</div>
+${cfg.top.map(function (f) { return `<div class="rp-row"><span class="rp-k">${f[1]} <b>*</b></span>${inp(f[0], f[2], 100)}${err(f[0])}</div>`; }).join('')}
+<div class="rp-row"><span class="rp-k">${escapeHtml(cfg.item[0])} <b>*</b></span>${inp('item', cfg.item[1], 100)}<span class="rp-help">카드 제목으로 보입니다</span>${err('item')}</div>
+<div class="rp-row"><span class="rp-k">${escapeHtml(cfg.reason[0])} <b>*</b></span><textarea class="rp-in" rows="2" maxlength="2000" placeholder="${escapeHtml(cfg.reason[1])}" oninput="compCreateInput_(this,'reason')" ${dis}>${escapeHtml(st.reason)}</textarea>${err('reason')}</div>
 <div class="rp-row"><span class="rp-k">완료 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('done')}</div>${yHtml}${nHtml}
 <div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : '기록 저장'}</button></div>
 <div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다")}</div></div>`;
@@ -5040,13 +5054,13 @@ if (st.mcal === 'from') { st.from = ym; if (st.to && st.to < ym) st.to = ''; } e
 st.mcal = ''; compCreateRender_();
 }
 function compCreateMOpen_(el) { const st = compCreateState_; if (!st) return; st.open = !!el.checked; if (st.open) st.to = ''; st.mcal = ''; compCreateRender_(); }
-// 화면 검사(서버 CREATE_RULES.costSave · checkRecordMonth와 같은 규칙)
-function compCreateCostCheck_(st) {
+// 화면 검사(서버 CREATE_RULES.costSave·selfDev·gradeComp · checkRecordMonth와 같은 규칙)
+function compCreateDoneCheck_(st) {
+const cfg = COMP_DONE_FORMS_[st.form];
 const e = {};
-if (!st.customer.trim()) e.customer = '고객사를 적어 주세요.';
-if (!st.supplier.trim()) e.supplier = '공급사를 적어 주세요.';
-if (!st.item.trim()) e.item = '원가 개선 항목을 적어 주세요.';
-if (!st.reason.trim()) e.reason = '원가 개선 사유를 적어 주세요.';
+cfg.top.forEach(function (f) { if (!String(st[f[0]] || '').trim()) e[f[0]] = f[1] + '를 적어 주세요.'; });
+if (!st.item.trim()) e.item = cfg.item[0] + '을 적어 주세요.';
+if (!st.reason.trim()) e.reason = cfg.reason[0] + '를 적어 주세요.';
 if (st.done !== 'Y' && st.done !== 'N') { e.done = '완료 여부를 골라 주세요.'; return e; }
 if (st.done !== 'Y') return e;
 const mr = compCostMonths_();
@@ -5056,6 +5070,8 @@ else if (st.from < mr.yearStart || st.from > mr.now) e.periodFrom = '시작 달�
 else if (st.open && st.from < mr.oldest) e.periodFrom = "끝 없음(계속)이면 시작 달이 " + months + "이어야 해요.";
 if (!st.open && !st.to) e.periodTo = "끝 달을 고르거나 '끝 없음(계속)'에 체크해 주세요.";
 else if (!st.open && (st.to < mr.oldest || st.to > mr.now)) e.periodTo = '끝 달은 ' + months + '만 고를 수 있어요.';
+if (cfg.evalLabel && !String(st.evaluation || '').trim()) e.evaluation = cfg.evalMsg;
+if (!cfg.cost) return e;
 if (!/^\d+$/.test(String(st.amount || '').replace(/[,\s]/g, '')) || Number(String(st.amount).replace(/[,\s]/g, '')) > 1000000000) e.amount = '원가 개선액을 숫자로 적어 주세요(천원, 0 이상).';
 const keys = String(st.keys || '').split(',').map(function (x) { return x.trim(); });
 if (!String(st.keys || '').trim() || keys.some(function (x) { return !/^\d{1,30}$/.test(x); })) e.itemKeys = '아이템키를 숫자로 적어 주세요(여러 개는 쉼표로 구분).';
