@@ -4072,7 +4072,8 @@ exports.saveCompetencyTest = async (req, res) => {
       return;
     }
     // 2-마-1: 평가 완료 기록 1회 수정 요청(팀원) · 승인/거절(팀장) — 설계서 v1.26 ⑳-8
-    if (action === 'editRequest' || action === 'editApprove' || action === 'editReject') {
+    // 3-가: 팀장 평가 입력(review) · 평가 고치기(reviewEdit) — 설계서 v1.30 ⑳-9. 같은 흐름(팀장 판정·같은 팀 판정)을 같이 씀
+    if (action === 'editRequest' || action === 'editApprove' || action === 'editReject' || action === 'review' || action === 'reviewEdit') {
       await competencyEditReq_(req, res, auth, t0, timings, action);
       return;
     }
@@ -4469,6 +4470,8 @@ async function competencyReplyEdit_(req, res, auth, t0, timings, action) {
 // - editApprove·editReject: 활성 팀장만(임원·관리자 역할은 FORBIDDEN), 그 줄 작성자(작성자이메일)가 같은 팀이어야 함(NOT_YOUR_TEAM), 칸이 '요청'일 때만.
 //   승인 = 팀장 의견·팀장한줄의견 비움 + 칸 '승인 …'(이전 평가 남김) → 미평가. 거절 = 칸 '거절 …'(1회 사용).
 // - 흐름은 2-라와 같음: 중복 방지 → 사용자 확인 → 잠금 → 잠금 안에서 그 탭 다시 읽기 → values:batchUpdate 1번(RAW).
+// 3-가(v1.30): review·reviewEdit도 여기서 — 활성 팀장만, 작성자가 같은 팀 + 재직 중(퇴사자 기록은 보기 전용 ⑫ → MEMBER_LEFT).
+//   등급·한 줄 의견·seen(화면이 본 수정일시)은 시트를 읽기 전에 검사(lib validateReview), 줄 판정은 lib planReview.
 async function competencyEditReq_(req, res, auth, t0, timings, action) {
   const b = req.body || {};
   if (!b.idempotencyKey || !b.tab || !b.recordId) {
@@ -4476,11 +4479,17 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
     return;
   }
   const isReq = action === 'editRequest';
+  const isReview = action === 'review' || action === 'reviewEdit';
   let reason = '';
   if (isReq) {
     const vr0 = competency.validateEditReason(b.reason);
     if (!vr0.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: vr0.error, field: vr0.field }); return; }
     reason = vr0.reason;
+  }
+  let rv = null;
+  if (isReview) {
+    rv = competency.validateReview(b);
+    if (!rv.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: rv.error, field: rv.field }); return; }
   }
   const result = await withIdempotency(firestore, b.idempotencyKey, 'competency' + action.charAt(0).toUpperCase() + action.slice(1), async function () {
     const client = await getSheetsClient();
@@ -4519,12 +4528,14 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
       }
       timings.competencySheetMs = Date.now() - c0;
       const plan = isReq ? competency.planEditRequest(tab, values, b.recordId, viewer.email, reason, nowMs)
+        : isReview ? competency.planReview(tab, values, b.recordId, rv, action === 'reviewEdit', nowMs)
         : competency.planEditDecide(tab, values, b.recordId, action === 'editApprove', nowMs);
       if (!plan.ok) return plan;
       let author = viewer;
       if (!isReq) {
         author = users.find(function (u) { return norm(u.email) === plan.authorEmail; });
         if (!author || String(author.team || '').trim() !== String(viewer.team || '').trim()) return { ok: false, error: 'NOT_YOUR_TEAM' };
+        if (isReview && author.status !== '활성') return { ok: false, error: 'MEMBER_LEFT' };
       }
       const w0 = Date.now();
       const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });

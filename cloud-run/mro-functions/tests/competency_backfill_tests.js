@@ -215,8 +215,8 @@ const fileWrites = sh => sh.requests.filter(r => r.method !== 'GET');
   t('B3 관리자 아님 → FORBIDDEN, 시트 접근 0', res.error === 'FORBIDDEN' && e.sh.requests.length === 0, res);
   res = await e.save({ sessionToken: 'TOK_STAFF', action: 'backfill', mode: 'apply', idempotencyKey: 'KS', expectCells: 16 });
   t('B4 관리자 아닌 사람의 채우기 → FORBIDDEN, 쓰기 0', res.error === 'FORBIDDEN' && fileWrites(e.sh).length === 0, res);
-  res = await e.save({ sessionToken: 'TOK_ADMIN', action: 'review', mode: 'apply' });
-  t('B5 다른 action(review 등)은 아직 NOT_IMPLEMENTED (create·update·delete는 2-다·2-라에서 생김)', res.error === 'NOT_IMPLEMENTED' && e.sh.requests.length === 0, res);
+  res = await e.save({ sessionToken: 'TOK_ADMIN', action: 'markSeen', mode: 'apply' });
+  t('B5 다른 action(markSeen 등)은 아직 NOT_IMPLEMENTED (review는 3-가) (create·update·delete는 2-다·2-라에서 생김)', res.error === 'NOT_IMPLEMENTED' && e.sh.requests.length === 0, res);
   res = await e.save({ sessionToken: 'TOK_ADMIN', action: 'backfill', mode: 'run' });
   t('B6 mode가 preview·apply가 아니면 BAD_MODE', res.error === 'BAD_MODE' && e.sh.requests.length === 0, res);
 

@@ -278,7 +278,7 @@ const changedCells = (a, b) => { let n = 0; Object.keys(a).forEach(tab => a[tab]
   res = await e.save({ sessionToken: 'TOK_ADMIN', action: 'backfill', mode: 'preview' });
   t('B30 2-가 backfill 미리보기 그대로 동작(관리자), 쓰기 0', res.ok && res.mode === 'preview' && fileWrites(e.sh).length === 0, res);
   res = await e.save({ sessionToken: 'TOK_STAFF', action: 'create' });
-  t('B31 action create(2-다)는 필수 값 없으면 MISSING_FIELDS, 아직 없는 action(review) → NOT_IMPLEMENTED', res.error === 'MISSING_FIELDS' && (await e.save({ sessionToken: 'TOK_STAFF', action: 'review' })).error === 'NOT_IMPLEMENTED', res);
+  t('B31 action create(2-다)는 필수 값 없으면 MISSING_FIELDS, 아직 없는 action(markSeen — review는 3-가에서 생김) → NOT_IMPLEMENTED', res.error === 'MISSING_FIELDS' && (await e.save({ sessionToken: 'TOK_STAFF', action: 'markSeen' })).error === 'NOT_IMPLEMENTED', res);
 
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);

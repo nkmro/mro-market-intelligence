@@ -976,11 +976,11 @@ function validateEditReason(reason) {
   if (!r || r.length > EDIT_REASON_MAX) return { ok: false, error: 'BAD_INPUT', field: 'reason' };
   return { ok: true, reason: r };
 }
-// 기록ID로 줄 찾기(본인 여부·탭 종류는 따지지 않음)
-function rowById_(values, recordId) {
+// 기록ID로 줄 찾기(본인 여부·탭 종류는 따지지 않음). noReqCol = true면 '수정 요청' 칸이 없어도 됨(3-가 평가).
+function rowById_(values, recordId, noReqCol) {
   const rows = values || [];
   const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
-  if (header.indexOf(EXTRA_HEADERS[0]) < 0 || header.indexOf(EXTRA_HEADERS[1]) < 0 || header.indexOf(EDIT_REQ_HEADER) < 0) return { ok: false, error: 'HEADER_NOT_READY' };
+  if (header.indexOf(EXTRA_HEADERS[0]) < 0 || header.indexOf(EXTRA_HEADERS[1]) < 0 || (!noReqCol && header.indexOf(EDIT_REQ_HEADER) < 0)) return { ok: false, error: 'HEADER_NOT_READY' };
   const col = function (h) { return header.indexOf(h); };
   const cell = function (row, h) { const i = col(h); const x = i < 0 ? '' : row[i]; return String(x === undefined || x === null ? '' : x).trim(); };
   const rid = String(recordId || '').trim();
@@ -1036,3 +1036,43 @@ module.exports.parseEditRequest = parseEditRequest;
 module.exports.validateEditReason = validateEditReason;
 module.exports.planEditRequest = planEditRequest;
 module.exports.planEditDecide = planEditDecide;
+
+// =====================================================================
+// 3-가: 팀장 평가 입력·고치기 (설계서 v1.30 ①·⑳-9, 2026-10-29 재홍님 결정)
+// - 평가 칸('팀장 의견' 또는 '팀장 의견 (상중하)', 있는 칸) = '상'/'중'/'하' 한 글자만(연월 안 붙임).
+// - '팀장한줄의견' = 한 줄 의견(선택, 0~200자, 줄바꿈은 띄어쓰기로). 빈칸이면 빈칸으로 둠.
+// - '수정일시' = 지금(서울). '수정 요청' 칸·내용 칸은 건드리지 않는다(2-마-1 이력 보존).
+// - review = 미평가만(평가 칸 빈칸, 추가매출은 결과(달성 여부)가 있어야 함 — NOT_REPLIED). 이미 평가면 ALREADY_REVIEWED.
+// - reviewEdit = 평가 완료만(NOT_REVIEWED). 팀원이 수정 요청 중('요청')이면 먼저 승인·거절(EDIT_REQUESTED).
+// - seen = 화면이 본 '수정일시' 값. 시트 값과 다르면(그 사이 팀원이 고침) RECORD_CHANGED — 보지 못한 내용에 평가가 붙지 않게.
+// - 같은 팀 활성 팀장인지·작성자가 재직 중인지는 index.js가 plan.authorEmail로 판정한다(2-마-1 승인과 같음).
+// =====================================================================
+const REVIEW_GRADES = ['상', '중', '하'];
+const REVIEW_LINE_MAX = 200;
+function validateReview(b) {
+  const grade = String((b && b.grade) === undefined || (b && b.grade) === null ? '' : b.grade).trim();
+  if (REVIEW_GRADES.indexOf(grade) < 0) return { ok: false, error: 'BAD_GRADE', field: 'grade' };
+  const line = String((b && b.line) === undefined || (b && b.line) === null ? '' : b.line).replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  if (line.length > REVIEW_LINE_MAX) return { ok: false, error: 'BAD_INPUT', field: 'line' };
+  if (b && b.seen !== undefined && b.seen !== null && typeof b.seen !== 'string') return { ok: false, error: 'BAD_INPUT', field: 'seen' };
+  return { ok: true, grade: grade, line: line, seen: b && typeof b.seen === 'string' ? b.seen.trim() : null };
+}
+function planReview(tab, values, recordId, v, edit, nowMs) {
+  const f = rowById_(values, recordId, true);
+  if (!f.ok) return f;
+  const opH = OPINION_HEADERS.filter(function (h) { return f.col(h) >= 0; })[0] || '';
+  if (!opH || f.col(EXTRA_HEADERS[4]) < 0 || f.col(MODIFIED_AT_HEADER) < 0) return { ok: false, error: 'HEADER_NOT_READY' };
+  const opinion = f.cell(f.row, opH);
+  if (!edit && opinion) return { ok: false, error: 'ALREADY_REVIEWED' };
+  if (edit && !opinion) return { ok: false, error: 'NOT_REVIEWED' };
+  if (!edit && f.col(ADD_SALES_REPLY_HEADER) >= 0 && !f.cell(f.row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'NOT_REPLIED' };
+  if (edit && f.col(EDIT_REQ_HEADER) >= 0) { const rq = parseEditRequest(f.cell(f.row, EDIT_REQ_HEADER)); if (rq && rq.state === '요청') return { ok: false, error: 'EDIT_REQUESTED' }; }
+  if (v.seen !== null && v.seen !== f.cell(f.row, MODIFIED_AT_HEADER)) return { ok: false, error: 'RECORD_CHANGED' };
+  const set = [[opH, v.grade]];
+  if (v.line || f.cell(f.row, EXTRA_HEADERS[4])) set.push([EXTRA_HEADERS[4], v.line]);
+  set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
+  return editPlanOut_(tab, f, set);
+}
+module.exports.REVIEW_GRADES = REVIEW_GRADES;
+module.exports.validateReview = validateReview;
+module.exports.planReview = planReview;
