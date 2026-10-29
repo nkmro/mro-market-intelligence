@@ -1820,16 +1820,23 @@ function primeCommentsFromFeed(posts) {
 }
 
 let pollTimer = null;
+let pollLastStartAt = 0;
+const POLL_VISIBLE_MS = 60 * 1000;
+const POLL_HIDDEN_MS = 10 * 60 * 1000;
 function startPolling() {
   if (pollTimer) return;
   // setInterval 대신 재귀 setTimeout을 쓴다: pollForUpdates 한 번이 재시도 때문에 30초보다
   // 오래 걸리는 경우가 실제로 있었는데, setInterval은 그 이전 호출이 아직 안 끝났어도 다음
   // 틱을 그냥 또 쏴버려서 요청이 겹쳐 쌓이는 문제가 있었다(디버그로그에서 확인). 재귀 setTimeout은
   // 이전 호출이 끝난 뒤에야 다음 타이머를 거니까 구조적으로 겹칠 수가 없다.
+  // 2026-10-29 요금 절감(A안 1단계): 화면이 보일 때 1분, 가려져 있을 때(다른 탭/화면 꺼짐) 10분에 한 번.
+  // 타이머는 1분 그대로 두고 "가려짐 + 마지막 폴링 10분 미만"이면 건너뛰기만 하므로, 화면으로
+  // 돌아오면 refreshOnResume의 즉시 갱신 + 1분 주기로 바로 복귀한다.
   const scheduleNext = function () {
     pollTimer = setTimeout(function () {
+      if (document.visibilityState === 'hidden' && Date.now() - pollLastStartAt < POLL_HIDDEN_MS) { scheduleNext(); return; }
       pollForUpdates().finally(scheduleNext);
-    }, 30000);
+    }, POLL_VISIBLE_MS);
   };
   scheduleNext();
 }
@@ -1857,7 +1864,7 @@ function refreshOnResume() {
   // 기준선만 맞추고 넘어간다 — evaluateLocalNotification_() 참고.
   beginAppActivating_();
   setTimeout(function () {
-    const tasks = [loadFeed(), pollForUpdates()]; // 알림 배지 갱신은 pollForUpdates 내부에서도 처리됨
+    const tasks = [loadFeed(), pollForUpdates({ resume: true })]; // 알림 배지 갱신은 pollForUpdates 내부에서도 처리됨
     if (currentView === 'items') tasks.push(loadItems());
     if (currentView === 'notif') { tasks.push(loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); })); }
     if (currentView === 'users') tasks.push(loadUsers());
@@ -1872,7 +1879,8 @@ window.addEventListener('pageshow', function (e) {
 });
 window.addEventListener('focus', refreshOnResume);
 
-async function pollForUpdates() {
+async function pollForUpdates(opts) {
+pollLastStartAt = Date.now();
 try {
 let res;
 const __psT0 = Date.now();
@@ -1901,12 +1909,21 @@ doLogout();
 return;
 }
 feedState.totalNeedsAttention = res.totalNeedsAttention || 0;
-await loadNotifNewPosts();
+// 2026-10-29 요금 절감(A안 1단계): 신호가 직전과 같으면 알림 목록·고정 댓글을 다시 받지 않는다.
+const __sigKey = pollSigKey_(res);
+const __changed = __sigKey !== notifSigKey;
+if (__changed) {
+  const __okBefore = notifLastOkAt;
+  await loadNotifNewPosts();
+  if (notifLastOkAt !== __okBefore) notifSigKey = __sigKey; // 실패하면 기록하지 않아 다음 폴링에서 다시 받는다
+}
 updateNotifBadge();
-// 댓글 고정(Pin Comment) 신규 기능 — 30초 폴링 때마다 같이 새로고침해서, 시황 뉴스 탭에
-// 계속 머물러 있어도 새로 고정된 댓글이 자동으로 뜨게 한다(재홍님 지적 반영). pollSignal
-// 실패 시엔 이 블록에 아예 도달하지 않으므로(위 return), 기존 폴링 흐름에 영향 없다.
-loadPinnedComments().catch(function () {});
+// 댓글 고정(Pin Comment) — 예전엔 30초 폴링마다 새로고침했다. 이제는 신호가 바뀌었을 때, 또는
+// 화면 복귀 시 마지막으로 받은 지 10분이 지났을 때만 새로고침한다(고정/해제만 하고 댓글 변화가
+// 없으면 신호에 안 잡히므로 복귀 시 보정). 시황 뉴스 탭으로 이동할 때 받는 기존 경로(switchView)는 그대로.
+if (__changed || (opts && opts.resume && Date.now() - pinnedLastOkAt >= PINNED_RESUME_MS)) {
+  loadPinnedComments().catch(function () {});
+}
 
 const postsToRefresh = new Set();
 (res.signatures || []).forEach(function (sig) {
@@ -3350,6 +3367,12 @@ localStorage.setItem('mro_last_activity', String(now));
 let threadSeenMap = {};
 let threadSeenMapLoaded = false;
 let notifNewPostsCache = { loaded: false, items: [] };
+// 2026-10-29 요금 절감(A안 1단계): 알림 목록(약 176KB)·고정 댓글은 pollSignal 신호가 바뀌었을 때만
+// 다시 받는다. notifSigKey = 알림 목록을 마지막으로 성공해서 받았을 때의 신호(숫자+댓글 서명).
+// 앱을 처음 열 때·화면 복귀(loadFeed 등)·알림 탭 진입 때 받는 경로는 그대로다.
+let notifLastOkAt = 0;
+let notifSigKey = null;
+function pollSigKey_(res) { return JSON.stringify([res.totalNeedsAttention || 0, res.signatures || []]); }
 // notifFetchSeq 선언은 위쪽(init() 실행 전)으로 옮겼다 — 이유는 그쪽 주석 참고.
 // [2026-09-01 알림 구조 개선 3차 — be8d6fa/2d142b6/f214df0 세 차례 수정을 근본적으로 통합]
 // 그동안 고친 인앱 알림 중복은 매번 "경로 하나만 막는" 땜질이라 다른 경로에서 같은 문제가
@@ -3559,6 +3582,7 @@ notifNewPostsCache.items = (res.items || []).map(function (it) {
 return { id: it.postId, materialName: it.materialName, title: it.title, summary: it.summary, createdAt: it.createdAt, items: it.items, needsAttention: it.needsAttention };
 });
 notifNewPostsCache.loaded = true;
+notifLastOkAt = Date.now();
 }
 } catch (e) {
 // 실패하면 빈 배열 유지
@@ -5866,6 +5890,9 @@ async function getUsersRemote_() {
 // getComments/getItems 등과 달리 Apps Script 대응 액션이 없으므로 폴백 없이 Cloud Run
 // 직접 호출만 하며, 실패 시 #pinned-area만 조용히 비워지고 기존 피드/댓글은 그대로 동작한다.
 let pinnedState = { items: [], loaded: false };
+// 2026-10-29 요금 절감: 고정 댓글을 마지막으로 성공해서 받은 시각(화면 복귀 시 10분 지났으면 다시 받음).
+let pinnedLastOkAt = 0;
+const PINNED_RESUME_MS = 10 * 60 * 1000;
 const pinningInFlight = new Set();
 
 async function getPinnedCommentsRemote_() {
@@ -5946,6 +5973,7 @@ async function loadPinnedComments() {
   try {
     const res = await getPinnedCommentsRemote_();
     pinnedState.items = (res && res.ok && Array.isArray(res.pinnedComments)) ? res.pinnedComments : [];
+    if (res && res.ok) pinnedLastOkAt = Date.now();
   } catch (e) {
     pinnedState.items = [];
   }
