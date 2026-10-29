@@ -509,7 +509,6 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-me { background: #eeeaf8; }
 .cm-who { grid-area: who; display: flex; align-items: baseline; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .cm-who-name { font-weight: 600; }
-.cm-who-office { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 .cm-me-tag { font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 8px; padding: 0 5px; }
 .cm-bar { grid-area: bar; height: 10px; background: #e6e3ee; border-radius: 4px; overflow: hidden; }
 .cm-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transform-origin: left center; animation: cmGrow .7s cubic-bezier(.2,.8,.2,1) both; }
@@ -638,7 +637,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 @media (max-width: 480px) { .rp-guide { grid-column: 1; } }
 .cr-card > *, .cr-card .rp-row > * { min-width: 0; } /* 좁은 폭에서 칸이 카드 밖으로 밀리지 않게 */
 @media (max-width: 480px) { .cr-card { padding: 10px; } .cr-card .rp-k { padding-top: 0; } .cr-pair .rp-in { width: 0; flex: 1 1 0; min-width: 0; } .cr-pair .rp-in + .rp-in { width: 0; flex: 0 0 34%; } .cr-seg { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); } .cr-when select.rp-in { width: 84px; } .cr-card .rp-seg { width: 100%; } .cr-card .rp-cal { width: auto; right: 0; max-width: 100%; box-sizing: border-box; } }
-@media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-who-office, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
+@media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
 /* 1단계-라-라-다 (B3, 2026-10-26 재홍님 결정): 탭 칸이 좁아지는 폭(481~860px)에서는 이모지를 위 줄로, 이름은 낱말째 줄바꿈("자기개 / 발" 방지). 480px 이하(짧은 이름)·861px 이상은 그대로 */
 @media (min-width: 481px) and (max-width: 860px) { .cm-tab-emoji { display: block; line-height: 1.1; } .cm-tab > span:first-child { word-break: keep-all; } }
 @media (max-width: 480px) { .cm-tabs { gap: 4px; } .cm-tab { min-height: 56px; font-size: 12px; gap: 1px; } .cm-tab-emoji { font-size: 13px; } .cm-tab-label { display: none; } .cm-tab-short { display: inline; } .cm-tab-count { padding: 0 7px; } }
@@ -4579,13 +4578,13 @@ return Array.isArray(recs[key]) ? recs[key] : [];
 }
 // 기록 카드 1장: 제목 칸 + 상태 + 나머지 값 있는 칸 + 팀장 의견.
 // 완료(done)는 한 줄로 접어서, 회신 대기·확인 대기는 펼쳐서 보여준다. 제목 줄을 누르면 접기/펼치기.
-// opts(1단계-라-라, ②용): showOffice = 사무소 칸도 보임(판정 불가 기록 — 묶음 머리가 없어서), showName = 이름·담당 칸도 보임(판정 불가 기록),
+// opts(1단계-라-라, ②용): showName = 이름·담당 칸도 보임(판정 불가 기록),
 // prLabel = 상태 표시 글자 바꿈(임원). ①은 opts 없이 그대로.
 function compRecordCard_(t, rec, opts) {
 const f = rec.fields || {};
 const title = String(f[t.title] === undefined ? '' : f[t.title]).trim() || '(제목 없음)';
 const rows = Object.keys(f).filter(function (k) {
-const shown = COMP_HIDDEN_FIELDS_.indexOf(k) < 0 || (opts && opts.showOffice && k === '사무소') || (opts && opts.showName && (k === '이름' || k === '담당'));
+const shown = COMP_HIDDEN_FIELDS_.indexOf(k) < 0 || (opts && opts.showName && (k === '이름' || k === '담당'));
 return k !== t.title && shown && String(f[k] === undefined ? '' : f[k]).trim() !== '';
 }).map(function (k) {
 return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k, t))}</span><span class="cm-fv">${escapeHtml(String(f[k]).trim())}</span></div>`;
@@ -4642,7 +4641,7 @@ if (!r.nums[j]) return '';
 return isMe ? `<button class="cm-chip" onclick="compMineGo_('${escapeHtml(t.key)}')" title="눌러서 내 ${escapeHtml(t.label)} 기록 보기">${escapeHtml(t.emoji)}${r.nums[j]}</button>` : `<span class="cm-chip" title="${escapeHtml(t.label)} ${r.nums[j]}건">${escapeHtml(t.emoji)}${r.nums[j]}</span>`;
 }).join('');
 const tip = compTabs_.map(function (t, j) { return t.label + ' ' + r.nums[j]; }).join(' · ');
-return `<div class="cm-row${isMe ? ' cm-me' : ''}" title="${escapeHtml(tip)}"><div class="cm-who"><span class="cm-who-name">${escapeHtml(r.m.name || '')}</span>${isMe ? '<span class="cm-me-tag">나</span>' : ''}${r.m.office ? `<span class="cm-who-office">${escapeHtml(r.m.office)}</span>` : ''}</div><div class="cm-bar"><div class="cm-bar-fill" style="width:${pct}%; animation-delay:${200 + i * 40}ms;"></div></div><div class="cm-row-sum">${r.sum}건</div><div class="cm-chips">${chips}</div></div>`;
+return `<div class="cm-row${isMe ? ' cm-me' : ''}" title="${escapeHtml(tip)}"><div class="cm-who"><span class="cm-who-name">${escapeHtml(r.m.name || '')}</span>${isMe ? '<span class="cm-me-tag">나</span>' : ''}</div><div class="cm-bar"><div class="cm-bar-fill" style="width:${pct}%; animation-delay:${200 + i * 40}ms;"></div></div><div class="cm-row-sum">${r.sum}건</div><div class="cm-chips">${chips}</div></div>`;
 }).join('');
 return `<div class="cm-team"><div class="cm-team-head"><span>👥 우리 팀 기록 현황</span><span class="cm-team-meta">팀원 ${tc.length}명 · 총 ${total}건</span></div>
 <div class="cm-tiles">${tiles}</div><div class="cm-rows">${list}</div><div class="cc-note">기록 수는 참고용입니다. 평가는 내용으로 합니다.${compReplyNote_(compTabs_, false)}</div></div>`;
@@ -5302,7 +5301,7 @@ if (cfg.evalLabel) st.evaluation = g(cfg.evalLabel);
 // 수행 기간 칸에 쓸 글자(서버 validateCreate와 같은 모양) — 바뀌었는지 비교용
 function compDonePeriod_(st) { return st.done === 'Y' && st.from ? st.from + '~' + (st.open ? '' : st.to) : ''; }
 function compCreateTexts_(st) {
-if (!st.editRid) return { title: `${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가`, save: '기록 저장', msg: "이름·사무소·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다" };
+if (!st.editRid) return { title: `${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가`, save: '기록 저장', msg: "이름·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다" };
 return { title: '✏️ 기록 수정', save: '수정 저장',
 msg: '고친 칸과 수정일시만 바뀝니다 · ' + (COMP_DONE_FORMS_[st.form] ? '수행 기간을 바꾸면 고를 수 있는 달 안이어야 해요' : '미팅 일시를 바꾸면 최근 ' + compCreateWindow_() + '일 안이어야 해요') };
 }
@@ -5553,8 +5552,8 @@ renderCompLead_();
 // ==== 인사평가 › 팀 역량평가 (1단계-라-라, 설계서 3장 ② v1.9 · 2-2 · 부록 B) ====
 // 팀장 = 자기 팀 일반·담당 / 임원 = 전체 팀(팀 › 팀원). 보기 전용(평가 입력은 3단계, 늦은 기록 허용은 2단계).
 // 서버는 그대로: getCompetencyTest view=team 의 tabs · members(byTab·byMonth·pendingReview·awaitingReply·status) · records(reviewState·authorStatus) · unresolved.
-// 위 = 팀원별 건수표(+월별 표, 버튼으로 펼침), 아래 = 종류별 탭(①과 같은 버튼) → 상태 필터 → 팀원별 묶음(머리에 사무소) → 카드(①과 같은 카드).
-// 사무소는 묶음 머리에만(카드 안 사무소 줄은 같은 정보라 뺌, 2026-10-22 재홍님 결정 — 부록 B '사무소 보이게' = 이름 옆 표시).
+// 위 = 팀원별 건수표(+월별 표, 버튼으로 펼침), 아래 = 종류별 탭(①과 같은 버튼) → 상태 필터 → 팀원별 묶음 → 카드(①과 같은 카드).
+// 사무소는 화면 어디에도 표시하지 않음(2026-10-29 재홍님 결정, 설계서 v1.29 ⑰ 폐지 — 시트 칸·서버 복사는 그대로).
 // "퇴사자 포함"(기본 꺼짐)을 켜면 includeLeft:true로 다시 부른다. 판정 불가 기록은 서버가 임원·관리자에게만 보낸다(⑲) → 탭 아래 별도 구역.
 let compLeadReq_ = 0;
 let compLeadRes_ = null;
@@ -5633,7 +5632,7 @@ setTimeout(function () { el.classList.remove('flash'); }, 2000);
 }
 function compLeadWho_(m) {
 const left = m.status === 'left' ? '<span class="ct-left-tag">퇴사</span>' : '';
-return `<td>${escapeHtml(m.name || '')}${left}</td><td>${escapeHtml(m.office || '')}</td>`;
+return `<td>${escapeHtml(m.name || '')}${left}</td>`;
 }
 // 표 줄: 팀장 = 팀원 줄만. 임원 = '팀' 칸 대신 팀 구분 줄("동부팀 · 4명") 아래에 그 팀 팀원 줄(2026-10-22 재홍님 결정 (d) — 표 폭 줄임, 아래 카드의 팀 › 팀원 묶음과 같은 모양).
 // 팀 순서 = members에 처음 나온 순서. ncol = 표 칸 수(구분 줄이 표 폭 전체를 차지하게).
@@ -5665,7 +5664,7 @@ const planOf = function (t, email) { return recs.filter(function (r) { return r.
 const withPlan = function (c, plan, go) { return c.replace(/<\/td>$/, `<span class="ct-of"> / ${go ? `<button class="ct-go" onclick="${go}" title="눌러서 이 계획 보기">${plan}</button>` : plan}</span></td>`); };
 const sep2 = function (c, i) { return i === 0 ? c.replace('<td', '<td data-sep2') : c; };
 const tot = compLeadTabs_.map(function () { return 0; }); const totPlan = compLeadTabs_.map(function () { return 0; }); let totSum = 0, totPr = 0, totDone = 0;
-const head = `<tr><th>이름</th><th>사무소</th><th>${pr}</th><th>평가 완료</th><th class="ct-sum">기록 합계</th>${compLeadTabs_.map(function (t, i) { const cls = (i === 0 ? 'ct-sep2' : '') + (t.hasReply ? ' ct-plan-th' : ''); return `<th${cls.trim() ? ` class="${cls.trim()}"` : ''}${t.hasReply ? '' : ` title="${escapeHtml(t.label)}"`}>${t.hasReply ? `<button class="ct-plan-btn" onclick="toggleCompLeadPlan_()" aria-expanded="${compLeadShowPlan_ ? 'true' : 'false'}" title="눌러서 계획 수 ${compLeadShowPlan_ ? '숨기기' : '보기'}">` : ''}${(t.hasReply && compLeadShowPlan_) ? `${escapeHtml(t.label)}<span class="ct-plan-caret">▾</span><span class="ct-th-label">결과 / 계획</span>` : `${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}${t.hasReply ? '<span class="ct-plan-caret">▸</span>' : ''}</span>`}${t.hasReply ? '</button>' : ''}</th>`; }).join('')}</tr>`;
+const head = `<tr><th>이름</th><th>${pr}</th><th>평가 완료</th><th class="ct-sum">기록 합계</th>${compLeadTabs_.map(function (t, i) { const cls = (i === 0 ? 'ct-sep2' : '') + (t.hasReply ? ' ct-plan-th' : ''); return `<th${cls.trim() ? ` class="${cls.trim()}"` : ''}${t.hasReply ? '' : ` title="${escapeHtml(t.label)}"`}>${t.hasReply ? `<button class="ct-plan-btn" onclick="toggleCompLeadPlan_()" aria-expanded="${compLeadShowPlan_ ? 'true' : 'false'}" title="눌러서 계획 수 ${compLeadShowPlan_ ? '숨기기' : '보기'}">` : ''}${(t.hasReply && compLeadShowPlan_) ? `${escapeHtml(t.label)}<span class="ct-plan-caret">▾</span><span class="ct-th-label">결과 / 계획</span>` : `${escapeHtml(t.emoji)}<span class="ct-th-label">${escapeHtml(t.label)}${t.hasReply ? '<span class="ct-plan-caret">▸</span>' : ''}</span>`}${t.hasReply ? '</button>' : ''}</th>`; }).join('')}</tr>`;
 const dash = '<td class="ct-dash">—</td>';
 const body = compLeadTableRows_(res, function (m) {
 const by = m.byTab || {}; let sum = 0; const mi = members.indexOf(m); const left = m.status === 'left';
@@ -5682,9 +5681,9 @@ totSum += sum; totPr += p; totDone += done;
 const goPr = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'pendingReview'), 'pendingReview', mi);
 const goDone = compLeadGoAttr_(compLeadFirstTab_(res, mi, 'done'), 'done', mi);
 return `<tr>${compLeadWho_(m)}${compLeadNum_(p, 'ct-pr', goPr)}${compLeadNum_(done, 'ct-done', goDone)}${compLeadNum_(sum, 'ct-sum')}${cells}</tr>`;
-}, 5 + n);
+}, 4 + n);
 const hasLeft = members.some(function (m) { return m.status === 'left'; });
-const foot = `<tr class="ct-total"><td>${hasLeft ? '재직 합계' : '합계'}</td><td></td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totDone, 'ct-done', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'done'), 'done', -1))}${compLeadNum_(totSum, 'ct-sum')}${tot.map(function (v, i) { let c = sep2(compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)), i); if (compLeadTabs_[i].hasReply && totPlan[i]) c = withPlan(c, totPlan[i], compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); return c; }).join('')}</tr>`;
+const foot = `<tr class="ct-total"><td>${hasLeft ? '재직 합계' : '합계'}</td>${compLeadNum_(totPr, 'ct-pr', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'pendingReview'), 'pendingReview', -1))}${compLeadNum_(totDone, 'ct-done', compLeadGoAttr_(compLeadFirstTab_(res, -1, 'done'), 'done', -1))}${compLeadNum_(totSum, 'ct-sum')}${tot.map(function (v, i) { let c = sep2(compLeadNum_(v, '', compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)), i); if (compLeadTabs_[i].hasReply && totPlan[i]) c = withPlan(c, totPlan[i], compLeadGoAttr_(compLeadTabs_[i].key, 'all', -1)); return c; }).join('')}</tr>`;
 return `<div class="ct-wrap"><table class="ct-table${compLeadShowPlan_ ? ' ct-show-plan' : ''}">${head}${body}${foot}</table></div>`;
 }
 // 추가매출 제목을 누르면 "/ 계획" 숫자를 보이거나 숨긴다(2026-10-27 재홍님 요청 — 평소엔 결과 숫자만). 펼치면 제목은 이모지 대신 "추가매출 ▾ / 결과 / 계획". 표만 다시 그림, 서버 다시 안 부름. 메뉴로 새로 열면 숨김.
@@ -5705,11 +5704,11 @@ function compLeadMonthHtml_(res) {
 const members = Array.isArray(res.members) ? res.members : [];
 if (!members.length) return '';
 const months = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-const head = `<tr><th>이름</th><th>사무소</th>${months.map(function (k) { return `<th>${k ? k + '월' : '기존'}</th>`; }).join('')}</tr>`;
+const head = `<tr><th>이름</th>${months.map(function (k) { return `<th>${k ? k + '월' : '기존'}</th>`; }).join('')}</tr>`;
 const body = compLeadTableRows_(res, function (m) {
 const by = m.byMonth || {};
 return `<tr${m.status === 'left' ? ' class="ct-left"' : ''}>${compLeadWho_(m)}${months.map(function (k) { return compLeadNum_(Number(by[k]) || 0); }).join('')}</tr>`;
-}, 2 + months.length);
+}, 1 + months.length);
 return `<button class="ct-month-btn" onclick="this.nextElementSibling.classList.toggle('open')">📅 월별 기록 수 보기/접기</button><div class="ct-month"><div class="ct-wrap"><table class="ct-table">${head}${body}</table></div></div>`;
 }
 // 탭 버튼: 개수 = 그 탭 줄 수, 빨간 점 = 그 탭에 확인 대기(팀장 할 일)가 있음 — 재직 팀원 줄만
@@ -5738,7 +5737,7 @@ const mine = shown.filter(function (r) { return r.authorEmail === m.email; });
 if (!mine.length) return '';
 const left = m.status === 'left';
 const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `계획 ${compLeadCount_(mineAll, 'awaitingReply')} · ` : '') + `${prText} ${compLeadCount_(mineAll, 'pendingReview')} · 총 ${mineAll.length}`;
-return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}${m.office ? `<span class="cm-who-office">${escapeHtml(m.office)}</span>` : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left }); }).join('')}</div>`;
+return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left }); }).join('')}</div>`;
 };
 let groups;
 if ((res.viewer || {}).role === '임원') {
@@ -5755,7 +5754,7 @@ groups = members.map(groupHtml).join('');
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
 // 판정 불가(⑲): 작성자를 한 사람으로 찾지 못한 기록 — 팀원 묶음과 섞지 않고 따로. 이름 칸을 보여줌.
 const un = (Array.isArray(res.unresolved) ? res.unresolved : []).filter(function (r) { return r.tab === t.key; });
-const unHtml = un.length ? `<div class="ct-unresolved"><div class="cc-section">판정 불가 ${un.length}건 — 작성자를 한 사람으로 찾지 못한 기록(어느 팀인지 알 수 없음)</div>${un.map(function (rec) { return compRecordCard_(t, rec, { showOffice: true, showName: true, prLabel: prText }); }).join('')}</div>` : '';
+const unHtml = un.length ? `<div class="ct-unresolved"><div class="cc-section">판정 불가 ${un.length}건 — 작성자를 한 사람으로 찾지 못한 기록(어느 팀인지 알 수 없음)</div>${un.map(function (rec) { return compRecordCard_(t, rec, { showName: true, prLabel: prText }); }).join('')}</div>` : '';
 return `<div class="cm-item"><b>${escapeHtml(t.emoji)} ${escapeHtml(t.label)}</b> · 평가 항목: ${escapeHtml(t.item)}</div>${filters}${groups || `<div class="cm-empty">${empty}</div>`}${unHtml}`;
 }
 function switchCompLeadTab_(key) {
