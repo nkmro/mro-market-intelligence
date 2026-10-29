@@ -4259,8 +4259,15 @@ msg.textContent = '네트워크 오류가 발생했어요.';
 const COMP_RECORD_ITEMS_ = ['자기개발', '직급역량개선노력', '대면영업', '원가개선제안', '추가매출계획이행'];
 let compCriteriaReq_ = 0;
 function compNorm_(s) { return String(s || '').replace(/\(.*?\)/g, '').replace(/\s+/g, ''); }
+// 정리(2026-10-28): Google 시트 분당 읽기 한도에 걸린 응답(영어 원문 'Quota exceeded…' 또는 SHEET_ACCESS_FAILED 429)을 RATE_LIMITED 하나로 모은다
+const COMP_RATE_TEXT_ = '요청이 잠시 많아요. 1분 뒤 다시 눌러 주세요.';
+function compRateLimit_(res) {
+if (res && res.ok === false && (/quota exceeded|rate ?limit|resource_exhausted/i.test(String(res.error || '')) || (res.error === 'SHEET_ACCESS_FAILED' && Number(res.httpStatus) === 429))) res.error = 'RATE_LIMITED';
+return res;
+}
 function compErrorText_(res, what) {
 if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
+if (res.error === 'RATE_LIMITED') return COMP_RATE_TEXT_;
 if (res.error === 'COMPETENCY_SETTINGS_MISSING') return (res.year || '올해') + '년 인사평가 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
 if (res.error === 'SHEET_ACCESS_FAILED') return '인사평가 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
 if (res.error === 'SESSION_EXPIRED' || res.error === 'SESSION_NOT_FOUND') return '로그인이 만료됐어요. 다시 로그인해 주세요.';
@@ -4349,7 +4356,7 @@ const controller = new AbortController();
 const timeoutId = setTimeout(function () { controller.abort(); }, ms || 45000);
 const res = await fetch(CLOUD_RUN_SAVE_COMPETENCY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
 clearTimeout(timeoutId);
-return res;
+return compRateLimit_(res);
 } catch (e) { return null; }
 }
 function compBackfillErrText_(res) {
@@ -4513,7 +4520,7 @@ const controller = new AbortController();
 const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
 const res = await fetch(CLOUD_RUN_GET_COMPETENCY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
 clearTimeout(timeoutId);
-return res;
+return compRateLimit_(res);
 } catch (e) { return null; }
 }
 let compMineReq_ = 0;
@@ -4825,7 +4832,7 @@ const m = { ALREADY_REPLIED: '이미 결과가 적혀 있어요. 화면을 새�
 RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.', DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 팀장님께 알려 주세요.',
 CELL_NOT_EMPTY: '시트의 실적 칸에 이미 값이 있어요. 팀장님께 확인해 주세요.', HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
-BAD_INPUT: '입력값을 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.' };
+BAD_INPUT: '입력값을 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.', RATE_LIMITED: COMP_RATE_TEXT_ };
 Object.assign(m, COMP_EDIT_ERR_); // 2-라: 결과 수정 오류(평가 완료·바뀐 칸 없음 등)
 const text = !res ? '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요.' : (m[res.error] || ('저장하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')'));
 compReplyRender_(f, res && res.field ? { [res.field]: '이 칸을 확인해 주세요.' } : null, { err: true, text: text });
@@ -5022,7 +5029,7 @@ const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어
 HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
 DATE_TOO_OLD: COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
-BAD_INPUT: '입력값을 확인해 주세요.' };
+BAD_INPUT: '입력값을 확인해 주세요.', RATE_LIMITED: COMP_RATE_TEXT_ };
 if (st.editRid) Object.assign(m, COMP_EDIT_ERR_, { FORBIDDEN: '팀원(일반·담당)만 기록을 고칠 수 있어요.' }); // 2-라
 let text;
 if (!res) text = '응답을 받지 못했어요. 저장됐을 수 있으니 화면을 새로 열어 확인해 주세요(같은 내용으로 다시 눌러도 두 번 저장되지 않아요).';
@@ -5084,7 +5091,8 @@ const months = [];
 for (let m = 1; m <= 12; m++) {
 const ym = compReplyYm_(st.mcalY, m);
 const cur = st.mcal === 'from' ? st.from : st.to;
-const off = st.mcal === 'from' ? (ym < mr.yearStart || ym > mr.now) : (ym < mr.oldest || ym > mr.now || (st.from && ym < st.from));
+// 끝 없음(계속)이면 시작 달이 검사 대상이라 시작 달 달력도 고를 수 있는 달(oldest~이번 달)로 제한(정리 2026-10-28)
+const off = st.mcal === 'from' ? (ym < (cfg.open && st.open ? mr.oldest : mr.yearStart) || ym > mr.now) : (ym < mr.oldest || ym > mr.now || (st.from && ym < st.from));
 months.push(`<button type="button" class="${ym === cur ? 'sel' : ''}" ${off ? 'disabled' : ''} onclick="compCreateMPick_('${ym}')">${m}월</button>`);
 }
 cal = `<div class="rp-cal"><div class="rp-cal-h"><button type="button" onclick="compCreateMYear_(-1)" aria-label="이전 해">‹</button><b>${st.mcalY}년</b><button type="button" onclick="compCreateMYear_(1)" aria-label="다음 해">›</button></div><div class="rp-cal-g">${months.join('')}</div></div>`;
@@ -5190,7 +5198,8 @@ LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 �
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
 PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
 FORBIDDEN: '팀원(일반·담당)만 고치거나 지울 수 있어요.',
-APPROVED_EDIT_ONLY: '팀장님이 수정을 승인한 기록은 고칠 수만 있어요(삭제는 안 돼요).'
+APPROVED_EDIT_ONLY: '팀장님이 수정을 승인한 기록은 고칠 수만 있어요(삭제는 안 돼요).',
+RATE_LIMITED: COMP_RATE_TEXT_
 };
 function compMineBodyRender_() {
 const body = document.getElementById('cm-tab-body');
@@ -5248,7 +5257,7 @@ const n = Math.min(10, Math.max(names.length, ranks.length, 1));
 st.people = Array.from({ length: n }, function (_, i) { return { name: String(names[i] || '').trim(), rank: String(ranks[i] || '').trim() }; });
 st.origCell = g('미팅 일시(YYMMDD-HH)');
 const m = /^(\d{2})(\d{2})(\d{2})-(\d{1,2})$/.exec(st.origCell);
-if (m && Number(m[4]) <= 23) { st.date = '20' + m[1] + '-' + m[2] + '-' + m[3]; st.hour = String(Number(m[4])); }
+if (m && Number(m[4]) <= 23) { st.date = '20' + m[1] + '-' + m[2] + '-' + m[3]; st.hour = String(Number(m[4])); st.origCell = m[1] + m[2] + m[3] + '-' + m[4].padStart(2, '0'); } // 옛 한 자리 시('…-9')도 화면 모양('…-09')으로 맞춰 비교(서버도 같게 봄)
 const mins = g('미팅 시간(분)');
 if (COMP_CREATE_MINUTES_.indexOf(Number(mins)) >= 0) st.minutes = Number(mins);
 else if (/^\d+$/.test(mins)) { st.other = true; st.otherMin = mins; }
@@ -5401,7 +5410,8 @@ HEADER_NOT_READY: "시트에 '수정 요청' 칸이 없어요. 관리자에게 �
 FORBIDDEN: '이 일을 할 권한이 없어요.', NOT_YOUR_RECORD: '본인 기록만 요청할 수 있어요.',
 RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.', DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 관리자에게 알려 주세요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '처리하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
-PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.'
+PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
+RATE_LIMITED: COMP_RATE_TEXT_
 };
 function compHasReqCol_(rec) { return Object.prototype.hasOwnProperty.call((rec && rec.fields) || {}, '수정 요청'); }
 // 서버 lib parseEditRequest와 같은 규칙
