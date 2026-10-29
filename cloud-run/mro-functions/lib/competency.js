@@ -837,6 +837,8 @@ module.exports.checkRecordMonth = checkRecordMonth;
 // =====================================================================
 const OPINION_HEADERS = ['팀장 의견', '팀장 의견 (상중하)'];
 const DATE_HEADERS = ['미팅 일시(YYMMDD-HH)', '수행 기간 (YYMMDD~YYMMDD)']; // 바뀌면 ㉑ 검사
+// 미팅 일시 'YYMMDD-H' → 'YYMMDD-HH'(그 밖의 글자는 그대로)
+function normMeetCell_(x) { const m = /^(\d{6})-(\d{1,2})$/.exec(String(x || '').trim()); return m ? m[1] + '-' + m[2].padStart(2, '0') : String(x || '').trim(); }
 function findOwnRow_(values, recordId, viewerEmail) {
   const rows = values || [];
   const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
@@ -864,7 +866,10 @@ function planUpdate(tab, values, recordId, viewerEmail, v, nowMs) {
   let needDateCheck = false;
   rule.headers.forEach(function (h) {
     const nv = v.cells[h] === undefined ? '' : String(v.cells[h]);
-    if (nv !== f.cell(f.row, h)) { set.push([h, nv]); if (DATE_HEADERS.indexOf(h) >= 0 && nv) needDateCheck = true; }
+    const old = f.cell(f.row, h);
+    // 옛 줄의 한 자리 시('261026-9')는 화면이 보낸 두 자리('261026-09')와 같은 값으로 본다 — 형식만 다르면 고치지도 날짜 검사도 하지 않음(정리 2026-10-28)
+    if (nv === old || (DATE_HEADERS.indexOf(h) >= 0 && normMeetCell_(nv) === normMeetCell_(old))) return;
+    set.push([h, nv]); if (DATE_HEADERS.indexOf(h) >= 0 && nv) needDateCheck = true;
   });
   if (!set.length) return { ok: false, error: 'NO_CHANGE' };
   set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);

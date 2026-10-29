@@ -57,6 +57,12 @@ const FACE_V = { customer: '가람산업', people: [{ name: '최민수', rank: '
   t('A7 추가매출 줄 → NOT_EDITABLE / 삭제 NOT_DELETABLE', c.planUpdate({ id: 'addSales', title: ADD }, tb[ADD], 'CE-A1', 'lee@x.com', vc, now).error === 'NOT_EDITABLE' && c.planDelete(tb[ADD], 'CE-A1', 'lee@x.com').error === 'NOT_DELETABLE');
   t('A8 삭제: 미평가 본인 줄 → rowIndex 1(2행), 평가 완료 → ALREADY_REVIEWED, 남의 줄 → NOT_YOUR_RECORD', c.planDelete(tb[FACE], 'CE-F1', 'lee@x.com').rowIndex === 1 && c.planDelete(tb[FACE], 'CE-F2', 'lee@x.com').error === 'ALREADY_REVIEWED' && c.planDelete(tb[FACE], 'CE-F3', 'lee@x.com').error === 'NOT_YOUR_RECORD');
   t('A9 원본 값 배열은 바꾸지 않음', J(tb) === J(baseTabs()));
+  // 정리(2026-10-28): 옛 줄의 한 자리 시('260101-9')는 화면이 보낸 '260101-09'와 같은 값 — 날짜 검사·쓰기 없음
+  const tb9 = baseTabs(); tb9[FACE][1][6] = '260101-9';
+  const p9 = c.planUpdate(TAB, tb9[FACE], 'CE-F1', 'lee@x.com', c.validateCreate('faceSales', Object.assign({}, FACE_V, { meetHour: 9, expected: '견적 요청 (고침)' })), now);
+  t('A9b 한 자리 시 옛 값: 기대 성과만 고치면 I2·수정일시 2칸, 미팅 일시는 안 씀·날짜 검사 없음', p9.ok && J(p9.writes.map(w => w.range.split('!')[1])) === J(['I2', 'O2']) && p9.needDateCheck === false, p9);
+  const p9b = c.planUpdate(TAB, tb9[FACE], 'CE-F1', 'lee@x.com', c.validateCreate('faceSales', Object.assign({}, FACE_V, { meetHour: 10 })), now);
+  t('A9c 한 자리 시 옛 값에서 시를 실제로 바꾸면(9→10시) → 미팅 일시 씀 + 날짜 검사', p9b.ok && p9b.needDateCheck === true && p9b.writes[0].value === '260101-10', p9b);
 }
 
 
