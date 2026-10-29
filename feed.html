@@ -583,6 +583,10 @@ font-size: 13px; padding: 2px 4px; display: none;
 .rp-act { display: flex; gap: 8px; justify-content: flex-end; }
 .rp-msg { font-size: 12px; text-align: right; }
 .rp-msg.err { color: var(--danger); }
+/* 3-가 팀장 평가(설계서 v1.30 ⑳-9) — 2-나 rp-form·rp-row·rp-seg·rp-in·rp-help·rp-act·rp-msg를 같이 쓰고, 다른 것만 rv- */
+.rp-msg.ok { color: var(--accent); }
+.rp-seg.rv-seg { grid-template-columns: repeat(3, 1fr); }
+.rp-in.rv-line { width: 100%; }
 @media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
 /* 2-다 기록 추가(① 탭 안, 지금은 대면영업) — 2-나 rp-row·rp-k·rp-in·rp-help·rp-err·rp-act·rp-msg를 같이 쓰고, 겹치지 않는 것만 cr- */
 .cr-bar { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
@@ -4601,7 +4605,9 @@ const replyHtml = (opts && opts.reply && t.hasReply && rec.reviewState === 'awai
 const ed = (opts && opts.edit) ? compEditHtml_(t, rec) : null;
 // 2-마-1: ②(팀장·임원)는 수정 요청 상자/이력 — opts.lead, 승인·거절 버튼은 opts.decide(그 팀의 팀장)
 const lead = (opts && opts.lead) ? compLeadReqHtml_(t, rec, !!opts.decide) : '';
-const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.bar : ''}${lead}`;
+// 3-가: ②의 그 팀 팀장만 [평가하기](미평가) / [평가 고치기](평가 완료) — opts.review. 평가 칸은 내용 아래에 열림(내용을 보면서 평가).
+const rvHtml = (opts && opts.review) ? compReviewHtml_(t, rec) : '';
+const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.bar : ''}${lead}${rvHtml}`;
 // 수정 요청 중(평가 완료 + '요청')이면 상태 표시는 '승인 대기'(①·② 같음)
 const rq = compEditReq_(rec);
 const chip = rec.reviewState === 'done' && rq && rq.state === '요청' ? '<span class="cm-st cm-st-wait">승인 대기</span>' : compStateChip_(rec.reviewState, opts && opts.prLabel);
@@ -5549,8 +5555,100 @@ d.msg = compReqErrText_(res, approve ? '승인' : '거절');
 renderCompLead_();
 }
 
+// ==== 3-가 팀장 평가 입력·고치기 (설계서 v1.30 ⑳-9, 2026-10-29 재홍님 결정) ====
+// ②의 그 팀 팀장만(임원·퇴사자 기록은 버튼 없음, 서버도 같은 판정). 미평가 카드 [✏️ 평가하기] / 평가 완료 카드 [✏️ 평가 고치기]
+// (팀원이 수정 요청 중이면 승인·거절이 먼저라 버튼 없음). 평가 = 상·중·하(필수) → 시트 평가 칸에 한 글자, 한 줄 의견(선택, 200자) → '팀장한줄의견'.
+// seen = 화면이 받은 '수정일시' — 그 사이 팀원이 고쳤으면 서버가 RECORD_CHANGED로 막는다(보지 못한 내용에 평가가 붙지 않게).
+// 저장 뒤 화면은 다시 불러오지 않음(2-마-1 승인과 같음): 그 카드 값만 바꾸고 평가하기였으면 그 팀원 미평가 숫자 −1.
+let compLeadRv_ = null; // { tab, rid, edit, grade, line, saving, msg, key, changed }
+const COMP_RV_ERR_ = {
+ALREADY_REVIEWED: '이미 평가된 기록이에요. 화면을 새로 열어 주세요.', NOT_REVIEWED: '아직 평가 전인 기록이에요. 화면을 새로 열어 주세요.',
+EDIT_REQUESTED: '팀원의 수정 요청을 먼저 승인하거나 거절해 주세요.', NOT_REPLIED: '팀원이 아직 결과를 적지 않은 계획이에요.',
+MEMBER_LEFT: '퇴사한 팀원의 기록은 평가할 수 없어요(보기 전용).', NOT_YOUR_TEAM: '우리 팀 팀원의 기록만 평가할 수 있어요.',
+BAD_GRADE: '평가(상·중·하)를 골라 주세요.', BAD_INPUT: '한 줄 의견은 200자까지 적을 수 있어요.',
+HEADER_NOT_READY: '시트에 평가 칸이 없어요. 관리자에게 알려 주세요.',
+RECORD_CHANGED: '평가하는 사이 팀원이 이 기록을 고쳤어요. 새로 불러와서 바뀐 내용을 보고 다시 평가해 주세요.'
+};
+function compReviewErrText_(res) {
+if (res && COMP_RV_ERR_[res.error]) return COMP_RV_ERR_[res.error];
+return compReqErrText_(res, '저장');
+}
+function compReviewHtml_(t, rec) {
+if (!rec.recordId) return '';
+const rq = compEditReq_(rec);
+const can = rec.reviewState === 'pendingReview' || (rec.reviewState === 'done' && !(rq && rq.state === '요청'));
+if (!can) return '';
+const edit = rec.reviewState === 'done';
+const st = compLeadRv_ && compLeadRv_.rid === rec.recordId && compLeadRv_.tab === t.key ? compLeadRv_ : null;
+const data = `data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"`;
+if (!st) return `<div class="rp-bar" ${data}><button type="button" class="rp-btn" onclick="compReviewOpen_(this)">✏️ ${edit ? '평가 고치기' : '평가하기'}</button></div>`;
+const dis = st.saving ? 'disabled' : '';
+const seg = ['상', '중', '하'].map(function (g) { return `<button type="button"${st.grade === g ? ' class="on"' : ''} onclick="compReviewGrade_(this,'${g}')" ${dis}>${g}</button>`; }).join('');
+const again = st.changed ? ` <button type="button" class="ed-btn" onclick="compReviewReload_()">새로 불러오기</button>` : '';
+return `<div class="rp-form" ${data}>
+<div class="rp-row"><span class="rp-k">평가 <b>*</b></span><span class="rp-seg rv-seg">${seg}</span></div>
+<div class="rp-row"><span class="rp-k">한 줄 의견</span><input class="rp-in rv-line" maxlength="200" placeholder="선택 · 200자까지" value="${escapeHtml(st.line)}" oninput="compReviewInput_(this)" ${dis}><span class="rp-help">선택 · 200자까지 · 팀원 카드에 '팀장 평가: 상 · 의견'처럼 보여요</span></div>
+${st.msg ? `<div class="rp-msg err">${escapeHtml(st.msg)}${again}</div>` : ''}
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compReviewCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compReviewSave_()" ${dis}>${st.saving ? '저장하는 중...' : (edit ? '고친 평가 저장' : '평가 저장')}</button></div></div>`;
+}
+function compReviewRec_(tab, rid) {
+return compLeadRes_ ? (compLeadRes_.records || []).filter(function (x) { return x.recordId === rid && x.tab === tab; })[0] : null;
+}
+function compReviewOpen_(btn) {
+const bar = btn && btn.closest('.rp-bar'); if (!bar || !compLeadRes_) return;
+if (compLeadRv_ && compLeadRv_.saving) return;
+const rec = compReviewRec_(bar.dataset.tab, bar.dataset.rid); if (!rec) return;
+const edit = rec.reviewState === 'done';
+const op = String(rec.leaderOpinion || '').trim();
+compLeadRv_ = { tab: bar.dataset.tab, rid: bar.dataset.rid, edit: edit, grade: edit && ['상', '중', '하'].indexOf(op) >= 0 ? op : '',
+  line: edit ? String((rec.fields || {})['팀장한줄의견'] || '').trim() : '', saving: false, msg: '', key: '', changed: false };
+renderCompLead_();
+}
+// RECORD_CHANGED 뒤 [새로 불러오기]: 평가 칸을 닫고 지금 탭·필터 그대로 서버에서 다시 받는다(팀원이 고친 내용을 보고 다시 평가)
+function compReviewReload_() { compLeadRv_ = null; loadCompLeadPage(true); }
+function compReviewCancel_() { if (compLeadRv_ && compLeadRv_.saving) return; compLeadRv_ = null; renderCompLead_(); }
+function compReviewGrade_(btn, g) {
+if (!compLeadRv_ || compLeadRv_.saving) return;
+compLeadRv_.grade = g; compLeadRv_.msg = ''; compLeadRv_.key = '';
+const seg = btn.closest('.rv-seg'); if (seg) seg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });
+}
+function compReviewInput_(el) { if (compLeadRv_) { compLeadRv_.line = el.value; compLeadRv_.key = ''; } }
+async function compReviewSave_() {
+const d = compLeadRv_; if (!d || d.saving || !compLeadRes_) return;
+const line = String(d.line || '').replace(/\s*[\r\n]+\s*/g, ' ').trim();
+if (!d.grade) { d.msg = COMP_RV_ERR_.BAD_GRADE; renderCompLead_(); return; }
+if (line.length > 200) { d.msg = COMP_RV_ERR_.BAD_INPUT; renderCompLead_(); return; }
+const rec = compReviewRec_(d.tab, d.rid); if (!rec) return;
+d.saving = true; d.msg = ''; d.changed = false; renderCompLead_();
+d.key = d.key || generateIdempotencyKey_();
+const seen = String((rec.fields || {})['수정일시'] === undefined || (rec.fields || {})['수정일시'] === null ? '' : rec.fields['수정일시']).trim();
+const res = await compSaveFetch_({ action: d.edit ? 'reviewEdit' : 'review', tab: d.tab, recordId: d.rid, grade: d.grade, line: line, seen: seen, idempotencyKey: d.key, year: compLeadRes_.year }, 30000);
+if (compLeadRv_ !== d) return;
+d.saving = false;
+if (res) d.key = '';
+if (res && res.ok && res.record) {
+compLeadRv_ = null;
+const wasPending = rec.reviewState === 'pendingReview';
+Object.assign(rec, { leaderOpinion: res.record.leaderOpinion, reviewState: res.record.reviewState, fields: res.record.fields });
+// 평가하기 → 평가 완료: 그 팀원 '미평가' 숫자 −1(완료 숫자는 records에서 셈)
+if (wasPending && res.record.reviewState === 'done') (compLeadRes_.members || []).forEach(function (m) { if (m.email === rec.authorEmail) m.pendingReview = Math.max(0, (Number(m.pendingReview) || 0) - 1); });
+renderCompLead_();
+const card = document.querySelector(`#comp-team-view .cm-card[data-rid="${CSS.escape(d.rid)}"]`);
+const okText = d.edit ? '평가를 고쳤어요.' : '평가를 저장했어요.';
+if (card) { card.classList.remove('cm-fold'); const b = card.querySelector('.cm-card-body'); if (b) b.insertAdjacentHTML('beforeend', `<div class="rp-msg ok">✓ ${okText}</div>`); compScrollFlash_(card, true); }
+else { // '미평가' 필터를 보고 있으면 저장한 카드가 목록에서 빠짐 → 필터 아래에 한 줄 안내(다음 카드로 이어서 평가)
+const fl = document.querySelector('#comp-team-view .cm-filters');
+if (fl) fl.insertAdjacentHTML('afterend', `<div class="rp-msg ok" style="text-align:left;margin:6px 0">✓ ${escapeHtml(String(rec.name || ''))} · ${okText} (평가 완료에서 볼 수 있어요)</div>`);
+}
+return;
+}
+d.changed = !!(res && res.error === 'RECORD_CHANGED');
+d.msg = compReviewErrText_(res);
+renderCompLead_();
+}
+
 // ==== 인사평가 › 팀 역량평가 (1단계-라-라, 설계서 3장 ② v1.9 · 2-2 · 부록 B) ====
-// 팀장 = 자기 팀 일반·담당 / 임원 = 전체 팀(팀 › 팀원). 보기 전용(평가 입력은 3단계, 늦은 기록 허용은 2단계).
+// 팀장 = 자기 팀 일반·담당 / 임원 = 전체 팀(팀 › 팀원). 임원은 보기 전용, 팀장은 평가 입력·고치기(3-가 v1.30)·수정 요청 승인·거절(2-마-1).
 // 서버는 그대로: getCompetencyTest view=team 의 tabs · members(byTab·byMonth·pendingReview·awaitingReply·status) · records(reviewState·authorStatus) · unresolved.
 // 위 = 팀원별 건수표(+월별 표, 버튼으로 펼침), 아래 = 종류별 탭(①과 같은 버튼) → 상태 필터 → 팀원별 묶음 → 카드(①과 같은 카드).
 // 사무소는 화면 어디에도 표시하지 않음(2026-10-29 재홍님 결정, 설계서 v1.29 ⑰ 폐지 — 시트 칸·서버 복사는 그대로).
@@ -5566,7 +5664,7 @@ let compLeadShowPlan_ = false; // 건수표 추가매출 칸의 "/ 계획" 숫�
 async function loadCompLeadPage(keep) {
 const root = document.getElementById('comp-team-view');
 const reqNo = ++compLeadReq_;
-if (!keep) { compLeadIncludeLeft_ = false; compLeadTab_ = ''; compLeadFilter_ = 'all'; compLeadShowPlan_ = false; }
+if (!keep) { compLeadIncludeLeft_ = false; compLeadTab_ = ''; compLeadFilter_ = 'all'; compLeadShowPlan_ = false; compLeadRv_ = null; }
 if (!(compLeadDec_ && compLeadDec_.saving)) compLeadDec_ = null; // 2-마-1: 다시 불러오면 승인·거절 안내 닫힘
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 const res = await compFetch_({ view: 'team', includeLeft: compLeadIncludeLeft_ });
@@ -5737,7 +5835,7 @@ const mine = shown.filter(function (r) { return r.authorEmail === m.email; });
 if (!mine.length) return '';
 const left = m.status === 'left';
 const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `계획 ${compLeadCount_(mineAll, 'awaitingReply')} · ` : '') + `${prText} ${compLeadCount_(mineAll, 'pendingReview')} · 총 ${mineAll.length}`;
-return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left }); }).join('')}</div>`;
+return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left, review: isLeadRole && !left }); }).join('')}</div>`;
 };
 let groups;
 if ((res.viewer || {}).role === '임원') {
