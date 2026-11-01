@@ -504,7 +504,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-tile-num { font-size: 20px; font-weight: 700; color: var(--accent); }
 .cm-tile-label { font-size: 12px; color: var(--text-muted); }
 .cm-rows { display: flex; flex-direction: column; gap: 2px; }
-.cm-row { display: grid; grid-template-columns: 96px 1fr 44px; grid-template-areas: "who bar sum" ". chips chips"; align-items: center; column-gap: 10px; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
+.cm-row { display: grid; grid-template-columns: 65px 1fr 44px; grid-template-areas: "who bar sum" ". chips chips"; align-items: center; column-gap: 10px; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
 .cm-row:hover { background: #f0eef5; }
 .cm-me { background: #eeeaf8; }
 .cm-who { grid-area: who; display: flex; align-items: baseline; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
@@ -641,7 +641,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 @media (max-width: 480px) { .rp-guide { grid-column: 1; } }
 .cr-card > *, .cr-card .rp-row > * { min-width: 0; } /* 좁은 폭에서 칸이 카드 밖으로 밀리지 않게 */
 @media (max-width: 480px) { .cr-card { padding: 10px; } .cr-card .rp-k { padding-top: 0; } .cr-pair .rp-in { width: 0; flex: 1 1 0; min-width: 0; } .cr-pair .rp-in + .rp-in { width: 0; flex: 0 0 34%; } .cr-seg { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); } .cr-when select.rp-in { width: 84px; } .cr-card .rp-seg { width: 100%; } .cr-card .rp-cal { width: auto; right: 0; max-width: 100%; box-sizing: border-box; } }
-@media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 84px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
+@media (max-width: 768px) { .cm-tiles, .cm-chips, .cm-team .cc-note { display: none; } .cm-team { padding: 10px 12px; } .cm-team-head { margin-bottom: 6px; } .cm-row { grid-template-columns: 65px 1fr 36px; grid-template-areas: "who bar sum"; padding: 4px; } .cm-fk { flex-basis: 96px; } .cm-tabs { grid-template-columns: var(--cm-mcols, minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)); } }
 /* 1단계-라-라-다 (B3, 2026-10-26 재홍님 결정): 탭 칸이 좁아지는 폭(481~860px)에서는 이모지를 위 줄로, 이름은 낱말째 줄바꿈("자기개 / 발" 방지). 480px 이하(짧은 이름)·861px 이상은 그대로 */
 @media (min-width: 481px) and (max-width: 860px) { .cm-tab-emoji { display: block; line-height: 1.1; } .cm-tab > span:first-child { word-break: keep-all; } }
 @media (max-width: 480px) { .cm-tabs { gap: 4px; } .cm-tab { min-height: 56px; font-size: 12px; gap: 1px; } .cm-tab-emoji { font-size: 13px; } .cm-tab-label { display: none; } .cm-tab-short { display: inline; } .cm-tab-count { padding: 0 7px; } }
@@ -4597,7 +4597,9 @@ const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
 const rqf = compEditReq_(rec); // 2-마-1: 수정 요청 중인 평가 완료 카드는 접지 않음(①은 기다림 안내, ②는 승인·거절 버튼이 바로 보이게)
-const fold = (rec.reviewState === 'done' && !(rqf && rqf.state === '요청') ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
+// 3-가: 팀장이 [평가 고치기]로 평가 칸을 연 평가 완료 카드는 접지 않음(다시 그려도 열린 채 — 2026-10-29 재홍님 실사용 지적)
+const rvOpen = !!(opts && opts.review && compLeadRv_ && compLeadRv_.rid === rec.recordId && compLeadRv_.tab === t.key);
+const fold = (rec.reviewState === 'done' && !(rqf && rqf.state === '요청') && !rvOpen ? ' cm-fold' : '') + (rec.reviewState ? ' cm-card-' + rec.reviewState : '');
 // 2-나: ①(본인 기록, 일반·담당)의 '계획' 카드에만 [입력](2-라에서 '결과 적기' → '입력', 2026-10-28 재홍님) — opts.reply. ②는 opts.reply가 없어 그대로.
 const replyHtml = (opts && opts.reply && t.hasReply && rec.reviewState === 'awaitingReply' && rec.recordId)
 ? `<div class="rp-bar" data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"><button class="rp-btn" onclick="compReplyOpen_(this)">✏️ 입력</button></div>` : '';
