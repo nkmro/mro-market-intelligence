@@ -4537,6 +4537,20 @@ return a.join(' ');
 const COMP_RESULT_FIELDS_ = ['달성 여부 (Y/N)', '실적 반영 시점(YYMM~)', '당해년도 실적결산 (매출/이익)', '아이템키', '비고'];
 const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록ID', '작성자이메일', '기록일시', '수정일시', '팀장한줄의견', '첨부', '팀', '팀장 의견', '팀장 의견 (상중하)', '수정 요청'];
 // 설계서 3장 공통 규칙: 화면 표시 이름 "기대 효과" = 시트 칸 "기대 성과". 입력 형식 안내 괄호(YYMMDD~·Y/N 등)는 화면 이름에서 뺀다(시트 칸 이름은 그대로).
+// 2026-11-02 추가매출 실적결산 화면 표시(재홍님): 시트 글자 '매출 914천원 / 이익 44천원 / 월 평균' → '월 평균 / 매출 914천원 / 이익 44천원 / 이익률 4.81%'.
+// 시트 값은 그대로(서버 settleText 모양 — 고치기 폼도 이 글자를 읽음), 화면에서만 순서를 바꾸고 이익률(이익 ÷ 매출, 계획 '이익률'과 같은 소수 2자리)을 붙인다.
+// 매출이 없거나 0이면(이익개선 = 이익만) 이익률 없음. 모양이 다른 옛 값은 손대지 않고 그대로.
+function compSettleView_(v) {
+const m = /^(?:매출\s*([\d,]+)\s*천원\s*\/\s*)?이익\s*(-?[\d,]+)\s*천원(\s*\/\s*월\s*평균)?$/.exec(String(v || '').trim());
+if (!m) return v;
+const sales = m[1] ? Number(m[1].replace(/,/g, '')) : null, profit = Number(m[2].replace(/,/g, ''));
+const parts = [];
+if (m[3]) parts.push('월 평균');
+if (m[1]) parts.push('매출 ' + m[1] + '천원');
+parts.push('이익 ' + m[2] + '천원');
+if (sales) parts.push('이익률 ' + (profit / sales * 100).toFixed(2) + '%');
+return parts.join(' / ');
+}
 const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과', '당해년도 실적결산 (매출/이익)': '당해년도 실적결산' }; // 실적결산: 값에 '매출 …/이익 …'이 이미 있어 괄호를 뺌(2026-11-02 재홍님, [입력] 폼 이름과 같음)
 // 탭(항목 이름)마다 다른 화면 이름 — 원가개선의 '기대 성과' 칸은 실적(개선액)이므로 '원가 개선액'(2026-10-27 재홍님)
 const COMP_TAB_FIELD_LABEL_ = { '원가개선': { '기대 성과': '원가 개선액' } };
@@ -4605,7 +4619,7 @@ return k !== t.title && shown && String(f[k] === undefined ? '' : f[k]).trim() !
 });
 const fRow = function (k) {
 // 아이템키는 쉼표 뒤를 띄워 번호 중간이 아니라 쉼표에서 줄이 바뀌게(시트 값은 그대로)
-const v = String(f[k]).trim(); const shownV = k === '아이템키' ? v.split(',').map(function (x) { return x.trim(); }).join(', ') : v;
+const v = String(f[k]).trim(); const shownV = k === '아이템키' ? v.split(',').map(function (x) { return x.trim(); }).join(', ') : (k === '당해년도 실적결산 (매출/이익)' ? compSettleView_(v) : v);
 return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k, t))}</span><span class="cm-fv">${escapeHtml(shownV)}</span></div>`;
 };
 // 2026-11-02 추가매출(달성 여부 칸이 있는 탭): 팀원이 적은 결과 칸은 연초 계획 칸과 나눠 구분선 + '결과' 제목 아래로(재홍님 — 평가할 때 한눈에, 배경 없이)
