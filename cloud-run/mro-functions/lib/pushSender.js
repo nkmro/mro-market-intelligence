@@ -66,14 +66,22 @@ async function getSessionActivity_(firestore, email) {
   const now = Date.now();
   let recentlyActive = false;
   let anyLive = false;
+  // [2026-11-02 요금 절감 1-가] 같은 조회 결과로 기기별 생존도 함께 기록한다 — 예전에는
+  // 구독(기기)마다 sessions를 한 번 더 조회했다(isDeviceSessionAlive_). 이제 추가 조회 없음.
+  const deviceLive = {};     // deviceId -> 이 기기 세션 중 하나라도 살아있으면 true
+  let liveNoDevice = false;  // deviceId 없이 만들어진 살아있는 세션(Apps Script 대체 로그인, sessionSyncTest)
   snap.forEach(function (doc) {
-    const expiresAtRaw = doc.data().expiresAt;
+    const data = doc.data();
+    const expiresAtRaw = data.expiresAt;
     const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate().getTime() : new Date(expiresAtRaw).getTime();
-    if (expiresAt > now) anyLive = true;
+    const live = expiresAt > now;
+    if (live) anyLive = true;
     const lastTouchedAt = expiresAt - SESSION_TTL_MS; // 위에서 require('./auth')로 가져온 바로 그 상수
     if (now - lastTouchedAt < SESSION_ACTIVE_WINDOW_MS) recentlyActive = true;
+    if (data.deviceId) deviceLive[data.deviceId] = deviceLive[data.deviceId] || live;
+    else if (live) liveNoDevice = true;
   });
-  return { recentlyActive, anyLive };
+  return { recentlyActive, anyLive, deviceLive, liveNoDevice };
 }
 
 // [2026-09-10 추가, anyLive 이메일 단위 버그 수정] getSessionActivity_(위)의 anyLive는
@@ -92,21 +100,16 @@ async function getSessionActivity_(firestore, email) {
 // 세션 문서를 하나도 못 찾은 경우)는 잘못 죽이지 않도록 보수적으로 "살아있다"로 간주한다
 // (기존 동작 유지, 다음 로그인부터 정확해짐). deviceId 자체가 없는 아주 오래된 구독 문서도
 // 같은 이유로 안전하게 "살아있다"로 처리한다.
-async function isDeviceSessionAlive_(firestore, email, deviceId) {
+// [2026-11-02 요금 절감 1-가] 조회 없이 getSessionActivity_ 결과로 판단한다. 예전 규칙과
+// 다른 점은 "이 기기 태그가 붙은 세션이 하나도 없을 때" 하나뿐이다 — 예전에는 무조건
+// "살아있다"였는데, 만료 세션을 지우기 시작하면(1-다) 죽은 기기도 "세션 없음"이 되어
+// 오발송이 생긴다. 그래서 이때는 "deviceId 없이 만들어진 살아있는 세션"(Apps Script 대체
+// 로그인 경로)이 있을 때만 살아있다고 본다(그 경로로 로그인한 기기를 잘못 죽이지 않기 위해).
+// deviceId 자체가 없는 아주 오래된 구독 문서는 예전과 같이 "살아있다".
+function isDeviceSessionAlive_(activity, deviceId) {
   if (!deviceId) return true;
-  const snap = await firestore.collection('sessions')
-    .where('email', '==', email)
-    .where('deviceId', '==', deviceId)
-    .get();
-  if (snap.empty) return true;
-  const now = Date.now();
-  let alive = false;
-  snap.forEach(function (doc) {
-    const expiresAtRaw = doc.data().expiresAt;
-    const expiresAt = (expiresAtRaw && expiresAtRaw.toDate) ? expiresAtRaw.toDate().getTime() : new Date(expiresAtRaw).getTime();
-    if (expiresAt > now) alive = true;
-  });
-  return alive;
+  if (Object.prototype.hasOwnProperty.call(activity.deviceLive, deviceId)) return activity.deviceLive[deviceId];
+  return activity.liveNoDevice;
 }
 
 // 살아있는 세션이 하나도 없는 것으로 확인된 계정의 푸시 구독을 전부 비활성화한다. 클라이언트가
@@ -187,6 +190,13 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
   if (stateSnap.exists && stateSnap.data().lastSignature === signature) {
     return { sent: false, reason: 'UNCHANGED_STATE' };
   }
+  // [2026-11-02 요금 절감 1-가, B-1] 같은 내용으로 이미 "로그아웃 상태 → 구독 전부 끔"을
+  // 처리했다면 다시 세션을 조회하지 않는다(예전에는 5분마다 반복해 하루 수만 건 읽기).
+  // 다시 로그인해 푸시 구독을 등록하면 index.js registerPushSubscriptionAction_이 이 표시를
+  // 지우므로, 그 뒤부터는 예전 흐름 그대로 동작한다.
+  if (stateSnap.exists && stateSnap.data().noLiveSig === signature) {
+    return { sent: false, reason: 'NO_LIVE_SESSION_SAME' };
+  }
 
   const activity = await getSessionActivity_(firestore, email);
 
@@ -197,6 +207,7 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
     // 봤다"가 아니라 "아무도 못 봤다"는 뜻이라, 다시 로그인했을 때 그 사이 바뀐 내용을
     // 놓치지 않기 위해 상태를 확정하지 않는다.
     await deactivateAllSubscriptions_(firestore, email, 'NO_LIVE_SESSION');
+    await stateRef.set({ noLiveSig: signature, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return { sent: false, reason: 'NO_LIVE_SESSION' };
   }
 
@@ -216,7 +227,7 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
     // 이 계정의 다른 기기가 살아있으면 true가 되지만, 그렇다고 "이 구독(이 기기)"까지 살아있는
     // 건 아니다(isDeviceSessionAlive_ 주석 참고). 이미 죽은 기기는 여기서 걸러 비활성화한다.
     const deviceId = doc.data().deviceId;
-    const deviceAlive = await isDeviceSessionAlive_(firestore, email, deviceId);
+    const deviceAlive = isDeviceSessionAlive_(activity, deviceId);
     if (!deviceAlive) {
       await doc.ref.set({ active: false, deactivatedAt: FieldValue.serverTimestamp(), deactivatedReason: 'NO_LIVE_SESSION_DEVICE' }, { merge: true });
       deactivatedCount++;
@@ -272,7 +283,7 @@ async function sendReminderPushForUser(firestore, authClient, fcmProjectId, emai
   for (const doc of subscriptions) {
     // [2026-09-10] sendConsolidatedPushForUser와 동일한 이유로 기기 단위 재확인.
     const deviceId = doc.data().deviceId;
-    const deviceAlive = await isDeviceSessionAlive_(firestore, email, deviceId);
+    const deviceAlive = isDeviceSessionAlive_(activity, deviceId);
     if (!deviceAlive) {
       await doc.ref.set({ active: false, deactivatedAt: FieldValue.serverTimestamp(), deactivatedReason: 'NO_LIVE_SESSION_DEVICE' }, { merge: true });
       deactivatedCount++;
@@ -289,4 +300,4 @@ async function sendReminderPushForUser(firestore, authClient, fcmProjectId, emai
   return { sent: sentCount > 0, sentCount, deactivatedCount, subscriptionCount: subscriptions.length };
 }
 
-module.exports = { sendConsolidatedPushForUser, sendReminderPushForUser, buildConsolidatedMessage_, buildStateSignature_ };
+module.exports = { sendConsolidatedPushForUser, sendReminderPushForUser, buildConsolidatedMessage_, buildStateSignature_, isDeviceSessionAlive_ };

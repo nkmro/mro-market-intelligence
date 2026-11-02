@@ -2598,7 +2598,12 @@ async function registerPushSubscriptionAction_(email, fcmToken, deviceId) {
   const docId = email + '_' + deviceId;
   const ref = firestore.collection('pushSubscriptions').doc(docId);
   const snap = await ref.get();
-  await ref.set({
+  // [2026-11-02 요금 절감 1-가, B-1] 구독 등록과 "로그아웃 처리 끝" 표시(lib/pushSender.js
+  // noLiveSig) 지우기를 한 번에(batch) 쓴다 — 둘 다 되거나 둘 다 안 된다. 따로 쓰면 표시
+  // 지우기만 실패했을 때 구독은 살아있는데 푸시가 조용히 안 가는 상태가 생길 수 있다.
+  // 실패하면 예전처럼 등록 자체가 실패로 응답된다(화면은 다음 로그인 때 다시 등록).
+  const batch = firestore.batch();
+  batch.set(ref, {
     email: email,
     fcmToken: fcmToken,
     deviceId: deviceId,
@@ -2606,6 +2611,8 @@ async function registerPushSubscriptionAction_(email, fcmToken, deviceId) {
     updatedAt: FieldValue.serverTimestamp(),
     createdAt: snap.exists ? snap.data().createdAt : FieldValue.serverTimestamp()
   }, { merge: true });
+  batch.set(firestore.collection('pushNotifyState').doc(email), { noLiveSig: FieldValue.delete() }, { merge: true });
+  await batch.commit();
 }
 
 // ---------------------------------------------------------------------------
