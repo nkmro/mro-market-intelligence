@@ -488,6 +488,10 @@ const REPLY_PERIOD_HEADER = '실적 반영 시점(YYMM~)';         // 2026-10-27
 const REPLY_SETTLE_HEADER = '당해년도 실적결산 (매출/이익)'; // 2026-10-27 실제 1행 확인
 const MODIFIED_AT_HEADER = '수정일시';
 const ITEM_KEY_HEADER = '아이템키';                         // 2026-10-27 재홍님이 추가매출·원가개선 탭 '팀장 의견' 앞에 추가(회사 시스템 키로 실적 추적)
+// 2026-11-02 추가매출 비고(재홍님): 계획과 달라진 점 등을 팀원이 적는 칸. '아이템키' 오른쪽·'팀장 의견' 왼쪽에 재홍님이 추가.
+// 선택 입력 · 500자 · 여러 줄 허용(Y 달성·N 미달성 둘 다). 칸 이름으로 찾으므로 위치는 동작과 무관.
+const REPLY_MEMO_HEADER = '비고';
+const REPLY_MEMO_MAX = 500;
 const ITEM_KEY_MAX = 50;                                   // 한 줄에 키 50개·키 하나 30자리 넘으면 잘못 친 것으로 봄
 const SETTLE_MAX = 1000000000; // 천원 단위 10억(= 1조원) 넘는 값은 잘못 친 것으로 봄
 
@@ -525,7 +529,12 @@ function validateReply(b) {
   const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
   const achieved = String(b.achieved === undefined || b.achieved === null ? '' : b.achieved).trim().toUpperCase();
   if (achieved !== 'Y' && achieved !== 'N') return bad('achieved');
-  if (achieved === 'N') return { ok: true, achieved: 'N', period: '', settle: '', itemKeys: '' };
+  // 비고: 줄바꿈은 살리고(\r\n → \n) 앞뒤 공백만 정리. 문자열이 아니면(숫자 등) 잘못 보낸 것.
+  // 요청에 memo가 아예 없으면 null — 비고 기능 전 화면(새로고침 안 한 옛 탭)이 결과를 고쳐도 시트의 비고를 지우지 않게.
+  if (b.memo !== undefined && b.memo !== null && typeof b.memo !== 'string') return bad('memo');
+  const memo = (b.memo === undefined || b.memo === null) ? null : b.memo.replace(/\r\n?/g, '\n').trim();
+  if (memo !== null && memo.length > REPLY_MEMO_MAX) return bad('memo');
+  if (achieved === 'N') return { ok: true, achieved: 'N', period: '', settle: '', itemKeys: '', memo: memo };
   const from = String(b.reflectFrom || '').trim();
   const to = String(b.reflectTo || '').trim();
   const open = b.reflectOpen === true;
@@ -542,7 +551,7 @@ function validateReply(b) {
   const itemKeys = parseItemKeys(b.itemKeys);
   if (itemKeys === null) return bad('itemKeys');
   return { ok: true, achieved: 'Y', period: from + '~' + to, itemKeys: itemKeys, sales: sales, profit: profit, open: open,
-    settle: sales === null ? '' : settleText(sales, profit, open) };
+    settle: sales === null ? '' : settleText(sales, profit, open), memo: memo };
 }
 // 당해년도 실적결산 글자. sales === null = 이익만(이익개선).
 // 끝 없음(계속) = 한 달 평균 → '… / 월 평균', 끝 달 있음 = 기간 총액 (2026-10-27 재홍님, 원가개선과 같은 규칙)
@@ -562,6 +571,7 @@ function planReply(tab, values, recordId, viewerEmail, v, nowMs) {
   const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
   const need = [EXTRA_HEADERS[0], EXTRA_HEADERS[1], MODIFIED_AT_HEADER, ADD_SALES_REPLY_HEADER, REPLY_PERIOD_HEADER, REPLY_SETTLE_HEADER];
   if (v.achieved === 'Y') need.push(ITEM_KEY_HEADER);
+  if (v.memo) need.push(REPLY_MEMO_HEADER); // 비고를 적었는데 '비고' 칸이 없으면 저장하지 않음(비고가 빈칸이면 칸이 없어도 예전처럼)
   if (need.some(function (h) { return header.indexOf(h) < 0; })) return { ok: false, error: 'HEADER_NOT_READY' };
   const col = function (h) { return header.indexOf(h); };
   const cell = function (row, h) { const x = row[col(h)]; return String(x === undefined || x === null ? '' : x).trim(); };
@@ -574,6 +584,7 @@ function planReply(tab, values, recordId, viewerEmail, v, nowMs) {
   if (normEmail(cell(row, EXTRA_HEADERS[1])) !== normEmail(viewerEmail) || !normEmail(viewerEmail)) return { ok: false, error: 'NOT_YOUR_RECORD' };
   if (cell(row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'ALREADY_REPLIED' };
   if (v.achieved === 'Y' && (cell(row, REPLY_PERIOD_HEADER) || cell(row, REPLY_SETTLE_HEADER) || cell(row, ITEM_KEY_HEADER))) return { ok: false, error: 'CELL_NOT_EMPTY' };
+  if (v.memo && cell(row, REPLY_MEMO_HEADER)) return { ok: false, error: 'CELL_NOT_EMPTY' }; // 시트에 이미 적힌 비고는 덮어쓰지 않음
   // 결산: 구분이 이익개선이면 이익만, 그 밖(신규매출·품목확대 등)은 매출·이익 둘 다 필수
   let settle = v.settle;
   if (v.achieved === 'Y') {
@@ -583,6 +594,7 @@ function planReply(tab, values, recordId, viewerEmail, v, nowMs) {
   }
   const set = [[ADD_SALES_REPLY_HEADER, v.achieved]];
   if (v.achieved === 'Y') set.push([REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, settle], [ITEM_KEY_HEADER, v.itemKeys]);
+  if (v.memo) set.push([REPLY_MEMO_HEADER, v.memo]);
   set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);
   const writes = set.map(function (s) {
     while (row.length <= col(s[0])) row.push('');
@@ -608,6 +620,8 @@ module.exports.parseItemKeys = parseItemKeys;
 module.exports.seoulDateTimeStr = seoulDateTimeStr;
 module.exports.validateReply = validateReply;
 module.exports.planReply = planReply;
+module.exports.REPLY_MEMO_HEADER = REPLY_MEMO_HEADER;
+module.exports.REPLY_MEMO_MAX = REPLY_MEMO_MAX;
 
 // =====================================================================
 // 2-다 (설계서 v1.21 ⑳-3·㉑): 새 기록 추가(action create) — 순수 함수. 시트 입출력은 index.js saveCompetencyTest.
@@ -905,6 +919,7 @@ function planReplyEdit(tab, values, recordId, viewerEmail, v, nowMs, clear) {
   const rows = values || [];
   const header = (rows[0] || []).map(function (h) { return String(h === undefined ? '' : h).trim(); });
   const need = [EXTRA_HEADERS[0], EXTRA_HEADERS[1], MODIFIED_AT_HEADER, ADD_SALES_REPLY_HEADER, REPLY_PERIOD_HEADER, REPLY_SETTLE_HEADER, ITEM_KEY_HEADER];
+  if (!clear && v && v.memo) need.push(REPLY_MEMO_HEADER);
   if (need.some(function (h) { return header.indexOf(h) < 0; })) return { ok: false, error: 'HEADER_NOT_READY' };
   const col = function (h) { return header.indexOf(h); };
   const cell = function (row, h) { const i = col(h); const x = i < 0 ? '' : row[i]; return String(x === undefined || x === null ? '' : x).trim(); };
@@ -931,6 +946,8 @@ function planReplyEdit(tab, values, recordId, viewerEmail, v, nowMs, clear) {
     const settle = profitOnly ? settleText(null, v.profit, v.open) : v.settle;
     target = [[ADD_SALES_REPLY_HEADER, 'Y'], [REPLY_PERIOD_HEADER, v.period], [REPLY_SETTLE_HEADER, settle], [ITEM_KEY_HEADER, v.itemKeys]];
   }
+  // 비고: '비고' 칸이 있으면 결과와 같이 고친다(지우기면 비고도 지움 — 결과에 대한 설명이므로). 칸이 없거나 요청에 memo가 없으면(null) 건드리지 않음.
+  if (col(REPLY_MEMO_HEADER) >= 0 && (clear || v.memo !== null)) target.push([REPLY_MEMO_HEADER, clear ? '' : v.memo]);
   const set = target.filter(function (s) { return s[1] !== cell(row, s[0]); });
   if (!set.length) return { ok: false, error: 'NO_CHANGE' };
   set.push([MODIFIED_AT_HEADER, seoulDateTimeStr(nowMs)]);

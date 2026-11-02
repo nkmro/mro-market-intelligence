@@ -587,6 +587,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .rp-msg.ok { color: var(--accent); }
 .rp-seg.rv-seg { grid-template-columns: repeat(3, 1fr); }
 .rp-in.rv-line { width: 100%; }
+.rp-form textarea.rp-memo { width: 100%; resize: vertical; font-family: inherit; line-height: 1.5; }
 @media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
 /* 2-다 기록 추가(① 탭 안, 지금은 대면영업) — 2-나 rp-row·rp-k·rp-in·rp-help·rp-err·rp-act·rp-msg를 같이 쓰고, 겹치지 않는 것만 cr- */
 .cr-bar { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
@@ -4785,7 +4786,7 @@ const st = compReplyState_[form.dataset.rid]; if (!st) return;
 errs = errs || {};
 // 2-라 결과 수정: 처음 그릴 때는 시트 값(st.init)으로 채운다
 const keep = function (cls) { const el = form.querySelector('.' + cls); return el ? el.value : ((st.init && st.init[cls]) || ''); };
-const sales = keep('rp-sales'), profit = keep('rp-profit'), items = keep('rp-items');
+const sales = keep('rp-sales'), profit = keep('rp-profit'), items = keep('rp-items'), memo = keep('rp-memo');
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
 const seg = ['Y', 'N'].map(function (v) { return `<button type="button" class="${st.achieved === v ? 'on' : ''}" onclick="compReplySet_(this,'${v}')">${v === 'Y' ? 'Y 달성' : 'N 미달성'}</button>`; }).join('');
 let cal = '';
@@ -4810,7 +4811,10 @@ ${compAvgGuide_(st.open, st.profitOnly ? '이익' : '매출·이익')}<span clas
 <div class="rp-row"><span class="rp-k">아이템키 <b>*</b></span><input class="rp-in rp-items" style="width:100%" inputmode="numeric" placeholder="예: 1234567, 2345678" value="${escapeHtml(items)}">
 <span class="rp-help">실적 해당 MP 아이템키(숫자) · 여러 개는 쉼표(,)로 구분</span>${err('itemKeys')}</div>` : '';
 const nHtml = st.achieved === 'N' ? '<div class="rp-help" style="grid-column:1/-1">미달성(N)은 실적이 없으므로 실적 반영 시점·실적결산·아이템키 칸이 없습니다</div>' : '';
-form.innerHTML = `<div class="rp-row"><span class="rp-k">달성 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('achieved')}</div>${yHtml}${nHtml}
+// 2026-11-02 비고(선택, 500자, 여러 줄) — 계획과 달라진 점·미달성 사유 등. 달성 여부를 고른 뒤에 보임(Y·N 둘 다)
+const memoHtml = (st.achieved === 'Y' || st.achieved === 'N') ? `<div class="rp-row"><span class="rp-k">비고</span><textarea class="rp-in rp-memo" rows="3" maxlength="${COMP_MEMO_MAX_}" placeholder="${st.achieved === 'Y' ? '계획과 달라진 점이 있으면 적어 주세요 (예: 실제 공급사 변경)' : '미달성 사유 등 (선택)'}" oninput="this.parentNode.querySelector('.rp-memo-n').textContent = this.value.length + ' / ${COMP_MEMO_MAX_}'">${escapeHtml(memo)}</textarea>
+<span class="rp-help"><span class="rp-memo-n">${memo.length} / ${COMP_MEMO_MAX_}</span> · 선택 · 팀장님 카드에 그대로 보입니다</span>${err('memo')}</div>` : '';
+form.innerHTML = `<div class="rp-row"><span class="rp-k">달성 여부 <b>*</b></span><span class="rp-seg">${seg}</span>${err('achieved')}</div>${yHtml}${nHtml}${memoHtml}
 <div class="rp-act"><button type="button" class="btn-secondary" onclick="compReplyCancel_(this)" ${st.saving ? 'disabled' : ''}>취소</button><button type="button" class="btn-primary" onclick="compReplySave_(this)" ${st.saving ? 'disabled' : ''}>${st.saving ? '저장하는 중...' : (st.edit ? '수정 저장' : '저장')}</button></div>
 <div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || (st.edit ? '고친 칸과 수정일시만 바뀝니다 · 연초 계획 칸은 그대로' : "저장하면 '미평가'로 바뀌어 팀장님 평가를 기다립니다"))}</div>`;
 }
@@ -4832,8 +4836,10 @@ compReplyRender_(o.form);
 }
 function compReplyOpenEnd_(el) { const o = compReplySt_(el); if (!o.st) return; o.st.open = !!el.checked; if (o.st.open) o.st.to = ''; o.st.cal = ''; compReplyRender_(o.form); }
 // 화면 검사(서버 validateReply와 같은 규칙)
-function compReplyCheck_(st, sales, profit, items) {
+const COMP_MEMO_MAX_ = 500; // 추가매출 비고 — 서버 lib/competency.js REPLY_MEMO_MAX와 같음
+function compReplyCheck_(st, sales, profit, items, memo) {
 const e = {};
+if (String(memo || '').trim().length > COMP_MEMO_MAX_) e.memo = '비고는 ' + COMP_MEMO_MAX_ + '자까지 적을 수 있어요.';
 if (st.achieved !== 'Y' && st.achieved !== 'N') e.achieved = '달성 여부를 골라 주세요.';
 if (st.achieved !== 'Y') return e;
 if (!st.from) e.reflectFrom = '시작 달을 골라 주세요.';
@@ -4849,12 +4855,12 @@ return e;
 async function compReplySave_(el) {
 const o = compReplySt_(el); if (!o.st || o.st.saving) return;
 const st = o.st, form = o.form, rid = form.dataset.rid;
-const sales = (form.querySelector('.rp-sales') || {}).value || '', profit = (form.querySelector('.rp-profit') || {}).value || '', items = (form.querySelector('.rp-items') || {}).value || '';
-const errs = compReplyCheck_(st, sales, profit, items);
+const sales = (form.querySelector('.rp-sales') || {}).value || '', profit = (form.querySelector('.rp-profit') || {}).value || '', items = (form.querySelector('.rp-items') || {}).value || '', memo = (form.querySelector('.rp-memo') || {}).value || '';
+const errs = compReplyCheck_(st, sales, profit, items, memo);
 if (Object.keys(errs).length) { compReplyRender_(form, errs); return; }
 st.saving = true; compReplyRender_(form);
 const res = await compSaveFetch_({ action: st.edit ? 'replyEdit' : 'reply', tab: st.tab, recordId: rid, idempotencyKey: generateIdempotencyKey_(), year: compMineRes_ && compMineRes_.year,
-achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: st.profitOnly ? '' : sales, settleProfit: profit, itemKeys: items }, 30000);
+achieved: st.achieved, reflectFrom: st.from, reflectTo: st.to, reflectOpen: st.open, settleSales: st.profitOnly ? '' : sales, settleProfit: profit, itemKeys: items, memo: memo }, 30000);
 st.saving = false;
 if (res && res.ok && res.record) { if (st.edit) compEditApply_(res.record); else compReplyApply_(res.record); return; }
 const f = document.querySelector(`.rp-form[data-rid="${CSS.escape(rid)}"]`);
@@ -5337,7 +5343,7 @@ const p = /^(\d{4})~(\d{4})?$/.exec(g('실적 반영 시점(YYMM~)'));
 if (p) { st.from = p[1]; st.to = p[2] || ''; st.open = !p[2]; }
 const s = g('당해년도 실적결산 (매출/이익)');
 const ms = /매출\s*([\d,]+)/.exec(s), mp = /이익\s*(-?[\d,]+)/.exec(s);
-st.init = { 'rp-sales': ms ? ms[1] : '', 'rp-profit': mp ? mp[1] : '', 'rp-items': g('아이템키') };
+st.init = { 'rp-sales': ms ? ms[1] : '', 'rp-profit': mp ? mp[1] : '', 'rp-items': g('아이템키'), 'rp-memo': g('비고') };
 compReplyState_[rec.recordId] = st;
 const form = document.createElement('div');
 form.className = 'rp-form'; form.dataset.rid = rec.recordId; form.dataset.tab = bar.dataset.tab;
