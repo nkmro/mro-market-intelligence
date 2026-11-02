@@ -52,23 +52,21 @@ function commentLink(e){
   return APP_URL+'?post='+encodeURIComponent(e.postId||'')+'&item='+encodeURIComponent(e.itemId||'')+'&comment='+encodeURIComponent(e.commentId||'');
 }
 
-function card(e,o){
-  const link=safeUrl(e.link);
+// 2026-11-02 같은 시황 게시물의 이슈 댓글은 카드 하나로 합친다(재홍님). 게시물 머리(아이콘·배지·요약·제목·기사 링크)는 한 번,
+// 그 아래 댓글마다 [품목 줄 + 이슈 댓글 상자 + 앱에서 이 댓글 보기] — 품목·버튼 주소는 댓글마다 다르다.
+function groupByPost(entries){
+  const groups=[]; const at={};
+  (entries||[]).forEach(function(e){
+    const k=String(e.postId||'');
+    if(!(k in at)){ at[k]=groups.length; groups.push({post:e, entries:[]}); }
+    groups[at[k]].entries.push(e);
+  });
+  return groups; // 순서: 그 게시물 댓글 중 가장 먼저 선정된 순(entries가 이미 선정 시각 순)
+}
+function spacer(h){return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="'+h+'" style="height:'+h+'px;line-height:'+h+'px;font-size:1px;">&nbsp;</td></tr></table>';}
+function commentBlock(e,o){
   const item=e.itemName?'<div style="font-size:12px;color:'+C.muted+';margin:0 0 10px;">📊 품목 · '+esc(e.customer?e.customer+' / ':'')+esc(e.itemName)+'</div>':'';
-  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:0 0 14px;background:#ffffff;border:1px solid '+C.border+';border-radius:10px;"><tr><td style="padding:16px 18px;">'+
-   // post-head: 봇 아이콘 + 원자재 배지(둥근 알약) + AI 시황봇 + 게시 시각
-   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;"><tr>'+
-     '<td width="34" style="width:34px;vertical-align:middle;"><img src="'+o.botIconSrc+'" width="34" height="34" alt="" style="display:block;width:34px;height:34px;border-radius:50%;background:'+C.bg+';"></td>'+
-     '<td width="8" style="width:8px;">&nbsp;</td>'+
-     (e.materialName?'<td width="1%" style="vertical-align:middle;white-space:nowrap;">'+pill(e.materialName,{fg:C.blue,bg:C.blueSoft,border:C.blueBorder,fontSize:16,padY:3,padX:12})+'</td><td width="8" style="width:8px;">&nbsp;</td>':'')+
-     '<td width="1%" style="vertical-align:middle;white-space:nowrap;font-size:11px;font-weight:500;color:'+C.muted+';">AI&nbsp;시황봇</td>'+
-     '<td width="99%" align="right" style="vertical-align:middle;font-size:12px;color:'+C.muted+';white-space:nowrap;">'+esc(fmtTime(e.postCreatedMs,o.nowMs))+'</td>'+
-   '</tr></table>'+
-   // post-title(굵게 = 요약) / post-summary(회색 = 제목) — 앱과 같은 배치
-   '<div style="font-size:16px;font-weight:700;color:'+C.text+';line-height:1.4;margin:2px 0 6px;">'+esc(e.postSummary||e.postTitle)+'</div>'+
-   (e.postSummary&&e.postTitle?'<div style="font-size:14px;color:'+C.muted+';line-height:1.6;margin-bottom:8px;">'+esc(e.postTitle)+'</div>':'')+
-   (link?'<div style="margin-bottom:12px;"><a href="'+esc(link)+'" style="font-size:13px;color:'+C.blue+';text-decoration:none;"><span style="color:'+C.blue+';">🔗 기사 원문 보기</span></a></div>':'')+
-   item+
+  return item+
    // 이슈 댓글(앱 .comment-item.pinned-highlight 배경 + 아바타)
    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:'+C.dangerSoft+';border-radius:8px;" bgcolor="'+C.dangerSoft+'"><tr><td style="padding:10px 12px 12px;">'+
      '<div style="font-size:12px;font-weight:700;color:'+C.danger+';margin-bottom:8px;">📌 이슈 댓글 · '+esc(e.pinnedByName)+'&nbsp;'+esc(e.pinnedByRole||'')+' 선정 '+esc(fmtTime(e.pinnedAtMs,o.nowMs))+'</div>'+
@@ -83,7 +81,27 @@ function card(e,o){
    // 이 댓글로 바로 가기 — Outlook은 표의 margin을 무시해 버튼이 댓글에 붙어 보였다 → 빈 줄(높이 14px)로 간격 확보(4차)
    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="14" style="height:14px;line-height:14px;font-size:1px;">&nbsp;</td></tr><tr><td align="center">'+
      button('앱에서 이 댓글 보기 ›', commentLink(e))+
-   '</td></tr></table>'+
+   '</td></tr></table>';
+}
+// 같은 게시물 안 댓글 사이: 빈 줄 + 옅은 점선 + 빈 줄(Outlook은 margin을 무시하므로 표로 띄움)
+const COMMENT_DIVIDER='<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="16" style="height:16px;line-height:16px;font-size:1px;border-bottom:1px dashed '+C.border+';">&nbsp;</td></tr><tr><td height="16" style="height:16px;line-height:16px;font-size:1px;">&nbsp;</td></tr></table>';
+function card(g,o){
+  const e=g.post;
+  const link=safeUrl(e.link);
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:0 0 14px;background:#ffffff;border:1px solid '+C.border+';border-radius:10px;"><tr><td style="padding:16px 18px;">'+
+   // post-head: 봇 아이콘 + 원자재 배지(둥근 알약) + AI 시황봇 + 게시 시각
+   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;"><tr>'+
+     '<td width="34" style="width:34px;vertical-align:middle;"><img src="'+o.botIconSrc+'" width="34" height="34" alt="" style="display:block;width:34px;height:34px;border-radius:50%;background:'+C.bg+';"></td>'+
+     '<td width="8" style="width:8px;">&nbsp;</td>'+
+     (e.materialName?'<td width="1%" style="vertical-align:middle;white-space:nowrap;">'+pill(e.materialName,{fg:C.blue,bg:C.blueSoft,border:C.blueBorder,fontSize:16,padY:3,padX:12})+'</td><td width="8" style="width:8px;">&nbsp;</td>':'')+
+     '<td width="1%" style="vertical-align:middle;white-space:nowrap;font-size:11px;font-weight:500;color:'+C.muted+';">AI&nbsp;시황봇</td>'+
+     '<td width="99%" align="right" style="vertical-align:middle;font-size:12px;color:'+C.muted+';white-space:nowrap;">'+esc(fmtTime(e.postCreatedMs,o.nowMs))+'</td>'+
+   '</tr></table>'+
+   // post-title(굵게 = 요약) / post-summary(회색 = 제목) — 앱과 같은 배치
+   '<div style="font-size:16px;font-weight:700;color:'+C.text+';line-height:1.4;margin:2px 0 6px;">'+esc(e.postSummary||e.postTitle)+'</div>'+
+   (e.postSummary&&e.postTitle?'<div style="font-size:14px;color:'+C.muted+';line-height:1.6;margin-bottom:8px;">'+esc(e.postTitle)+'</div>':'')+
+   (link?'<div style="margin-bottom:12px;"><a href="'+esc(link)+'" style="font-size:13px;color:'+C.blue+';text-decoration:none;"><span style="color:'+C.blue+';">🔗 기사 원문 보기</span></a></div>':'')+
+   g.entries.map(function(x){return commentBlock(x,o);}).join(COMMENT_DIVIDER)+
   '</td></tr></table>';
 }
 function buildHtml(r,opts){
@@ -100,22 +118,26 @@ function buildHtml(r,opts){
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid '+C.border+';border-top:none;"><tr><td style="padding:18px 16px 20px;">'+
   (r.testMode?'<div style="font-size:12px;color:'+C.danger+';background:'+C.dangerSoft+';padding:8px 10px;margin:0 0 12px;">[시험 발송] 설정 \'이슈댓글메일테스트수신자\'로 이 주소에만 보냈습니다. 정식 운영이었다면 '+r.realRecipientCount+'명에게 각자 해당되는 내용이 발송됩니다.</div>':'')+
   '<div style="font-size:14px;color:'+C.text+';margin:0 0 4px;line-height:1.6;">'+esc(r.name)+'님, 안녕하세요.</div>'+
-  '<div style="font-size:13px;color:'+C.muted+';line-height:1.6;margin:0 0 16px;">오늘 선정된 <b style="color:'+C.danger+';">📌 이슈 댓글</b> '+r.entries.length+'건을 공유드립니다. 각 댓글의 <b>앱에서 이 댓글 보기</b>를 누르면 해당 시황게시물로 바로 이동합니다.</div>'+
-  // 카드 사이 간격도 Outlook에서 margin이 무시되므로 빈 줄로 띄운다(4차)
-  r.entries.map(function(e){return card(e,o);}).join('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="14" style="height:14px;line-height:14px;font-size:1px;">&nbsp;</td></tr></table>')+
+  '<div style="font-size:13px;color:'+C.muted+';line-height:1.6;margin:0 0 16px;">오늘 선정된 <b style="color:'+C.danger+';">📌 이슈 댓글</b> '+r.entries.length+'건'+(groupByPost(r.entries).length<r.entries.length?'(시황 '+groupByPost(r.entries).length+'건)':'')+'을 공유드립니다. 각 댓글의 <b>앱에서 이 댓글 보기</b>를 누르면 해당 시황게시물로 바로 이동합니다.</div>'+
+  // 카드 사이 간격도 Outlook에서 margin이 무시되므로 빈 줄로 띄운다(4차). 카드 = 시황 게시물 1건(같은 게시물 댓글은 한 카드, 2026-11-02)
+  groupByPost(r.entries).map(function(g){return card(g,o);}).join(spacer(14))+
   '<div style="border-top:1px solid '+C.border+';margin:18px 0 0;padding-top:12px;font-size:11px;color:#9a9891;line-height:1.6;">이 메일은 MRO 워크허브에서 매일 '+r.sendHour+'시에 자동 발송했어요.<br>이 메일에 회신하면 관리자(jhjoo@nkmro.com)에게 전달돼요. 업무 의견은 앱 댓글로 남겨주세요.</div>'+
   '</td></tr></table>'+
   '</td></tr></table>'+
   '</td></tr></table></body></html>';
 }
 function buildText(r){
-  return r.name+'님, 오늘 선정된 이슈 댓글 '+r.entries.length+'건입니다.\n\n'+r.entries.map(function(e,i){
-    const link=safeUrl(e.link);
-    return (i+1)+'. ['+(e.materialName||'')+'] '+(e.postSummary||e.postTitle)+'\n'+
-      (e.itemName?'   품목: '+(e.customer?e.customer+' / ':'')+e.itemName+'\n':'')+
-      '   '+e.authorName+' '+(e.authorRole||'')+': '+String(e.content).replace(/\n/g,'\n   ')+
-      (link?'\n   기사 원문: '+link:'')+'\n   (📌 '+e.pinnedByName+' '+(e.pinnedByRole||'')+' 선정)'+
-      '\n   앱에서 이 댓글 보기: '+commentLink(e);
+  const groups=groupByPost(r.entries);
+  return r.name+'님, 오늘 선정된 이슈 댓글 '+r.entries.length+'건입니다.'+(groups.length<r.entries.length?' (시황 '+groups.length+'건)':'')+'\n\n'+groups.map(function(g,i){
+    const p=g.post; const link=safeUrl(p.link); const one=g.entries.length===1;
+    // 댓글 1건인 게시물은 예전과 똑같은 모양(기사 원문 줄이 댓글 아래), 2건 이상이면 기사 원문은 게시물 줄 바로 아래 한 번
+    return (i+1)+'. ['+(p.materialName||'')+'] '+(p.postSummary||p.postTitle)+(!one&&link?'\n   기사 원문: '+link:'')+'\n'+
+      g.entries.map(function(e){
+        return (e.itemName?'   품목: '+(e.customer?e.customer+' / ':'')+e.itemName+'\n':'')+
+          '   '+e.authorName+' '+(e.authorRole||'')+': '+String(e.content).replace(/\n/g,'\n   ')+
+          (one&&link?'\n   기사 원문: '+link:'')+'\n   (📌 '+e.pinnedByName+' '+(e.pinnedByRole||'')+' 선정)'+
+          '\n   앱에서 이 댓글 보기: '+commentLink(e);
+      }).join('\n\n');
   }).join('\n\n')+'\n\n(자동 발송 메일입니다. 회신은 관리자에게 전달되며, 업무 의견은 앱 댓글로 남겨주세요.)';
 }
 
@@ -220,4 +242,4 @@ function planIssueMail(input) {
   return { todayPinCount: todayPins.length, recipients: recipients, excluded: excluded };
 }
 
-module.exports = { planIssueMail, parseSendHour, kstDateStr, kstDayStartMs, buildSubject, buildHtml, buildText, safeUrl };
+module.exports = { planIssueMail, parseSendHour, kstDateStr, kstDayStartMs, buildSubject, buildHtml, buildText, safeUrl, groupByPost };

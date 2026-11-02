@@ -548,10 +548,19 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-st-reply { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
 .cm-st-review { color: var(--accent); border-color: var(--accent); }
 .cm-st-done { color: var(--text-muted); border-color: var(--border); }
+/* 2026-11-02 평가 완료 카드는 접힌 채로도 팀장 평가(상·중·하)가 보이게 — 상태 칩 바로 왼쪽 */
+.cm-gr { flex-shrink: 0; min-width: 22px; text-align: center; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 1px 7px; border: 1px solid; }
+.cm-gr-상 { color: #1e7a3c; background: #e9f6ee; border-color: #bfe3cc; }
+.cm-gr-중 { color: var(--accent); background: #efedf7; border-color: #d6d1ea; }
+.cm-gr-하 { color: #b55a1c; background: #fdf1e7; border-color: #f2d2b8; }
+.cm-gr-기타 { color: var(--text-muted); background: transparent; border-color: var(--border); font-weight: 600; }
 .cm-f { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
 .cm-fk { color: var(--text-muted); flex: 0 0 130px; overflow-wrap: anywhere; }
 .cm-fv { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-op { font-size: 13px; color: var(--accent); margin-top: 4px; }
+.cm-res { margin: 10px 0 4px; padding: 8px 0 0; border-top: 1px solid var(--border); }
+.cm-res-h { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.cm-res-h span { font-weight: 500; color: var(--text-muted); margin-left: 4px; }
 /* 2-나 추가매출 결과 적기(① 계획 카드 안) */
 .cm-card.flash { animation: flash-highlight 2s ease; } /* 결과 저장 뒤 그 카드 강조(묶음 강조와 같은 2초) */
 .rp-bar { display: flex; justify-content: flex-end; margin-top: 10px; }
@@ -4524,9 +4533,11 @@ const a = []; for (let i = 0; i < c; i++) a.push('minmax(0, 1fr)');
 return a.join(' ');
 }
 // 카드 상세에 보이지 않는 칸: 사람·관리용 칸(이름·담당·사무소·순번)과 앱 관리 칸(설계서 4-3), 팀장 의견(아래 따로 표시)
+// 추가매출 결과 칸(팀원이 [입력]으로 적는 칸) — 카드에서 계획 칸과 구분선으로 나눠 '결과' 제목 아래 보여줌. 시트 칸 이름 그대로.
+const COMP_RESULT_FIELDS_ = ['달성 여부 (Y/N)', '실적 반영 시점(YYMM~)', '당해년도 실적결산 (매출/이익)', '아이템키', '비고'];
 const COMP_HIDDEN_FIELDS_ = ['순번', '이름', '담당', '사무소', '기록ID', '작성자이메일', '기록일시', '수정일시', '팀장한줄의견', '첨부', '팀', '팀장 의견', '팀장 의견 (상중하)', '수정 요청'];
 // 설계서 3장 공통 규칙: 화면 표시 이름 "기대 효과" = 시트 칸 "기대 성과". 입력 형식 안내 괄호(YYMMDD~·Y/N 등)는 화면 이름에서 뺀다(시트 칸 이름은 그대로).
-const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과' };
+const COMP_FIELD_LABEL_ = { '기대 성과': '기대 효과', '당해년도 실적결산 (매출/이익)': '당해년도 실적결산' }; // 실적결산: 값에 '매출 …/이익 …'이 이미 있어 괄호를 뺌(2026-11-02 재홍님, [입력] 폼 이름과 같음)
 // 탭(항목 이름)마다 다른 화면 이름 — 원가개선의 '기대 성과' 칸은 실적(개선액)이므로 '원가 개선액'(2026-10-27 재홍님)
 const COMP_TAB_FIELD_LABEL_ = { '원가개선': { '기대 성과': '원가 개선액' } };
 function compFieldLabel_(k, t) {
@@ -4588,12 +4599,19 @@ return Array.isArray(recs[key]) ? recs[key] : [];
 function compRecordCard_(t, rec, opts) {
 const f = rec.fields || {};
 const title = String(f[t.title] === undefined ? '' : f[t.title]).trim() || '(제목 없음)';
-const rows = Object.keys(f).filter(function (k) {
+const keys = Object.keys(f).filter(function (k) {
 const shown = COMP_HIDDEN_FIELDS_.indexOf(k) < 0 || (opts && opts.showName && (k === '이름' || k === '담당'));
 return k !== t.title && shown && String(f[k] === undefined ? '' : f[k]).trim() !== '';
-}).map(function (k) {
-return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k, t))}</span><span class="cm-fv">${escapeHtml(String(f[k]).trim())}</span></div>`;
-}).join('');
+});
+const fRow = function (k) {
+// 아이템키는 쉼표 뒤를 띄워 번호 중간이 아니라 쉼표에서 줄이 바뀌게(시트 값은 그대로)
+const v = String(f[k]).trim(); const shownV = k === '아이템키' ? v.split(',').map(function (x) { return x.trim(); }).join(', ') : v;
+return `<div class="cm-f"><span class="cm-fk">${escapeHtml(compFieldLabel_(k, t))}</span><span class="cm-fv">${escapeHtml(shownV)}</span></div>`;
+};
+// 2026-11-02 추가매출(달성 여부 칸이 있는 탭): 팀원이 적은 결과 칸은 연초 계획 칸과 나눠 구분선 + '결과' 제목 아래로(재홍님 — 평가할 때 한눈에, 배경 없이)
+const resKeys = t.hasReply ? keys.filter(function (k) { return COMP_RESULT_FIELDS_.indexOf(k) >= 0; }) : [];
+const rows = keys.filter(function (k) { return resKeys.indexOf(k) < 0; }).map(fRow).join('') +
+(resKeys.length ? `<div class="cm-res"><div class="cm-res-h">결과 <span>팀원 입력</span></div>${resKeys.map(fRow).join('')}</div>` : '');
 const op = String(rec.leaderOpinion || '').trim();
 const line = String(f['팀장한줄의견'] === undefined ? '' : f['팀장한줄의견']).trim();
 const opHtml = (op || line) ? `<div class="cm-op">팀장 평가: ${escapeHtml([op, line].filter(Boolean).join(' · '))}</div>` : '';
@@ -4614,7 +4632,11 @@ const body = ed && ed.form ? ed.form : `${rows}${opHtml}${replyHtml}${ed ? ed.ba
 // 수정 요청 중(평가 완료 + '요청')이면 상태 표시는 '승인 대기'(①·② 같음)
 const rq = compEditReq_(rec);
 const chip = rec.reviewState === 'done' && rq && rq.state === '요청' ? '<span class="cm-st cm-st-wait">승인 대기</span>' : compStateChip_(rec.reviewState, opts && opts.prLabel);
-return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${chip}</div><div class="cm-card-body">${body}</div></div>`;
+// 2026-11-02 평가 완료(승인 대기 포함)면 접힌 머리에도 팀장 평가 한 글자 — 상·중·하는 색으로, 그 밖의 옛 값(예: '중 (2610)')은 첫 8자 그대로 회색
+const grText = rec.reviewState === 'done' ? op : '';
+const grKey = /^[상중하]$/.test(grText) ? grText : '기타';
+const grade = grText ? `<span class="cm-gr cm-gr-${grKey}" title="팀장 평가">${escapeHtml(grKey === '기타' ? grText.slice(0, 8) : grText)}</span>` : '';
+return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${grade}${chip}</div><div class="cm-card-body">${body}</div></div>`;
 }
 // 2단계 전 추가매출 카운팅(설계서 v1.15 ⑳): 서버는 달성 여부 칸이 빈 줄(계획만 있는 줄)을 건수에서 뺀다. 그 사실을 안내 문구에 덧붙인다.
 // tabs = 그 화면의 탭 목록, lead = ②(건수표에 "결과 / 계획" 칸이 있음). 달성 여부 칸이 있는 탭이 없으면 덧붙이지 않음.
