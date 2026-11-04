@@ -34,6 +34,8 @@ const { acquireLock, releaseLock } = require('./lib/writeLock');
 // 2026-08-28 (push 6단계, PUSH_NOTIFICATION_STAGE6_DESIGN.md): 5단계에서 만든 통합 푸시
 // 발송 공통 모듈. pushBatchTest(이 파일 맨 아래, 신규)만 사용한다.
 const pushSender = require('./lib/pushSender');
+// 2026-11-04 (요금 절감 1-다): 스케줄러 작업 4개를 5분 1개로 합치는 dispatchBatchTest(이 파일 맨 아래)만 사용한다.
+const dispatch = require('./lib/dispatch');
 
 const SPREADSHEET_ID = '1_pvEWU3PRoLM4ZO8aY2v0kEYz--tFNRy2g_fE6MMubU';
 // Sheet tab name is written as a JS unicode escape (Korean debug-log tab name).
@@ -4563,3 +4565,31 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
   });
   res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
 }
+
+// ---------------------------------------------------------------------------
+// GET/POST /dispatchBatchTest (2026-11-04 요금 절감 1-다 — 스케줄러 작업 합치기)
+// Cloud Scheduler 작업 1개(dispatch-batch-5min, '2-59/5 * * * *' Asia/Seoul, OIDC)가 부른다.
+// 비공개 배포(--no-allow-unauthenticated). 실제 일은 lib/dispatch.js 설명 참고 — 기존 함수
+// 4개(push/sweep/reminder/issueMail)를 기존 주소로 그대로 호출하고, 1시간에 1번 만료 세션을 정리한다.
+// 하나라도 실패하면 500으로 답한다(스케줄러 화면의 "마지막 실행 결과"에 실패로 보이게 — 재시도는 없음).
+const dispatchIdClients_ = {};
+function getDispatchIdClient_(audience) {
+  if (!dispatchIdClients_[audience]) {
+    // 만든 클라이언트는 인스턴스가 살아있는 동안 재사용(토큰 만료 전까지 캐시). 만들기 실패는 캐시하지 않는다.
+    dispatchIdClients_[audience] = new GoogleAuth().getIdTokenClient(audience)
+      .catch(function (e) { delete dispatchIdClients_[audience]; throw e; });
+  }
+  return dispatchIdClients_[audience];
+}
+exports.dispatchBatchTest = async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const out = await dispatch.runDispatch({ getClient: getDispatchIdClient_, firestore: firestore }, t0);
+    const sum = Object.assign({ totalMs: Date.now() - t0 }, out);
+    console.log('[dispatch] ' + JSON.stringify(sum));
+    res.status(out.allOk ? 200 : 500).json(Object.assign({ ok: out.allOk }, sum));
+  } catch (err) {
+    console.error('[dispatch] 실패: ' + err);
+    res.status(500).json({ ok: false, totalMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};

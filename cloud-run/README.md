@@ -106,6 +106,8 @@
 | `push-batch-5min` | `*/5 * * * *` (5분마다) | `pushBatchTest` | `role !== '일반'`인 사용자 전원에게 새 게시물/댓글 필요/답변 요청을 통합해 푸시 1건으로 발송(0건 카테고리 제외, 전부 0건이면 미발송) |
 | `reminder-batch-hourly` | `0 * * * *` (매시 정각) | `reminderBatchTest` | 설정 `담당자댓글리마인더사용`이 `TRUE`일 때만 동작. `담당자댓글마감시각`(쉼표로 복수 시각 지정 가능, 예: `13,17`)에 도달한 `role === '담당'` 사용자 중, 배정됐지만 댓글이 0건인 품목이 있으면 리마인더 푸시 발송 |
 
+> **(2026-11-04 요금 절감 1-다)** 위 2개와 `issue-mail-hourly`·`material-sweep-15m`(총 4개)을 작업 1개 `dispatch-batch-5min`(`2-59/5 * * * *`, OIDC → 비공개 함수 `dispatchBatchTest`)으로 합칩니다. `dispatchBatchTest`는 기존 함수 4개를 **기존 주소 그대로** ID 토큰으로 호출합니다 — push는 매번, sweep은 매시 2·17·32·47분, reminder·issueMail은 매시 2분(기존 정각보다 2분 늦음). 같은 매시 2분에 만료 후 24시간 지난 `sessions` 문서를 최대 300개 지웁니다. 코드: `lib/dispatch.js`, 테스트: `tests/dispatch_tests.js`. 옛 작업 4개는 일시중지 → 이틀 확인 후 삭제, 그 뒤 `pushBatchTest`/`reminderBatchTest`의 공개 호출(allUsers)을 제거합니다. 각 함수를 수동으로 호출해 볼 때는 위 "대상 함수"를 그대로 쓰면 됩니다(동작 변경 없음).
+
 **`담당자댓글마감시각` 복수 시각 지원 방식**: 매시 정각 실행마다 `deadlineHours`(설정값을 쉼표로 파싱한 배열, 예 `[13, 17]`) 중 `현재시각 >= 시각`을 만족하는 것들(`dueHours`)을 구하고, 그중 가장 큰 값을 `targetHour`로 삼아 `reminderDeliveries/{날짜}_{targetHour}_{email}` 문서 존재 여부로 발송 여부를 판정합니다. 예를 들어 `13,17`을 지정하면 13시 정각 실행에서 `targetHour=13` 문서가 만들어지고, 14~16시 정각 실행은 이미 그 문서가 있어 아무 것도 안 하다가, 17시 정각에 `targetHour=17` 문서가 새로 만들어지며 다시 한 번 발송됩니다 — 시각마다 독립적으로 하루 한 번씩 발송되는 구조입니다.
 
 ## 배포 방법
