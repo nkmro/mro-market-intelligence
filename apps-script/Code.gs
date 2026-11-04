@@ -2108,13 +2108,14 @@ sheet.appendRow([new Date(), postCount, logCount, orphanCount, deletedPostIds.jo
 }
 
 /**
-* AI 공급자 라우터. Script Properties의 AI_PROVIDER 값(DEEPSEEK/GEMINI)에 따라 분기.
+* AI 공급자 라우터. Script Properties의 AI_PROVIDER 값(DEEPSEEK/GEMINI/OPENAI)에 따라 분기.
 * 반환값: 성공 시 AI 응답 텍스트(string), 실패 시 null.
 */
 function callAI_(prompt) {
 const provider = (PropertiesService.getScriptProperties().getProperty('AI_PROVIDER') || 'GEMINI').toUpperCase();
 try {
 if (provider === 'DEEPSEEK') return callDeepSeek_(prompt);
+if (provider === 'OPENAI') return callOpenAI_(prompt);
 if (provider === 'GEMINI') return callGemini_(prompt);
 console.error('callAI_: 알 수 없는 AI_PROVIDER(' + provider + ') - Gemini로 폴백');
 return callGemini_(prompt);
@@ -2128,6 +2129,16 @@ return null;
 * AI 프롬프트 1건에 대한 요청 객체 생성 (공급자별 분기). callAIBatch_에서 사용.
 */
 function buildAIRequest_(prompt, provider, props) {
+if (provider === 'OPENAI') {
+return {
+url: OPENAI_URL_,
+method: 'post',
+contentType: 'application/json',
+headers: { 'Authorization': 'Bearer ' + props.getProperty('OPENAI_API_KEY') },
+payload: JSON.stringify(openAIPayload_(prompt, props)),
+muteHttpExceptions: true
+};
+}
 if (provider === 'DEEPSEEK') {
 const apiKey = props.getProperty('DEEPSEEK_API_KEY');
 return {
@@ -2154,7 +2165,7 @@ muteHttpExceptions: true
 */
 function parseAIResponse_(res, provider) {
 const json = JSON.parse(res.getContentText());
-if (provider === 'DEEPSEEK') {
+if (provider === 'DEEPSEEK' || provider === 'OPENAI') {
 return (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || null;
 }
 return (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts[0] && json.candidates[0].content.parts[0].text) || null;
@@ -2230,6 +2241,40 @@ return null;
 }
 const json = JSON.parse(res.getContentText());
 const text = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts[0].text;
+return text || null;
+}
+
+/**
+* [2026-11-04] OpenAI Chat Completions (OPENAI_PROVIDER_DESIGN_v1.md). 요청·응답 모양은 DeepSeek과 같다.
+* 모델·추론 강도는 스크립트 속성 OPENAI_MODEL / OPENAI_REASONING_EFFORT로 바꿀 수 있다(없으면 아래 기본값).
+* Cloud Run lib/materialSuggest.js의 OPENAI_DEFAULT_MODEL / OPENAI_DEFAULT_EFFORT와 같은 값으로 유지할 것.
+*/
+const OPENAI_URL_ = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_DEFAULT_MODEL_ = 'gpt-6-luna';
+const OPENAI_DEFAULT_EFFORT_ = 'low';
+
+function openAIPayload_(prompt, props) {
+const model = String(props.getProperty('OPENAI_MODEL') || '').trim() || OPENAI_DEFAULT_MODEL_;
+const effort = String(props.getProperty('OPENAI_REASONING_EFFORT') || '').trim().toLowerCase() || OPENAI_DEFAULT_EFFORT_;
+return { model: model, messages: [{ role: 'user', content: prompt }], reasoning_effort: effort };
+}
+
+function callOpenAI_(prompt) {
+const props = PropertiesService.getScriptProperties();
+const res = UrlFetchApp.fetch(OPENAI_URL_, {
+method: 'post',
+contentType: 'application/json',
+headers: { 'Authorization': 'Bearer ' + props.getProperty('OPENAI_API_KEY') },
+payload: JSON.stringify(openAIPayload_(prompt, props)),
+muteHttpExceptions: true
+});
+const code = res.getResponseCode();
+if (code < 200 || code >= 300) {
+console.error('callOpenAI_ HTTP ' + code + ': ' + res.getContentText());
+return null;
+}
+const json = JSON.parse(res.getContentText());
+const text = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
 return text || null;
 }
 

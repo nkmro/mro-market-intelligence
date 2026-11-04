@@ -54,6 +54,14 @@ const WRITE_RESERVE_MS = 4000;
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash'; // Code.gs callDeepSeek_와 동일
+// [2026-11-04 OpenAI 추가] OPENAI_PROVIDER_DESIGN_v1.md. 요청·응답 모양은 DeepSeek과 같다(Chat Completions,
+// choices[0].message.content, reasoning_effort) — developers.openai.com API reference "Create chat completion" 확인.
+// 모델·추론 강도는 환경변수(OPENAI_MODEL / OPENAI_REASONING_EFFORT)로 바꿀 수 있게 했다 — 모델 폐기 때
+// 코드 재배포 없이 설정만 바꾸기 위해서(gpt-5.4-nano는 2027-04-01 제거 예정). 아래는 값이 없을 때의 기본값.
+// gpt-6-luna는 추론 강도 기본이 medium이라 반드시 명시해서 보낸다(모델 페이지 확인).
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_DEFAULT_MODEL = 'gpt-6-luna';
+const OPENAI_DEFAULT_EFFORT = 'low';
 
 // ───────────────────────── 프롬프트 ─────────────────────────
 
@@ -160,11 +168,50 @@ async function callDeepSeek(fetchFn, apiKey, prompt, timeoutMs) {
   }
 }
 
+// [2026-11-04] OpenAI Chat Completions. callDeepSeek와 같은 반환 모양 + usage(모델·토큰 수, 효율 기록용).
+async function callOpenAI(fetchFn, apiKey, model, effort, prompt, timeoutMs) {
+  const t0 = Date.now();
+  if (!apiKey) return { text: null, httpStatus: 0, ms: 0, error: 'NO_API_KEY' };
+  const controller = new AbortController();
+  const timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+  try {
+    const res = await fetchFn(OPENAI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: model, messages: [{ role: 'user', content: prompt }], reasoning_effort: effort }),
+      signal: controller.signal
+    });
+    const status = res.status;
+    if (status < 200 || status >= 300) {
+      return { text: null, httpStatus: status, ms: Date.now() - t0, error: 'HTTP_' + status };
+    }
+    const json = await res.json();
+    const text = json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+    const u = (json && json.usage) || {};
+    const usage = {
+      model: model, effort: effort,
+      inTok: u.prompt_tokens || 0, outTok: u.completion_tokens || 0,
+      reasoningTok: (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) || 0
+    };
+    return { text: text || null, httpStatus: status, ms: Date.now() - t0, error: text ? null : 'EMPTY', usage: usage };
+  } catch (err) {
+    const aborted = err && (err.name === 'AbortError' || controller.signal.aborted);
+    return { text: null, httpStatus: 0, ms: Date.now() - t0, error: aborted ? 'TIMEOUT' : 'NETWORK' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // 공급자 선택(설계 3-2: 예비 공급자 미사용, 공급자별 함수만 나눠 둔다).
 function makeAiCaller(provider, fetchFn, env) {
   const p = String(provider || '').toUpperCase();
   if (p === 'DEEPSEEK') {
     return function (prompt, timeoutMs) { return callDeepSeek(fetchFn, env.DEEPSEEK_API_KEY, prompt, timeoutMs); };
+  }
+  if (p === 'OPENAI') {
+    const model = String(env.OPENAI_MODEL || '').trim() || OPENAI_DEFAULT_MODEL;
+    const effort = String(env.OPENAI_REASONING_EFFORT || '').trim().toLowerCase() || OPENAI_DEFAULT_EFFORT;
+    return function (prompt, timeoutMs) { return callOpenAI(fetchFn, env.OPENAI_API_KEY, model, effort, prompt, timeoutMs); };
   }
   return async function () { return { text: null, httpStatus: 0, ms: 0, error: 'PROVIDER_NOT_SUPPORTED:' + p }; };
 }
@@ -290,7 +337,9 @@ async function suggestForItemName(deps, itemName, opts, log) {
     if (!plan.go) { log.aiStop = plan.why; break; }
     const r = await deps.ai(prompt, plan.timeoutMs);
     const p = parseAIText(r.text);
-    log.attempts.push({ aiMs: r.ms, timeoutMs: plan.timeoutMs, httpStatus: r.httpStatus, parseOk: !!p, error: r.error || (p ? null : (r.text ? 'PARSE' : null)) });
+    const at = { aiMs: r.ms, timeoutMs: plan.timeoutMs, httpStatus: r.httpStatus, parseOk: !!p, error: r.error || (p ? null : (r.text ? 'PARSE' : null)) };
+    if (r.usage) at.usage = r.usage; // OpenAI만: 모델·토큰 수(키·프롬프트·응답 전문은 남기지 않음)
+    log.attempts.push(at);
     if (p) parsed = p;
   }
   log.aiTotalMs = deps.now() - aiStart;
@@ -584,7 +633,7 @@ module.exports = {
   RAW_SHEET_NAME, RAW_LOCK_NAME, RAW_LOCK_OPTS, PROMPT_TEMPLATE_SHA256, SETTING_KEYS, DEFAULTS, LIMITS,
   REQUEST_BUDGET_MS, AI_TOTAL_BUDGET_MS, AI_RETRY_MIN_MS, WRITE_RESERVE_MS, planAttempt,
   promptTemplate_, buildPrompt, parseAIText, readOptions,
-  callDeepSeek, makeAiCaller, makeSheetsIO, msToSheetSerial,
+  callDeepSeek, callOpenAI, OPENAI_DEFAULT_MODEL, OPENAI_DEFAULT_EFFORT, makeAiCaller, makeSheetsIO, msToSheetSerial,
   normalizeName, nextRmNumber, rmCode,
   suggestForItemName,
   // 단계 3
