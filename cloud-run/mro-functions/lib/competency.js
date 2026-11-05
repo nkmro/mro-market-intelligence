@@ -1064,13 +1064,17 @@ module.exports.planEditDecide = planEditDecide;
 // - seen = 화면이 본 '수정일시' 값. 시트 값과 다르면(그 사이 팀원이 고침) RECORD_CHANGED — 보지 못한 내용에 평가가 붙지 않게.
 // - 같은 팀 활성 팀장인지·작성자가 재직 중인지는 index.js가 plan.authorEmail로 판정한다(2-마-1 승인과 같음).
 // =====================================================================
-const REVIEW_GRADES = ['상', '중', '하'];
+// 2026-11-04 '제외'(재홍님 결정): 추가매출에서 달성 여부가 N인 기록에만 — 고객사 사정 등으로 담당 탓이 아닌 미달성.
+// 점수 환산은 없음(팀장이 기록된 평가를 보고 최종 판단). 제외는 사유(한 줄 의견)가 필수다.
+const REVIEW_GRADES = ['상', '중', '하', '제외'];
+const REVIEW_EXCLUDE = '제외';
 const REVIEW_LINE_MAX = 200;
 function validateReview(b) {
   const grade = String((b && b.grade) === undefined || (b && b.grade) === null ? '' : b.grade).trim();
   if (REVIEW_GRADES.indexOf(grade) < 0) return { ok: false, error: 'BAD_GRADE', field: 'grade' };
   const line = String((b && b.line) === undefined || (b && b.line) === null ? '' : b.line).replace(/\s*[\r\n]+\s*/g, ' ').trim();
   if (line.length > REVIEW_LINE_MAX) return { ok: false, error: 'BAD_INPUT', field: 'line' };
+  if (grade === REVIEW_EXCLUDE && !line) return { ok: false, error: 'EXCLUDE_NEED_REASON', field: 'line' };
   if (b && b.seen !== undefined && b.seen !== null && typeof b.seen !== 'string') return { ok: false, error: 'BAD_INPUT', field: 'seen' };
   return { ok: true, grade: grade, line: line, seen: b && typeof b.seen === 'string' ? b.seen.trim() : null };
 }
@@ -1084,6 +1088,7 @@ function planReview(tab, values, recordId, v, edit, nowMs) {
   if (edit && !opinion) return { ok: false, error: 'NOT_REVIEWED' };
   if (!edit && f.col(ADD_SALES_REPLY_HEADER) >= 0 && !f.cell(f.row, ADD_SALES_REPLY_HEADER)) return { ok: false, error: 'NOT_REPLIED' };
   if (edit && f.col(EDIT_REQ_HEADER) >= 0) { const rq = parseEditRequest(f.cell(f.row, EDIT_REQ_HEADER)); if (rq && rq.state === '요청') return { ok: false, error: 'EDIT_REQUESTED' }; }
+  if (v.grade === REVIEW_EXCLUDE && !(f.col(ADD_SALES_REPLY_HEADER) >= 0 && String(f.cell(f.row, ADD_SALES_REPLY_HEADER)).trim().toUpperCase() === 'N')) return { ok: false, error: 'EXCLUDE_NOT_ALLOWED' };
   if (v.seen !== null && v.seen !== f.cell(f.row, MODIFIED_AT_HEADER)) return { ok: false, error: 'RECORD_CHANGED' };
   const set = [[opH, v.grade]];
   if (v.line || f.cell(f.row, EXTRA_HEADERS[4])) set.push([EXTRA_HEADERS[4], v.line]);
