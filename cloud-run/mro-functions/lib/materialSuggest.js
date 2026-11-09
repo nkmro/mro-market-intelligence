@@ -58,9 +58,10 @@ const DEEPSEEK_MODEL = 'deepseek-v4-flash'; // Code.gs callDeepSeek_와 동일
 // choices[0].message.content, reasoning_effort) — developers.openai.com API reference "Create chat completion" 확인.
 // 모델·추론 강도는 환경변수(OPENAI_MODEL / OPENAI_REASONING_EFFORT)로 바꿀 수 있게 했다 — 모델 폐기 때
 // 코드 재배포 없이 설정만 바꾸기 위해서(gpt-5.4-nano는 2027-04-01 제거 예정). 아래는 값이 없을 때의 기본값.
-// gpt-6-luna는 추론 강도 기본이 medium이라 반드시 명시해서 보낸다(모델 페이지 확인).
+// 추론 강도는 반드시 명시해서 보낸다 — 2026-11-05 비교 시험에서 gpt-5.4-mini는 none이면 정확도 29%·흔들림 83%, low면 83%·0%.
+// 기본 모델 = gpt-5.4-mini(2026-11-05 재홍님 확정, OPENAI_PROVIDER_DESIGN_v1.md 10절 — 회사 프로젝트는 gpt-6-luna 권한 없음).
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_DEFAULT_MODEL = 'gpt-6-luna';
+const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
 const OPENAI_DEFAULT_EFFORT = 'low';
 
 // ───────────────────────── 프롬프트 ─────────────────────────

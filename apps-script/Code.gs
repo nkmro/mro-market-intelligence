@@ -2247,10 +2247,10 @@ return text || null;
 /**
 * [2026-11-04] OpenAI Chat Completions (OPENAI_PROVIDER_DESIGN_v1.md). 요청·응답 모양은 DeepSeek과 같다.
 * 모델·추론 강도는 스크립트 속성 OPENAI_MODEL / OPENAI_REASONING_EFFORT로 바꿀 수 있다(없으면 아래 기본값).
-* Cloud Run lib/materialSuggest.js의 OPENAI_DEFAULT_MODEL / OPENAI_DEFAULT_EFFORT와 같은 값으로 유지할 것.
+* Cloud Run lib/materialSuggest.js의 OPENAI_DEFAULT_MODEL / OPENAI_DEFAULT_EFFORT와 같은 값으로 유지할 것(기본 gpt-5.4-mini·low — 2026-11-05 확정, 설계서 10절).
 */
 const OPENAI_URL_ = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_DEFAULT_MODEL_ = 'gpt-6-luna';
+const OPENAI_DEFAULT_MODEL_ = 'gpt-5.4-mini';
 const OPENAI_DEFAULT_EFFORT_ = 'low';
 
 function openAIPayload_(prompt, props) {

@@ -60,7 +60,7 @@ function fakeFetch(behavior) {
   {
     const f = fakeFetch({});
     await ms.makeAiCaller('openai', f.fn, { OPENAI_API_KEY: 'k' })('P', 5000);
-    check('C11 설정 없으면 기본값 gpt-6-luna / low (소문자 provider도 인식)', f.calls[0].body.model === 'gpt-6-luna' && f.calls[0].body.reasoning_effort === 'low' && ms.OPENAI_DEFAULT_MODEL === 'gpt-6-luna');
+    check('C11 설정 없으면 기본값 gpt-5.4-mini / low (소문자 provider도 인식)', f.calls[0].body.model === 'gpt-5.4-mini' && f.calls[0].body.reasoning_effort === 'low' && ms.OPENAI_DEFAULT_MODEL === 'gpt-5.4-mini');
   }
   {
     const f = fakeFetch({});
@@ -103,7 +103,7 @@ function fakeFetch(behavior) {
     const e = env({ AI_PROVIDER: 'OPENAI', OPENAI_API_KEY: 'sk-A' });
     const text = e.t.callAI_('P');
     const f = e.st.fetches[0];
-    check('G1 AI_PROVIDER=OPENAI → callOpenAI_ (주소·Bearer·기본 모델 gpt-6-luna·low)', f && f.url === 'https://api.openai.com/v1/chat/completions' && f.o.headers.Authorization === 'Bearer sk-A' && f.body.model === 'gpt-6-luna' && f.body.reasoning_effort === 'low' && f.o.muteHttpExceptions === true, f && f.body);
+    check('G1 AI_PROVIDER=OPENAI → callOpenAI_ (주소·Bearer·기본 모델 gpt-5.4-mini·low)', f && f.url === 'https://api.openai.com/v1/chat/completions' && f.o.headers.Authorization === 'Bearer sk-A' && f.body.model === 'gpt-5.4-mini' && f.body.reasoning_effort === 'low' && f.o.muteHttpExceptions === true, f && f.body);
     check('G2 응답 글 반환', text === OK_BODY.choices[0].message.content);
   }
   {
