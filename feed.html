@@ -531,7 +531,6 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
 .cm-filter { border: 1px solid var(--border); background: var(--card); color: var(--text-muted); border-radius: 16px; padding: 4px 12px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .cm-filter.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.nav-group:not(.collapsed) #nav-group-hr-badge { display: none !important; }
 .cm-item { font-size: 12px; color: var(--text-muted); margin: 2px 0 6px; }
 .cm-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
 .cm-card { border: 1px solid var(--border); border-left: 4px solid #c9c3dc; border-radius: 8px; padding: 9px 12px; margin: 8px 0; background: var(--card); box-shadow: 0 1px 2px rgba(31,35,32,.05); } /* 왼쪽 줄 색 = 상태(1단계-라-라-다) */
@@ -553,6 +552,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-gr-상 { color: #1e7a3c; background: #e9f6ee; border-color: #bfe3cc; }
 .cm-gr-중 { color: var(--accent); background: #efedf7; border-color: #d6d1ea; }
 .cm-gr-하 { color: #b55a1c; background: #fdf1e7; border-color: #f2d2b8; }
+.cm-gr-제외 { color: var(--text-muted); background: transparent; border-color: var(--text-muted); border-style: dashed; }
 .cm-gr-기타 { color: var(--text-muted); background: transparent; border-color: var(--border); font-weight: 600; }
 .cm-f { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
 .cm-fk { color: var(--text-muted); flex: 0 0 130px; overflow-wrap: anywhere; }
@@ -595,6 +595,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 /* 3-가 팀장 평가(설계서 v1.30 ⑳-9) — 2-나 rp-form·rp-row·rp-seg·rp-in·rp-help·rp-act·rp-msg를 같이 쓰고, 다른 것만 rv- */
 .rp-msg.ok { color: var(--accent); }
 .rp-seg.rv-seg { grid-template-columns: repeat(3, 1fr); }
+.rp-seg.rv-seg.rv-seg4 { grid-template-columns: repeat(4, 1fr); width: 280px; max-width: 100%; } /* 2026-11-04 추가매출 N 기록: 상·중·하·제외 */
+@media (max-width: 480px) { .rp-seg.rv-seg.rv-seg4 { width: 100%; box-sizing: border-box; } }
 .rp-in.rv-line { width: 100%; }
 .rp-form textarea.rp-memo { width: 100%; resize: vertical; font-family: inherit; line-height: 1.5; }
 @media (max-width: 480px) { .rp-row { grid-template-columns: 1fr; } .rp-help, .rp-err { grid-column: 1; } .rp-in { width: 90px; } }
@@ -911,11 +913,11 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         </div>
       </div>
       <div class="nav-group collapsed" id="nav-group-hr" data-group="hr" style="display:none;">
-        <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가<span class="nav-badge" id="nav-group-hr-badge" style="display:none;">0</span></div>
+        <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가<span class="nav-group-new" id="nav-group-hr-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
           <div class="nav-group-sub">역량평가 · 40%</div>
           <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록<span class="nav-badge" id="nav-comp-mine-badge" style="display:none;">0</span></div>
-          <div class="nav-item" id="nav-comp-team" data-view="comp-team" onclick="switchView('comp-team')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 팀 역량평가</div>
+          <div class="nav-item" id="nav-comp-team" data-view="comp-team" onclick="switchView('comp-team')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 팀 역량평가<span class="nav-badge" id="nav-comp-team-badge" style="display:none;">0</span></div>
           <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
           <div class="nav-item" id="nav-comp-settings" data-view="comp-settings" onclick="switchView('comp-settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 인사평가 설정</div>
         </div>
@@ -1684,6 +1686,8 @@ document.getElementById('nav-comp-criteria').style.display = 'flex';
 // 1단계-라-다-가 (설계서 2-1 메뉴표): 내 역량 기록은 팀원(일반·담당)만. 팀장·임원은 팀 역량평가(②, 1단계-라-라 — 앱 시작 때 서버를 부르지 않음).
 if (['팀장', '임원'].indexOf(session.role) >= 0) {
 document.getElementById('nav-comp-team').style.display = 'flex';
+// 2026-11-04 할 일 배지: 팀장만(임원은 보기 전용) 앱 시작 때 view=team 1번, 기다리지 않음
+if (session.role === '팀장') loadCompLeadBadge_();
 }
 if (['일반', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-comp-mine').style.display = 'flex';
@@ -4599,7 +4603,7 @@ compMineFilter_ = 'all'; // 화면을 새로 열면 추가매출 필터는 "전�
 compCreateState_ = null; // 2-다: 화면을 새로 열면 쓰던 기록 추가 칸은 닫힘
 compEditDel_ = null; compMineMsg_ = null; // 2-라: 삭제 확인 칸·안내도 닫힘
 compReqAsk_ = null; // 2-마-1: 수정 요청 상자도 닫힘
-compSetBadge_(res.awaitingReply); // 배지도 최신 숫자로
+compSetBadge_(compMineTodo_(res)); // 배지도 최신 숫자로
 renderCompMine_(res);
 }
 function compMineList_(res, key) {
@@ -4648,7 +4652,7 @@ const rq = compEditReq_(rec);
 const chip = rec.reviewState === 'done' && rq && rq.state === '요청' ? '<span class="cm-st cm-st-wait">승인 대기</span>' : compStateChip_(rec.reviewState, opts && opts.prLabel);
 // 2026-11-02 평가 완료(승인 대기 포함)면 접힌 머리에도 팀장 평가 한 글자 — 상·중·하는 색으로, 그 밖의 옛 값(예: '중 (2610)')은 첫 8자 그대로 회색
 const grText = rec.reviewState === 'done' ? op : '';
-const grKey = /^[상중하]$/.test(grText) ? grText : '기타';
+const grKey = /^([상중하]|제외)$/.test(grText) ? grText : '기타';
 const grade = grText ? `<span class="cm-gr cm-gr-${grKey}" title="팀장 평가">${escapeHtml(grKey === '기타' ? grText.slice(0, 8) : grText)}</span>` : '';
 return `<div class="cm-card${fold}"${rec.recordId ? ` data-rid="${escapeHtml(rec.recordId)}"` : ''}><div class="cm-card-head" onclick="this.parentNode.classList.toggle('cm-fold')"><span class="cm-caret">▾</span><span class="cm-title">${escapeHtml(title)}</span>${grade}${chip}</div><div class="cm-card-body">${body}</div></div>`;
 }
@@ -4746,20 +4750,48 @@ compMineFilter_ = key;
 const body = document.getElementById('cm-tab-body');
 if (body) body.innerHTML = compMineTabBody_(compMineRes_, compMineTab_);
 }
-// 1단계-라-다-나: 회신 대기 배지 (설계서 2-1 v1.9) — "내 역량 기록" 메뉴 옆, 묶음이 접혀 있으면 묶음 제목 옆에도(CSS). 0이면 숨김.
-function compSetBadge_(n) {
-n = Number(n) || 0;
-['nav-comp-mine-badge', 'nav-group-hr-badge'].forEach(function (id) {
+// 할 일 배지 (설계서 2-1 v1.9 → 2026-11-04 재홍님 결정: "내가 할 일만" 센다). 메뉴 옆 숫자, 0이면 숨김.
+// 인사평가 묶음 제목 옆은 숫자 대신 NEW(MRO 자재 시황 묶음과 같은 모양) — 내 기록·팀 평가 중 하나라도 할 일이 있으면.
+const compTodo_ = { mine: 0, lead: 0 };
+function compSetNavBadge_(id, n) {
 const el = document.getElementById(id);
-if (!el) return;
-el.textContent = String(n);
-el.style.display = n > 0 ? '' : 'none';
-});
+if (el) { el.textContent = n > 99 ? '99+' : String(n); el.style.display = n > 0 ? '' : 'none'; }
+const nw = document.getElementById('nav-group-hr-new');
+if (nw) nw.style.display = (compTodo_.mine > 0 || compTodo_.lead > 0) ? 'inline-block' : 'none';
 }
-// 앱 시작 때 일반·담당만 1번 부른다(기다리지 않음). 실패하면 배지만 안 보이고 다른 동작에는 영향 없음.
+// 팀원(일반·담당): 결과를 적을 계획 + 수정이 승인됐는데 아직 고치지 않은 기록(승인 시각 뒤 '수정일시'가 없음)
+function compSetBadge_(n) { compTodo_.mine = Number(n) || 0; compSetNavBadge_('nav-comp-mine-badge', compTodo_.mine); }
+function compMineTodo_(res) {
+let n = Number(res && res.awaitingReply) || 0;
+const recs = (res && res.records) || {};
+Object.keys(recs).forEach(function (k) {
+(recs[k] || []).forEach(function (r) {
+const rq = compEditReq_(r);
+if (rq && rq.state === '승인' && r.reviewState === 'pendingReview' && !(String(((r.fields || {})['수정일시']) || '').trim() >= rq.at)) n++;
+});
+});
+return n;
+}
+// 팀장: 재직 팀원 기록 중 미평가 + 수정 요청(승인·거절 대기). 임원은 할 일이 아니라 세지 않음.
+function compLeadTodo_(res) {
+if (!res || ((res.viewer || {}).role) !== '팀장') return 0;
+let n = 0;
+(Array.isArray(res.records) ? res.records : []).forEach(function (r) {
+if (r.authorStatus !== 'active') return;
+const rq = compEditReq_(r);
+if (r.reviewState === 'pendingReview' || (rq && rq.state === '요청')) n++;
+});
+return n;
+}
+function compSetLeadBadge_(res) { compTodo_.lead = compLeadTodo_(res); compSetNavBadge_('nav-comp-team-badge', compTodo_.lead); }
+// 앱 시작 때 1번 부른다(기다리지 않음). 실패하면 배지만 안 보이고 다른 동작에는 영향 없음.
 async function loadCompBadge_() {
 const res = await compFetch_({ view: 'mine' });
-if (res && res.ok) compSetBadge_(res.awaitingReply);
+if (res && res.ok) compSetBadge_(compMineTodo_(res));
+}
+async function loadCompLeadBadge_() {
+const res = await compFetch_({ view: 'team' });
+if (res && res.ok) compSetLeadBadge_(res);
 }
 // 탭 바꾸기: 서버를 다시 부르지 않고 탭 줄과 내용만 다시 그린다(팀 현황 애니메이션은 다시 돌지 않음)
 function switchCompMineTab_(key) {
@@ -4773,6 +4805,7 @@ if (body) body.innerHTML = compMineTabBody_(compMineRes_, key);
 function renderCompMine_(res) {
 const root = document.getElementById('comp-mine-view');
 compMineRes_ = res;
+compSetBadge_(compMineTodo_(res)); // 2026-11-04 다시 그릴 때마다 할 일 배지도 맞춤(고치기·요청 뒤 포함)
 const viewer = res.viewer || {};
 const n = Number(res.awaitingReply) || 0;
 // 처음 열 때 탭: 회신 대기가 있으면 회신 칸이 있는 탭(추가매출), 없으면 기록이 있는 첫 탭, 그것도 없으면 첫 탭. 같은 화면 안에서 고른 탭은 유지.
@@ -4921,7 +4954,7 @@ res.awaitingReply = Math.max(0, (Number(res.awaitingReply) || 0) - 1);
 // 팀 현황 내 줄: 결과를 적은 줄부터 건수에 들어감(v1.15) → 내 줄 그 탭 +1
 const me = String((res.viewer && res.viewer.name) || '').replace(/\s+/g, '');
 (res.teamCounts || []).forEach(function (m) { if (me && String(m.name || '').replace(/\s+/g, '') === me) { m.byTab = m.byTab || {}; m.byTab[rec.tab] = (Number(m.byTab[rec.tab]) || 0) + 1; } });
-compSetBadge_(res.awaitingReply);
+compSetBadge_(compMineTodo_(res));
 compMineTab_ = rec.tab;
 renderCompMine_(res);
 let card = document.querySelector(`#comp-mine-view .cm-card[data-rid="${CSS.escape(rec.recordId)}"]`);
@@ -5464,7 +5497,7 @@ const i = list.findIndex(function (r) { return r.recordId === rec.recordId; });
 if (i >= 0) list[i] = Object.assign({}, list[i], rec);
 res.awaitingReply = (Number(res.awaitingReply) || 0) + 1;
 compMyCount_(rec.tab, -1);
-compSetBadge_(res.awaitingReply);
+compSetBadge_(compMineTodo_(res));
 compMineTab_ = rec.tab;
 renderCompMine_(res);
 compMineFlash_(rec.recordId);
@@ -5610,6 +5643,7 @@ ALREADY_REVIEWED: '이미 평가된 기록이에요. 화면을 새로 열어 주
 EDIT_REQUESTED: '팀원의 수정 요청을 먼저 승인하거나 거절해 주세요.', NOT_REPLIED: '팀원이 아직 결과를 적지 않은 계획이에요.',
 MEMBER_LEFT: '퇴사한 팀원의 기록은 평가할 수 없어요(보기 전용).', NOT_YOUR_TEAM: '우리 팀 팀원의 기록만 평가할 수 있어요.',
 BAD_GRADE: '평가(상·중·하)를 골라 주세요.', BAD_INPUT: '한 줄 의견은 200자까지 적을 수 있어요.',
+EXCLUDE_NEED_REASON: '제외는 사유가 필요해요. 한 줄 의견에 적어 주세요.', EXCLUDE_NOT_ALLOWED: '제외는 추가매출에서 달성 여부가 N인 기록만 고를 수 있어요.',
 HEADER_NOT_READY: '시트에 평가 칸이 없어요. 관리자에게 알려 주세요.',
 RECORD_CHANGED: '평가하는 사이 팀원이 이 기록을 고쳤어요. 새로 불러와서 바뀐 내용을 보고 다시 평가해 주세요.'
 };
@@ -5627,13 +5661,18 @@ const st = compLeadRv_ && compLeadRv_.rid === rec.recordId && compLeadRv_.tab ==
 const data = `data-tab="${escapeHtml(t.key)}" data-rid="${escapeHtml(rec.recordId)}"`;
 if (!st) return `<div class="rp-bar" ${data}><button type="button" class="rp-btn" onclick="compReviewOpen_(this)">✏️ ${edit ? '평가 고치기' : '평가하기'}</button></div>`;
 const dis = st.saving ? 'disabled' : '';
-const seg = ['상', '중', '하'].map(function (g) { return `<button type="button"${st.grade === g ? ' class="on"' : ''} onclick="compReviewGrade_(this,'${g}')" ${dis}>${g}</button>`; }).join('');
+const seg = compReviewGrades_(rec).map(function (g) { return `<button type="button"${st.grade === g ? ' class="on"' : ''} onclick="compReviewGrade_(this,'${g}')" ${dis}>${g}</button>`; }).join('');
 const again = st.changed ? ` <button type="button" class="ed-btn" onclick="compReviewReload_()">새로 불러오기</button>` : '';
 return `<div class="rp-form" ${data}>
-<div class="rp-row"><span class="rp-k">평가 <b>*</b></span><span class="rp-seg rv-seg">${seg}</span></div>
-<div class="rp-row"><span class="rp-k">한 줄 의견</span><input class="rp-in rv-line" maxlength="200" placeholder="선택 · 200자까지" value="${escapeHtml(st.line)}" oninput="compReviewInput_(this)" ${dis}><span class="rp-help">선택 · 200자까지 · 팀원 카드에 '팀장 평가: 상 · 의견'처럼 보여요</span></div>
+<div class="rp-row"><span class="rp-k">평가 <b>*</b></span><span class="rp-seg rv-seg${compReviewGrades_(rec).length > 3 ? ' rv-seg4' : ''}">${seg}</span></div>
+<div class="rp-row"><span class="rp-k">${st.grade === '제외' ? '제외 사유 <b>*</b>' : '한 줄 의견'}</span><input class="rp-in rv-line" maxlength="200" placeholder="${st.grade === '제외' ? '필수 · 예: 고객사가 기존 업체 유지' : '선택 · 200자까지'}" value="${escapeHtml(st.line)}" oninput="compReviewInput_(this)" ${dis}><span class="rp-help">${st.grade === '제외' ? '필수 · 담당 탓이 아닌 미달성일 때 · 팀원 카드에 \'팀장 평가: 제외 · 사유\'로 보여요' : '선택 · 200자까지 · 팀원 카드에 \'팀장 평가: 상 · 의견\'처럼 보여요'}</span></div>
 ${st.msg ? `<div class="rp-msg err">${escapeHtml(st.msg)}${again}</div>` : ''}
 <div class="rp-act"><button type="button" class="btn-secondary" onclick="compReviewCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compReviewSave_()" ${dis}>${st.saving ? '저장하는 중...' : (edit ? '고친 평가 저장' : '평가 저장')}</button></div></div>`;
+}
+// 2026-11-04 '제외'는 추가매출(달성 여부 칸이 있는 탭)에서 결과가 N인 기록만 — 서버도 같은 판정(EXCLUDE_NOT_ALLOWED)
+function compReviewGrades_(rec) {
+const n = String(((rec && rec.fields) || {})['달성 여부 (Y/N)'] || '').trim().toUpperCase() === 'N';
+return n ? ['상', '중', '하', '제외'] : ['상', '중', '하'];
 }
 function compReviewRec_(tab, rid) {
 return compLeadRes_ ? (compLeadRes_.records || []).filter(function (x) { return x.recordId === rid && x.tab === tab; })[0] : null;
@@ -5644,7 +5683,7 @@ if (compLeadRv_ && compLeadRv_.saving) return;
 const rec = compReviewRec_(bar.dataset.tab, bar.dataset.rid); if (!rec) return;
 const edit = rec.reviewState === 'done';
 const op = String(rec.leaderOpinion || '').trim();
-compLeadRv_ = { tab: bar.dataset.tab, rid: bar.dataset.rid, edit: edit, grade: edit && ['상', '중', '하'].indexOf(op) >= 0 ? op : '',
+compLeadRv_ = { tab: bar.dataset.tab, rid: bar.dataset.rid, edit: edit, grade: edit && compReviewGrades_(rec).indexOf(op) >= 0 ? op : '',
   line: edit ? String((rec.fields || {})['팀장한줄의견'] || '').trim() : '', saving: false, msg: '', key: '', changed: false };
 renderCompLead_();
 }
@@ -5653,7 +5692,9 @@ function compReviewReload_() { compLeadRv_ = null; loadCompLeadPage(true); }
 function compReviewCancel_() { if (compLeadRv_ && compLeadRv_.saving) return; compLeadRv_ = null; renderCompLead_(); }
 function compReviewGrade_(btn, g) {
 if (!compLeadRv_ || compLeadRv_.saving) return;
+const was = compLeadRv_.grade;
 compLeadRv_.grade = g; compLeadRv_.msg = ''; compLeadRv_.key = '';
+if ((was === '제외') !== (g === '제외')) { renderCompLead_(); return; } // 제외를 고르거나 풀면 의견 칸 제목(사유 필수)이 바뀌어 다시 그림
 const seg = btn.closest('.rv-seg'); if (seg) seg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });
 }
 function compReviewInput_(el) { if (compLeadRv_) { compLeadRv_.line = el.value; compLeadRv_.key = ''; } }
@@ -5662,6 +5703,7 @@ const d = compLeadRv_; if (!d || d.saving || !compLeadRes_) return;
 const line = String(d.line || '').replace(/\s*[\r\n]+\s*/g, ' ').trim();
 if (!d.grade) { d.msg = COMP_RV_ERR_.BAD_GRADE; renderCompLead_(); return; }
 if (line.length > 200) { d.msg = COMP_RV_ERR_.BAD_INPUT; renderCompLead_(); return; }
+if (d.grade === '제외' && !line) { d.msg = COMP_RV_ERR_.EXCLUDE_NEED_REASON; renderCompLead_(); return; }
 const rec = compReviewRec_(d.tab, d.rid); if (!rec) return;
 d.saving = true; d.msg = ''; d.changed = false; renderCompLead_();
 d.key = d.key || generateIdempotencyKey_();
@@ -5916,6 +5958,7 @@ if (body) body.innerHTML = compLeadTabBody_(compLeadRes_, compLeadTab_);
 function renderCompLead_() {
 const root = document.getElementById('comp-team-view');
 const res = compLeadRes_;
+compSetLeadBadge_(res); // 2026-11-04 평가·승인·거절 뒤 다시 그릴 때마다 할 일 배지도 맞춤
 const viewer = res.viewer || {};
 const isExec = viewer.role === '임원';
 // 처음 열 때 탭: 확인 대기(재직 팀원)가 있는 첫 탭 → 기록이 있는 첫 탭 → 첫 탭. 같은 화면 안에서 고른 탭은 유지.
