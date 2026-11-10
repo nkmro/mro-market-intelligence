@@ -26,6 +26,16 @@ function seoulYear(nowMs) {
   return new Date((nowMs === undefined ? Date.now() : nowMs) + 9 * 3600 * 1000).getUTCFullYear();
 }
 
+// (diff ②-1) '설정' 탭 행 배열에서 파일이 등록된 해 목록(maxYear 이하, 큰 해부터). 화면 연도 칸에 쓴다(설계서 6-3, A 결정).
+function yearsFromSettings(settingRows, maxYear) {
+  const out = [];
+  (settingRows || []).forEach(function (r) {
+    const k = String((r && r[0]) || '').trim(), v = String((r && r[1]) || '').trim();
+    const m = k.indexOf(FILE_KEY_PREFIX) === 0 ? /^(\d{4})$/.exec(k.slice(FILE_KEY_PREFIX.length)) : null;
+    if (m && v && Number(m[1]) <= Number(maxYear) && out.indexOf(Number(m[1])) < 0) out.push(Number(m[1]));
+  });
+  return out.sort(function (a, b) { return b - a; });
+}
 // '설정' 탭 행 배열(A2:C)에서 해당 연도 파일 ID를 찾는다. 없으면 null (추측하지 않음).
 function findFileId(settingRows, year) {
   const key = FILE_KEY_PREFIX + year;
@@ -797,6 +807,31 @@ CREATE_RULES.crisis = {
 // v1.27(2026-10-28 재홍님): 허용 = 이번 달, 또는 지난달(오늘이 이번 달 closeDay일 이하일 때만). closeDay = monthCloseDay(인사평가설정).
 //   (예전: 오늘-(N-1)일이 속한 달까지 — 14일 규칙이 월 단위 항목에 맞지 않아 바꿈)
 // 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
+// ── diff ②-1 (j) 1월 유예 (설계서 6-3 "1월 전년도 입력 허용", ㉑ ⑤·v1.31) ──
+// 전년도입력마감일(인사평가설정, 1~31 정수, 없거나 이상하면 15)
+const GRACE_KEY = '전년도입력마감일';
+const GRACE_DEFAULT = 15;
+function graceDayOf(settingsRows) {
+  const row = (settingsRows || []).find(function (r) { return String((r && r[0]) || '').trim() === GRACE_KEY; });
+  const n = Number(String((row && row[1]) || '').trim());
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : GRACE_DEFAULT;
+}
+// 고른 해의 상태: 'current' 올해 / 'grace' 작년이고 오늘이 1월 1일~graceDay일 / 'closed' 그 밖의 지난해. (올해보다 큰 해는 부르기 전에 거른다)
+function yearMode(year, nowMs, graceDay) {
+  const today = seoulIsoDate(nowMs), ty = Number(today.slice(0, 4));
+  if (Number(year) === ty) return 'current';
+  if (Number(year) === ty - 1 && today.slice(5, 7) === '01' && Number(today.slice(8, 10)) <= Number(graceDay || GRACE_DEFAULT)) return 'grace';
+  return 'closed';
+}
+// 1월 유예 기간에 전년도 파일로 저장할 때의 날짜 검사(v1.31 2026-11-10 재홍님): 일 단위·월 단위 기간 제한 모두 면제.
+// 날짜(대면영업 date, 월 단위 month·startMonth, 위기관리 끝 날짜 month)가 모두 그 파일 연도 안 + 끝 날짜(달)가 오늘(이번 달) 이후가 아니면 ''.
+function checkGraceRecord(v, today, fileYear) {
+  const ds = [v && v.date, v && v.month, v && v.startMonth].filter(Boolean).map(String);
+  if (ds.some(function (d) { return Number(d.slice(0, 4)) !== Number(fileYear); })) return 'DATE_OTHER_YEAR';
+  const end = String((v && (v.date || v.month)) || '');
+  if (end && end > today.slice(0, end.length)) return 'DATE_FUTURE';
+  return '';
+}
 function checkRecordMonth(month, startMonth, today, closeDay, fileYear) {
   if (Number(startMonth.slice(0, 4)) !== Number(fileYear)) return 'DATE_OTHER_YEAR';
   // (2026-11-10 위기관리) month 자리에 끝 날짜 'YYYY-MM-DD'가 오면: 오늘 이후 날짜는 DATE_FUTURE, 나머지는 그 날짜의 달로 같은 검사
@@ -867,6 +902,10 @@ module.exports.validateCreate = validateCreate;
 module.exports.planCreate = planCreate;
 module.exports.createFormFor = createFormFor;
 module.exports.checkRecordMonth = checkRecordMonth;
+module.exports.graceDayOf = graceDayOf;
+module.exports.yearMode = yearMode;
+module.exports.checkGraceRecord = checkGraceRecord;
+module.exports.yearsFromSettings = yearsFromSettings;
 
 // =====================================================================
 // 2-라 (설계서 v1.25 ⑳-7): 팀원 본인 기록 고치기(action update)·지우기(action delete) — 순수 함수.

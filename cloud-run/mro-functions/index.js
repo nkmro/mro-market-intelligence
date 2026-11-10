@@ -3799,6 +3799,29 @@ exports.materialSweepTest = async (req, res) => {
 // =====================================================================
 const competency = require('./lib/competency');
 
+// 역량평가 diff ②-1 (j) 연도 판단 — 설계서 6-3 "1월 전년도 입력 허용", ㉑ ⑤·v1.31.
+// 화면이 보낸 year(없으면 올해). 올해보다 큰 해 = BAD_YEAR(12월에 미리 만든 다음 해 파일은 1월 1일 전까지 안 보이고 못 씀).
+// mode: 'current' 올해 / 'grace' 작년 + 오늘이 1월 1일~전년도입력마감일 / 'closed' 그 밖의 지난해(보기만).
+// forWrite면 closed를 YEAR_CLOSED로 거절(1월 16일 0시 서울부터 — 날짜는 서버가 판단).
+// 전년도입력마감일은 작년 파일(입력받는 쪽) 인사평가설정에서 읽는다 — 1월에 작년을 고른 요청만 1번 더 읽음(못 읽으면 15).
+async function competencyYear_(client, settingRows, reqYear, nowMs, forWrite) {
+  const thisYear = competency.seoulYear(nowMs);
+  const y = (reqYear === undefined || reqYear === null || reqYear === '') ? thisYear : Number(reqYear);
+  if (!Number.isInteger(y) || y > thisYear) return { ok: false, error: 'BAD_YEAR', year: y };
+  const fileId = competency.findFileId(settingRows || [], y);
+  if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: y };
+  let graceDay = null;
+  if (y === thisYear - 1 && competency.seoulIsoDate(nowMs).slice(5, 7) === '01') {
+    try {
+      const vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C')]);
+      graceDay = competency.graceDayOf((vr[0] && vr[0].values) || []);
+    } catch (e) { graceDay = competency.graceDayOf([]); }
+  }
+  const mode = competency.yearMode(y, nowMs, graceDay);
+  if (forWrite && mode === 'closed') return { ok: false, error: 'YEAR_CLOSED', year: y, graceDay: graceDay };
+  return { ok: true, year: y, fileId: fileId, mode: mode, graceDay: graceDay };
+}
+
 exports.getCompetencyTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -3930,11 +3953,11 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   if (view === 'team' && viewer.role !== '팀장' && viewer.role !== '임원') {
     res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'FORBIDDEN' }); return;
   }
-  const targetYear = Number(year) || competency.seoulYear();
-  const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-  if (!fileId) {
-    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear }); return;
-  }
+  // diff ②-1: 연도 판단(올해보다 큰 해 거절) + 화면 연도 칸용 years·yearMode·graceDay
+  const nowMs = Date.now();
+  const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], year, nowMs, false);
+  if (!yr.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: yr.error, year: yr.year }); return; }
+  const targetYear = yr.year, fileId = yr.fileId;
   // v1.11 (설계서 4-2-1): 기록 탭 자동 인식 — 시트 정보(메모리 5분 저장) + 값 읽기 1번.
   let loaded;
   const c0 = Date.now();
@@ -3946,6 +3969,7 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   }
   timings.competencySheetMs = Date.now() - c0;
   const base = { ok: true, view: view, year: targetYear,
+    years: competency.yearsFromSettings((mro[1] && mro[1].values) || [], competency.seoulYear(nowMs)), yearMode: yr.mode, graceDay: yr.graceDay,
     viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
   const criteriaRows = competency.criteriaRows(loaded.get('criteria') || []);
   if (view === 'criteria') {
@@ -4177,9 +4201,10 @@ async function competencyReply_(req, res, auth, t0, timings) {
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
     if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
-    const targetYear = Number(b.year) || competency.seoulYear();
-    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    // diff ②-1: 화면이 보낸 year를 검사 없이 쓰던 틈 막기 — 다른 저장과 같은 연도 판단(1/16부터 작년 거절, 다음 해 거절)
+    const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], b.year, Date.now(), true);
+    if (!yr.ok) return yr; // { ok:false, error: YEAR_CLOSED·BAD_YEAR·COMPETENCY_SETTINGS_MISSING, year, graceDay }
+    const targetYear = yr.year, fileId = yr.fileId;
     const holderId = crypto.randomUUID();
     const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
       waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
@@ -4251,9 +4276,10 @@ async function competencyCreate_(req, res, auth, t0, timings) {
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
     if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
     const nowMs = Date.now();
-    const targetYear = competency.seoulYear(nowMs); // 올해 파일만(1월 유예는 별도 단계)
-    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    // diff ②-1: 올해, 또는 1월 유예 기간의 작년 파일(b.year). 그 밖은 YEAR_CLOSED·BAD_YEAR
+    const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], b.year, nowMs, true);
+    if (!yr.ok) return yr; // { ok:false, error: YEAR_CLOSED·BAD_YEAR·COMPETENCY_SETTINGS_MISSING, year, graceDay }
+    const targetYear = yr.year, fileId = yr.fileId;
     const holderId = crypto.randomUUID();
     const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
       waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
@@ -4281,7 +4307,9 @@ async function competencyCreate_(req, res, auth, t0, timings) {
       const windowDays = competency.recordWindowDays((vr[0] && vr[0].values) || []);
       // ㉑ 날짜 검사: 날짜가 있는 칸(대면영업 미팅 일시)은 최근 N일, 달 단위 칸(원가개선·자기개발·직급역량 수행 기간)은 이번 달 + 지난달(월기록마감일까지, v1.27). N 미완료처럼 둘 다 없으면 검사 없음.
       const todayIso = competency.seoulIsoDate(nowMs);
-      const dateErr = v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
+      // diff ②-1 (v1.31): 1월 유예 기간의 작년 파일은 기간 제한 면제 — 그 해 안의 날짜이고 미래가 아니면 저장
+      const dateErr = yr.mode === 'grace' ? competency.checkGraceRecord(v, todayIso, targetYear)
+        : v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
         : (v.month ? competency.checkRecordMonth(v.month, v.startMonth, todayIso, competency.monthCloseDay((vr[0] && vr[0].values) || []), targetYear) : '');
       if (dateErr) return { ok: false, error: dateErr, field: v.date ? 'meetDate' : 'periodTo', windowDays: windowDays, monthCloseDay: competency.monthCloseDay((vr[0] && vr[0].values) || []) };
       const allIds = new Set();
@@ -4343,9 +4371,10 @@ async function competencyEdit_(req, res, auth, t0, timings, action) {
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
     if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
     const nowMs = Date.now();
-    const targetYear = competency.seoulYear(nowMs);
-    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    // diff ②-1: 올해, 또는 1월 유예 기간의 작년 파일(b.year)
+    const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], b.year, nowMs, true);
+    if (!yr.ok) return yr; // { ok:false, error: YEAR_CLOSED·BAD_YEAR·COMPETENCY_SETTINGS_MISSING, year, graceDay }
+    const targetYear = yr.year, fileId = yr.fileId;
     const holderId = crypto.randomUUID();
     const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
       waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
@@ -4388,7 +4417,8 @@ async function competencyEdit_(req, res, auth, t0, timings, action) {
       if (plan.needDateCheck) {
         const windowDays = competency.recordWindowDays((vr[0] && vr[0].values) || []);
         const todayIso = competency.seoulIsoDate(nowMs);
-        const dateErr = v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
+        const dateErr = yr.mode === 'grace' ? competency.checkGraceRecord(v, todayIso, targetYear) // diff ②-1 v1.31
+          : v.date ? competency.checkRecordDate(v.date, todayIso, windowDays, targetYear)
           : (v.month ? competency.checkRecordMonth(v.month, v.startMonth, todayIso, competency.monthCloseDay((vr[0] && vr[0].values) || []), targetYear) : '');
         if (dateErr) return { ok: false, error: dateErr, field: v.date ? 'meetDate' : 'periodTo', windowDays: windowDays, monthCloseDay: competency.monthCloseDay((vr[0] && vr[0].values) || []) };
       }
@@ -4431,9 +4461,10 @@ async function competencyReplyEdit_(req, res, auth, t0, timings, action) {
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
     if (viewer.status !== '활성' || competency.MEMBER_ROLES.indexOf(viewer.role) < 0) return { ok: false, error: 'FORBIDDEN' };
-    const targetYear = competency.seoulYear();
-    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    // diff ②-1: 올해, 또는 1월 유예 기간의 작년 파일(b.year)
+    const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], b.year, Date.now(), true);
+    if (!yr.ok) return yr; // { ok:false, error: YEAR_CLOSED·BAD_YEAR·COMPETENCY_SETTINGS_MISSING, year, graceDay }
+    const targetYear = yr.year, fileId = yr.fileId;
     const holderId = crypto.randomUUID();
     const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
       waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
@@ -4514,9 +4545,10 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
     if (viewer.status !== '활성') return { ok: false, error: 'FORBIDDEN' };
     if (isReq ? competency.MEMBER_ROLES.indexOf(viewer.role) < 0 : viewer.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
     const nowMs = Date.now();
-    const targetYear = competency.seoulYear(nowMs);
-    const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
-    if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: targetYear };
+    // diff ②-1: 올해, 또는 1월 유예 기간의 작년 파일(b.year)
+    const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], b.year, nowMs, true);
+    if (!yr.ok) return yr; // { ok:false, error: YEAR_CLOSED·BAD_YEAR·COMPETENCY_SETTINGS_MISSING, year, graceDay }
+    const targetYear = yr.year, fileId = yr.fileId;
     const holderId = crypto.randomUUID();
     const gotLock = await acquireLock(firestore, COMPETENCY_LOCK_NAME, holderId, {
       waitMs: COMPETENCY_LOCK_WAIT_MS, staleMs: COMPETENCY_LOCK_STALE_MS, pollMs: COMPETENCY_LOCK_POLL_MS
