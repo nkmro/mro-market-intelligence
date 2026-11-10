@@ -50,11 +50,14 @@
 | `registerPushSubscriptionTest` | `.../registerPushSubscriptionTest` | 없음(신규 기능, Apps Script 대응 없음) | ✅ **프로덕션에 실제 연동됨** (`feed.html`) | POST + `sessionToken` 필요. FCM 푸시 토큰을 Firestore `pushSubscriptions/{email}_{deviceId}`에 upsert 저장. 로그인 시 자동 호출(`initPushOnLogin_`). 코드는 8/28에 커밋됐지만 Cloud Run 배포가 누락되어 있었고, **2026-09-01에 배포 완료**(그 전까지는 프론트가 정상 동작하는 것처럼 보여도 실제로는 아무 기기도 푸시를 등록하지 못하는 상태였음) |
 | `pushBatchTest` | `.../pushBatchTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (Cloud Scheduler `push-batch-5min`, 5분마다) | 사람이 직접 호출하는 API가 아님 — Cloud Scheduler 전용 배치. `role !== '일반'`인 사용자 전원에게 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송(0건 카테고리 제외, 전부 0건이면 미발송). `PUSH_NOTIFICATION_STAGE6_DESIGN.md` 참고. **(2026-09-01 버그 수정, 커밋 `be8d6fa`)** `lib/feedEngine.js`의 `hasUnreadReply`/`hasAwaitingReply`가 존재하지 않는 `comment.createdAt`(서버 원시 댓글 객체는 `createdAtRaw`만 가짐)을 참조해, 스레드를 한 번이라도 읽음 처리하면 그 뒤 새 답글을 영원히 감지 못하던 버그를 `sheetSerialToMs(createdAtRaw)` 기준 비교로 수정 |
 | `reminderBatchTest` | `.../reminderBatchTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (Cloud Scheduler `reminder-batch-hourly`, 매시 정각) | 사람이 직접 호출하는 API가 아님 — Cloud Scheduler 전용 배치. 설정 시트 `담당자댓글마감시각`(쉼표로 여러 시각 지정 가능, 예: `13,17`)에 맞춰 담당자에게 리마인더 푸시 발송. Firestore `reminderDeliveries`(`날짜_시각_이메일`)로 시각별 중복 발송 방지 |
+| `getCompetencyTest` | `.../getCompetencyTest` | 없음(신규 기능, Apps Script 대응 없음) | ✅ **프로덕션에 실제 연동됨** (`feed.html`, `CLOUD_RUN_GET_COMPETENCY_URL`) | POST + `sessionToken` 필요. 인사평가(역량평가) 읽기 — view `mine`(내 역량 기록)/`team`(팀 역량평가, 팀장·임원)/`criteria`(평가 기준 보기)/`ping`(관리자, 인사평가 설정). `year`(없으면 올해)로 연도 파일을 고르고 응답에 `years`·`yearMode`·`graceDay`. Apps Script 대체 경로 없음. 리비전 `getcompetencytest-00015-kes`(2026-11-10). `COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md` 참고 |
+| `saveCompetencyTest` | `.../saveCompetencyTest` | 없음(신규 기능) | ✅ **프로덕션에 실제 연동됨** (`feed.html`, `CLOUD_RUN_SAVE_COMPETENCY_URL`) | POST + `sessionToken` 필요. **쓰기** — action `backfill`/`create`/`update`/`delete`/`reply`/`replyEdit`/`replyClear`/`editRequest`/`editApprove`/`editReject`/`review`/`reviewEdit`. `writeLocks/competencyEval` + `writeIdempotency`. 저장은 올해 파일, 또는 1월 유예 기간의 작년 파일만(그 밖 `YEAR_CLOSED`, 올해보다 큰 해 `BAD_YEAR`). 리비전 `savecompetencytest-00016-fub`(2026-11-10) |
 | `firestoreTest` | `.../firestoreTest` | 없음 | 🧪 진단용 | Firestore 연결 확인용 스캐폴딩. 공개 API가 아님 |
 | `sheetPingTest` | `.../sheetPingTest` | 없음 | 🧪 진단용 | Google Sheets API 연결 확인용 스캐폴딩. 공개 API가 아님 |
 | `pingTest` | `.../pingTest` | 없음 | 🧪 진단용 | 가장 단순한 헬스체크. 공개 API가 아님 |
 
 > URL 전체 형식: `https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/<함수이름>`
+> **2026-11-10**: `index.js`의 `exports.*`는 지금 41개입니다(`grep -o "^exports\.[A-Za-z]*" index.js`). 이 표에 `getCompetencyTest`·`saveCompetencyTest`를 추가했고, 아래 9개는 아직 이 표에 줄이 없습니다 — 기능 설명은 최상위 `README.md`의 해당 절 참고: `unregisterPushSubscriptionTest`(Web Push / FCM 알림 구조), `getPinnedCommentsTest`·`pinCommentTest`·`unpinCommentTest`(댓글 고정), `issueMailBatchTest`(이슈 댓글 메일), `authCodeTest`(회원가입·비밀번호 찾기, 2026-10-08), `suggestMaterialsTest`·`materialSweepTest`(AI 원자재 추천, `MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md`), `dispatchBatchTest`(아래 Cloud Scheduler 작업).
 > 이 표는 2026-09-01 기준입니다(GCP 콘솔의 실제 서비스 목록 및 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드를 직접 대조해 갱신). 2026-08-21 버전 이후 `loginTest`/`getItemsTest`/`getCustomersTest`/`getUsersTest`/`updateCommentTest`/`deleteCommentTest`/`upsertItemTest`/`upsertCustomerTest`/`updateUserTest`/`changePasswordTest`/`updateSettingsTest`/`registerPushSubscriptionTest`/`pushBatchTest`/`reminderBatchTest` 14개 행이 추가됐습니다. 이전 버전에는 `getFeedTest`/`getNotificationsTest`/`getPostByIdTest`/`getCommentsTest`/`getThreadSeenTest`/`markThreadSeenTest`/`postCommentTest` 7개 함수가 통째로 빠져 있었고(추가된 시점에 표 갱신이 누락됨), `whoamiTest`도 실제로는 연동되어 있는데 "실험용"으로 잘못 표시되어 있었습니다.
 
 ## Firestore 구조
@@ -71,14 +74,14 @@
 
 ### `writeLocks` — 쓰기 동시성 잠금 (`lib/writeLock.js`, 여러 함수가 공유)
 
-- 문서 ID = `lockName`(예: `upsertItemAndCustomer` — `upsertItemTest`/`upsertCustomerTest`가 같은 잠금 이름을 공유)
+- 문서 ID = `lockName`(예: `upsertItemAndCustomer` — `upsertItemTest`/`upsertCustomerTest`가 같은 잠금 이름을 공유. 2026-11-10 기준 이름 3개: `upsertItemAndCustomer`, `rawMaterialMaster`(원자재 추천 `suggestMaterialsTest`/`materialSweepTest`, Apps Script 폴백과 공유), `competencyEval`(`saveCompetencyTest`))
 - `acquireLock`/`releaseLock`으로 구성된 범용 모듈. `loginLocks`처럼 특정 함수 전용이 아니라, 여러 쓰기 API가 이름만 다르게 지정해 재사용하는 공통 잠금 장치입니다.
 
 ### `writeIdempotency` — 쓰기 API 중복 실행 방지 (`lib/writeIdempotency.js`, `withIdempotency()`)
 
 - 문서 ID = `idempotencyKey`(클라이언트가 요청마다 생성해 전달)
 - TTL 6시간. Apps Script의 `withIdempotency_`와 동일한 목적(네트워크 재시도로 같은 쓰기가 두 번 실행되는 것을 방지)을 Cloud Run 쪽에서 구현한 것.
-- 적용된 엔드포인트 10개: `markThreadSeenTest`, `postCommentTest`, `loginTest`, `updateCommentTest`, `deleteCommentTest`, `upsertItemTest`, `upsertCustomerTest`, `updateUserTest`, `changePasswordTest`, `updateSettingsTest`
+- 적용된 엔드포인트 13개(2026-11-10 코드 대조): `markThreadSeenTest`, `postCommentTest`, `loginTest`, `updateCommentTest`, `deleteCommentTest`, `upsertItemTest`, `upsertCustomerTest`, `updateUserTest`, `changePasswordTest`, `updateSettingsTest`, `authCodeTest`, `suggestMaterialsTest`, `saveCompetencyTest`
 
 ### `pushSubscriptions` — FCM 푸시 구독 (`registerPushSubscriptionTest`가 upsert)
 

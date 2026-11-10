@@ -65,7 +65,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 
 - **Google Sheets = 사람이 보고 고치는 "진짜" 업무 데이터.** 사용자 계정·설정값·시황게시물·품목·고객·댓글·수집로그·탈락뉴스·삭제이력 등, 재홍님이나 팀원이 직접 열어서 확인하거나 손으로 고칠 수 있어야 하는 데이터는 전부 Sheets에 있습니다. Apps Script(`Code.gs`)와 Cloud Run 함수 양쪽 다 이 Sheets를 읽고 씁니다(Cloud Run은 서비스 계정 IAM 권한으로 접근).
 - **인사평가 파일은 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-10 문서화).** 파일 ID는 코드에 적지 않고 MRO 본 시트 '설정' 탭의 `인사평가파일_{연도}` 키에서 읽습니다. 그 안에 역량 기록 탭(`역량-…`, 자동 인식)·평가 기준 탭(`CRM-역량평가-기준`)·`인사평가설정` 탭이 있고, `getCompetencyTest`/`saveCompetencyTest`(Cloud Run)가 읽고 씁니다. 다음 해 파일은 Apps Script `yearRolloverDaily`가 만듭니다(아래 "Cloud Scheduler 작업" 절 끝 참고).
-- **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 7개의 전체 목록은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
+- **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 전체 목록(13개, 2026-11-10 코드 대조)은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
 - **판단 기준**: "사람이 직접 열람/수정해야 하는가?"가 갈림길입니다. 그렇다면 Sheets, 아니라면(휘발성이거나 순수 동시성 제어용이라면) Firestore입니다. 이 기준 때문에 예를 들어 알림 자체의 원본 판정 데이터(게시물/댓글)는 Sheets에 있지만, "이 사용자에게 마지막으로 어떤 상태를 보냈는지"(중복 발송 방지 signature) 같은 부가 상태는 Firestore(`pushNotifyState` 등)에 있습니다.
 
 ## 뉴스 수집·게시 파이프라인 (`collectMarketNews()`)
@@ -199,18 +199,23 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 
 ## Firestore 컬렉션 전체 목록
 
-Cloud Run 함수들이 쓰는 Firestore 컬렉션 8개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스). 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
+Cloud Run 함수들이 쓰는 Firestore 컬렉션 13개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스. 진단용 `firestoreTest`가 쓰는 `sessions_test`는 제외). **2026-11-10**: `cloud-run/mro-functions/index.js`·`lib/*.js`의 컬렉션 이름을 직접 대조해, 그동안 빠져 있던 5개(`issueMailRuns`·`issueMailDeliveries`·`authCodes`·`authRateLimits`·`materialRowClaims`)를 추가하고 `writeLocks`·`writeIdempotency` 사용 함수를 갱신했습니다. 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
 
 | 컬렉션 | 문서 ID | 쓰는 함수 | 용도 |
 |---|---|---|---|
 | `sessions` | `sessionToken` | `sessionSyncTest`(기록), 나머지 대부분(조회) | 로그인 세션(Apps Script 로그인 시 이중 쓰기로 동기화, 6시간 만료) |
 | `loginLocks` | `email` | `loginTest`(`acquireLoginLock_`/`releaseLoginLock_`) | 같은 이메일로 동시에 들어오는 로그인 시도를 직렬화하는 분산 락(죽은 락은 10초 후 자가 회수) |
-| `writeLocks` | `lockName`(예: `upsertItemAndCustomer`, `competencyEval`) | `upsertItemTest`/`upsertCustomerTest`(`lib/writeLock.js`), `saveCompetencyTest`(`competencyEval`, 2026-11-10 문서화) | 품목·고객사마스터에 동시에 쓸 수 있는 두 함수가 공유하는 분산 락. `loginLocks`와 같은 정책(트랜잭션 선점 + 죽은 락 자가 회수)을 재사용 가능한 모듈로 일반화한 것 |
-| `writeIdempotency` | `idempotencyKey`(`feed.html`의 `generateIdempotencyKey_()`가 생성) | `markThreadSeenTest`/`postCommentTest`/`loginTest`/`updateCommentTest`/`deleteCommentTest`/`upsertItemTest`/`upsertCustomerTest`/`updateUserTest`/`changePasswordTest`/`updateSettingsTest`/`saveCompetencyTest` (총 11개 쓰기 함수, `lib/writeIdempotency.js`) | "같은 요청이 재시도로 두 번 도착해도 실제 쓰기는 한 번만" 보장. `Code.gs`의 `withIdempotency_`(CacheService+LockService)와 동일한 정책을 Firestore 트랜잭션으로 재현(TTL 6시간) |
+| `writeLocks` | `lockName`: `upsertItemAndCustomer` · `rawMaterialMaster` · `competencyEval` | `upsertItemTest`/`upsertCustomerTest`(+ 원자재 추천이 품목마스터에 쓸 때, `upsertItemAndCustomer`), `suggestMaterialsTest`/`materialSweepTest`(`rawMaterialMaster` — Apps Script 폴백도 같은 문서), `saveCompetencyTest`(`competencyEval`) (`lib/writeLock.js`) | 품목·고객사마스터에 동시에 쓸 수 있는 두 함수가 공유하는 분산 락. `loginLocks`와 같은 정책(트랜잭션 선점 + 죽은 락 자가 회수)을 재사용 가능한 모듈로 일반화한 것 |
+| `writeIdempotency` | `idempotencyKey`(`feed.html`의 `generateIdempotencyKey_()`가 생성) | `markThreadSeenTest`/`postCommentTest`/`loginTest`/`updateCommentTest`/`deleteCommentTest`/`upsertItemTest`/`upsertCustomerTest`/`updateUserTest`/`changePasswordTest`/`updateSettingsTest`/`authCodeTest`/`suggestMaterialsTest`/`saveCompetencyTest` (총 13개 함수, `lib/writeIdempotency.js`) | "같은 요청이 재시도로 두 번 도착해도 실제 쓰기는 한 번만" 보장. `Code.gs`의 `withIdempotency_`(CacheService+LockService)와 동일한 정책을 Firestore 트랜잭션으로 재현(TTL 6시간) |
 | `pushSubscriptions` | `{email}_{deviceId}` | `registerPushSubscriptionTest` | 기기별 FCM 푸시 토큰 |
 | `pushNotifyState` | `email` | `pushBatchTest` | 5분 주기 통합 푸시의 중복 발송 방지(직전 집계값 signature 비교) |
 | `reminderDeliveries` | `{날짜}_{targetHour}_{email}` | `reminderBatchTest` | 담당자 댓글 마감 리마인더의 시각별 하루 1회 발송 보장 |
 | `pinnedComments` | `commentId` | `pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest` | 팀장/임원이 고정한 "이슈 댓글"(전역 최대 3개), 고정 시점 내용 스냅샷 저장 |
+| `issueMailRuns` | `{날짜}` | `issueMailBatchTest` | 이슈 댓글 메일의 하루 1회 실행 기록(status·sent 등 — 위 "이슈 댓글 메일" 절) |
+| `issueMailDeliveries` | `{날짜}_{받는 사람 메일}` | `issueMailBatchTest` | 받는 사람별 발송 기록(같은 날 두 번 안 보냄) |
+| `authCodes` | (`lib/authCodes.js`가 정함) | `authCodeTest` | 회원가입·비밀번호 찾기 인증코드(10분 보관) |
+| `authRateLimits` | (`lib/authCodes.js`가 정함) | `authCodeTest` | 인증코드 요청 횟수 제한(1시간) |
+| `materialRowClaims` | 품목 행 키(품목코드, 없으면 행 번호) | `suggestMaterialsTest`/`materialSweepTest`(`lib/rowClaim.js`) | AI 원자재 추천의 품목 행 처리권(같은 행을 두 요청이 동시에 처리하지 않게, 90초 만료) |
 
 > `loginLocks`/`writeLocks`/`writeIdempotency` 3개는 2026-09-02 이 문서 정리 작업 중 코드(`cloud-run/mro-functions/index.js`, `lib/writeLock.js`, `lib/writeIdempotency.js`)를 직접 확인해 처음으로 문서화했습니다 — 이전까지는 `cloud-run/README.md`의 "Firestore 구조" 절에도 빠져 있었습니다. 상세 필드 구성 등은 `cloud-run/README.md`도 함께 갱신해 두었습니다.
 

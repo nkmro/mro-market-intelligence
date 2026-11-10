@@ -37,7 +37,11 @@ Apps Script 편집기 → 프로젝트 설정 → 스크립트 속성에서 아�
 | `SHEET_ID` | 위 Google Sheets 문서의 ID |
 | `GEMINI_API_KEY` | Google Gemini API 호출용 |
 | `DEEPSEEK_API_KEY` | DeepSeek API 호출용 |
-| `AI_PROVIDER` | 사용할 AI 제공자 선택 (Gemini/DeepSeek 등) |
+| `AI_PROVIDER` | 사용할 AI 제공자 선택 (Gemini/DeepSeek/OpenAI — 2026-11-09부터 OpenAI) |
+| `OPENAI_API_KEY` | OpenAI API 호출용 (2026-11 추가) |
+| `OPENAI_MODEL` | OpenAI 모델 이름 (운영: `gpt-5.4-mini`) |
+| `OPENAI_REASONING_EFFORT` | OpenAI 추론 강도 (운영: `low`) |
+| `SUGGEST_PROXY_URL` / `SUGGEST_PROXY_TOKEN` | 품목마스터 F열 원자재 추천을 Cloud Run(`suggestMaterialsTest`)으로 보내는 스위치 — 둘 다 있으면 켜짐(`MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md`) |
 | `NAVER_CLIENT_ID` | 네이버 뉴스 검색 API 클라이언트 ID |
 | `NAVER_CLIENT_SECRET` | 네이버 뉴스 검색 API 시크릿 |
 | `CATCHUP_TRIGGER_ID` | 특정 트리거(자동 실행) 식별자 |
@@ -62,4 +66,12 @@ Apps Script 편집기 → 프로젝트 설정 → 스크립트 속성에서 아�
 
 ## 현재 운영 상태
 
-`Code.gs`는 계속 프로덕션에서 대부분의 API(로그인, 피드, 설정 변경, 품목/고객 관리 등)를 처리하는 **주 백엔드**입니다. `getTeams`, `getSettings` 두 개의 조회성 API만 Cloud Run으로 (자동/수동 롤백 가능한 형태로) 부분 전환되었고, 나머지는 전부 이 코드가 처리합니다.
+`Code.gs`는 계속 프로덕션에서 대부분의 API(로그인, 피드, 설정 변경, 품목/고객 관리 등)를 처리하는 **주 백엔드**입니다. `getTeams`, `getSettings` 두 개의 조회성 API만 Cloud Run으로 (자동/수동 롤백 가능한 형태로) 부분 전환되었고, 나머지는 전부 이 코드가 처리합니다. **(2026-11-10 정정: 이 문장은 초기 기록입니다. 지금은 대부분의 실사용 action이 Cloud Run으로 전환·연동되어 있고, Apps Script는 폴백 경로와 뉴스 수집·연도 전환 같은 시간 트리거 작업을 맡습니다 — 최신 상태는 최상위 `README.md`의 API 매핑표 참고.)**
+
+## 시간 트리거와 메일 권한 (2026-11-10 추가)
+
+- `collectMarketNews()` — 뉴스 수집·게시(설정 `트리거시각`). 자세한 단계는 최상위 `README.md`의 "뉴스 수집·게시 파이프라인" 절.
+- `yearRolloverDaily()` — 인사평가 연도 자동 전환. 일 단위 타이머, 오전 4~5시(GMT+09:00). 12월 `연도전환시작일`(인사평가 파일의 `인사평가설정` 탭, 기본 1)~31일에 `인사평가파일_{다음 해}`가 없으면 올해 인사평가 파일을 복사해 다음 해 파일을 만들고 '설정' 탭에 등록합니다. 12월에 끝내 실패했으면 1월에도 그해 파일이 없을 때만 이어서 시도하고, 이미 있으면 조용히 끝납니다. 성공 1번·실패할 때마다 관리자에게 메일.
+  - 관련 함수: `installYearRolloverTrigger`(트리거 등록, 1번만), `yearRolloverRunNow`(수동 실행), `yearRolloverTest`/`yearRolloverCleanupTest`(시험 파일 `TEST_{연도}_인사평가` 만들기·정리, '설정' 탭에 쓰지 않음).
+- 메일: `MailApp.sendEmail`을 씁니다(2026-11-10 `GmailApp`에서 변경 — `GmailApp.sendEmail`은 `https://mail.google.com/` 전체 권한이 필요해서). `appsscript.json`의 `oauthScopes`에 `https://www.googleapis.com/auth/script.send_mail`이 있어야 하고, 권한 목록을 바꾸면 편집기에서 한 번 다시 승인해야 합니다.
+- `appsscript.json`도 `Code.gs`처럼 편집기가 원본이고 이 저장소가 미러입니다(2026-11-10 기준 두 곳이 같은 내용).
