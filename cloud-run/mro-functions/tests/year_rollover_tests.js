@@ -87,7 +87,8 @@ function world(o) {
     LockService: { getScriptLock: () => ({ tryLock: () => st.lockOk, releaseLock: () => { st.lockReleased++; } }) },
     DriveApp: { getFileById: id => { if (!st.files[id]) throw new Error('no file ' + id); return fileApi(st.files[id]); } },
     SpreadsheetApp: { openById: id => ({ getSheets: () => st.files[id].sheets.map(s => s.api), getSheetByName: n => { const s = st.files[id].sheets.find(x => x.name === n); return s ? s.api : null; } }), flush: () => {} },
-    GmailApp: { sendEmail: (to, subj, body, opt) => { st.mails.push({ to, subj, body, opt }); } },
+    MailApp: { sendEmail: (to, subj, body, opt) => { if (o.mailThrows) throw new Error('mail down'); st.mails.push({ to, subj, body, opt }); } },
+    GmailApp: { sendEmail: () => { throw new Error('GmailApp은 쓰면 안 됨(권한 없음)'); } },
     ScriptApp: {
       getProjectTriggers: () => st.triggers.map(tr => ({ getHandlerFunction: () => tr.fn, _tr: tr })),
       deleteTrigger: x => { st.triggers = st.triggers.filter(tr => tr !== x._tr); },
@@ -186,6 +187,22 @@ const KST = (y, m, d, h) => new Date(Date.UTC(y, m - 1, d, (h === undefined ? 4 
   const w = world({ props: { YR_TEST_2027_FILEID: 'F1' } }); // 잘못해서 올해 파일 ID가 들어간 경우
   const trashed = w.fn.yearRolloverCleanupTest();
   t('Y16 정리는 TEST_로 시작하는 파일만 — 올해 파일은 절대 휴지통 안 감', trashed.length === 0 && w.file('F1').trashed === false);
+}
+// ───── (11/10 시험 결과) 메일은 MailApp, from 없음 ─────
+{
+  const w = world();
+  w.fn.yrRun_(false, KST(2026, 12, 1));
+  const m = w.st.mails[0] || {};
+  t('Y28 메일은 MailApp으로(이름 MRO 워크허브, from 옵션 없음)', m.opt && m.opt.name === 'MRO 워크허브' && !('from' in m.opt), m);
+  t('Y29 Code.gs 연도 전환 부분에 GmailApp 호출 없음', !/GmailApp\.\w+\(/.test(SRC) && /MailApp\.sendEmail/.test(SRC));
+  const w2 = world({ mailThrows: true });
+  const r2 = w2.fn.yrRun_(false, KST(2026, 12, 1));
+  t('Y30 메일이 실패해도 파일 생성·설정 등록은 완료(로그에 메일 실패)', r2.ok && w2.settings.rows.some(x => x[0] === '인사평가파일_2027') && /메일 실패/.test(w2.st.log), r2);
+}
+{
+  const man = JSON.parse(fs.readFileSync(path.join(repo, 'apps-script', 'appsscript.json'), 'utf8'));
+  t('Y31 appsscript.json: script.send_mail 권한 있음', man.oauthScopes.indexOf('https://www.googleapis.com/auth/script.send_mail') >= 0, man.oauthScopes);
+  t('Y31b appsscript.json: gmail.send 권한 그대로 있음', man.oauthScopes.indexOf('https://www.googleapis.com/auth/gmail.send') >= 0, man.oauthScopes);
 }
 // ───── 예약 등록 ─────
 {

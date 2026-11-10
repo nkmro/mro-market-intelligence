@@ -5040,9 +5040,11 @@ Logger.log('연도 전환 예약 등록 완료: 매일 4시(서울), ' + YR_HAND
 return n;
 }
 
+// (11/10 시험에서 확인) GmailApp.sendEmail은 https://mail.google.com/ 권한이 필요해 이 프로젝트(gmail.send만)에서 실패 →
+// MailApp(권한 script.send_mail, appsscript.json에 추가). 보내는 주소는 스크립트 주인(joojhong@gmail.com), 이름만 'MRO 워크허브'.
 function yrMail_(test, subject, body) {
 try {
-GmailApp.sendEmail(ADMIN_EMAIL, (test ? '[시험] ' : '') + '[MRO 워크허브] ' + subject, body, { from: ADMIN_EMAIL, name: 'MRO 워크허브' });
+MailApp.sendEmail(ADMIN_EMAIL, (test ? '[시험] ' : '') + '[MRO 워크허브] ' + subject, body, { name: 'MRO 워크허브' });
 } catch (e) {
 Logger.log('연도 전환 메일 실패: ' + e);
 }
