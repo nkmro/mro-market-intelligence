@@ -587,6 +587,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .rp-cal-g button:disabled { color: #c9c5d4; cursor: default; }
 .rp-in { border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 110px; box-sizing: border-box; }
 .rp-u { font-size: 12px; color: var(--text-muted); margin: 0 10px 0 4px; }
+.rp-opt { font-size: 12px; font-weight: 400; color: var(--text-muted); } /* 2026-11-10 위기관리 공급사(선택) */
 .rp-help { font-size: 12px; color: var(--text-muted); grid-column: 2; }
 .rp-err { font-size: 12px; color: var(--danger); grid-column: 2; }
 .rp-act { display: flex; gap: 8px; justify-content: flex-end; }
@@ -4991,6 +4992,7 @@ const st = compCreateState_;
 // 2-라: 같은 상태(compCreateState_)를 고치기에도 씀 — editRid가 있으면 맨 위 추가 칸은 버튼만, 그 카드 안(edit)에 폼
 if (!st || st.tab !== t.key || !!st.editRid !== !!edit) return `<div class="cr-bar"><button class="rp-btn" onclick="compCreateOpen_('${escapeHtml(t.key)}','${escapeHtml(form)}')">＋ ${escapeHtml(t.label)} 기록 추가</button></div>`;
 if (COMP_DONE_FORMS_[st.form]) return compCreateDoneHtml_(st);
+if (st.form === 'crisis') return compCreateCrisisHtml_(st); // 2026-11-10 위기관리
 const errs = st.errs || {};
 const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
 const dis = st.saving ? 'disabled' : '';
@@ -5055,7 +5057,8 @@ function compCreateInit_(t, form) {
 const today = compSeoulToday_();
 return { tab: t.key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
 cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null,
-supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '' };
+supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '',
+dfrom: '', dto: '', dcal: '', dcalY: +today.slice(0, 4), dcalM: +today.slice(5, 7), sales: '', profit: '', cause: '', result: '' };
 }
 function compCreateCancel_() {
 if (compCreateState_ && compCreateState_.saving) return;
@@ -5095,6 +5098,7 @@ compCreateRender_();
 // 화면 검사(서버 CREATE_RULES.faceSales와 같은 규칙)
 function compCreateCheck_(st) {
 if (COMP_DONE_FORMS_[st.form]) return compCreateDoneCheck_(st);
+if (st.form === 'crisis') return compCreateCrisisCheck_(st);
 const e = {};
 const cu = st.customer.trim();
 if (!cu || cu.length > 100) e.customer = '고객사를 적어 주세요.';
@@ -5121,7 +5125,9 @@ if (Object.keys(st.errs).length) { compCreateRender_(); return; }
 st.saving = true; compCreateRender_();
 // 응답을 못 받았을 때만 같은 키로 다시 보낸다(이미 저장됐다면 서버가 같은 결과를 돌려줌 — 두 줄 생기지 않음)
 st.key = st.key || generateIdempotencyKey_();
-const body = st.form === 'costSave'
+const body = st.form === 'crisis'
+? { customer: st.customer, supplier: st.supplier, periodFrom: st.dfrom, periodTo: st.dto, sales: st.sales, profit: st.profit, cause: st.cause, result: st.result }
+: st.form === 'costSave'
 ? { customer: st.customer, supplier: st.supplier, item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: st.open, amount: st.amount, itemKeys: st.keys }
 : COMP_DONE_FORMS_[st.form] ? { item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: false, evaluation: st.evaluation }
 : { customer: st.customer, people: st.people.map(function (p) { return { name: p.name, rank: p.rank }; }), meetDate: st.date, meetHour: Number(st.hour),
@@ -5134,7 +5140,7 @@ if (res && res.ok && res.record) { if (st.editRid) compEditApply_(res.record); e
 const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어요.', TAB_NOT_SUPPORTED: '이 탭은 아직 앱에서 추가할 수 없어요.', TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.',
 HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
-DATE_TOO_OLD: COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
+DATE_TOO_OLD: st.form === 'crisis' ? '끝 날짜는 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
 BAD_INPUT: '입력값을 확인해 주세요.', RATE_LIMITED: COMP_RATE_TEXT_ };
 if (st.editRid) Object.assign(m, COMP_EDIT_ERR_, { FORBIDDEN: '팀원(일반·담당)만 기록을 고칠 수 있어요.' }); // 2-라
 let text;
@@ -5268,6 +5274,95 @@ const keys = String(st.keys || '').split(',').map(function (x) { return x.trim()
 if (!String(st.keys || '').trim() || keys.some(function (x) { return !/^\d{1,30}$/.test(x); })) e.itemKeys = '아이템키를 숫자로 적어 주세요(여러 개는 쉼표로 구분).';
 return e;
 }
+// ── 위기관리 기록 추가·수정(2026-11-10 재홍님 결정) ── 서버 CREATE_RULES.crisis와 같은 규칙.
+// 고객사(필수)·공급사(선택)·대처 기간(날짜 달력 시작~끝, 끝 필수)·위기 규모(매출·이익 천원, 0 이상)·위기 발생 원인·대처 결과(필수).
+// 날짜 범위(원가개선과 같은 달 단위): 끝 날짜 = 지난달 1일(월기록마감일까지만)~오늘, 시작 날짜 = 올해 1월 1일~끝 날짜(끝이 없으면 오늘).
+function compCrisisRange_() {
+const mr = compCostMonths_(), today = compSeoulToday_();
+return { yearStart: today.slice(0, 4) + '-01-01', oldest: '20' + mr.oldest.slice(0, 2) + '-' + mr.oldest.slice(2) + '-01', today: today, mr: mr };
+}
+function compCrisisPeriod_(st) { const d6 = function (d) { return d.slice(2, 4) + d.slice(5, 7) + d.slice(8, 10); }; return st.dfrom && st.dto ? d6(st.dfrom) + '~' + d6(st.dto) : ''; }
+function compCrisisNum_(v) { const x = String(v === undefined || v === null ? '' : v).replace(/[,\s]/g, ''); return /^\d+$/.test(x) && Number(x) <= 1000000000 ? Number(x) : null; }
+function compCrisisScale_(st) { const a = compCrisisNum_(st.sales), b = compCrisisNum_(st.profit); return a === null || b === null ? '' : '매출 ' + a.toLocaleString('en-US') + '천원 / 이익 ' + b.toLocaleString('en-US') + '천원'; }
+function compCreateCrisisHtml_(st) {
+const errs = st.errs || {};
+const err = function (k) { return errs[k] ? `<span class="rp-err">${escapeHtml(errs[k])}</span>` : ''; };
+const dis = st.saving ? 'disabled' : '';
+const rg = compCrisisRange_();
+const inp = function (k, ph, max, extra) { return `<input class="rp-in" style="width:100%" maxlength="${max}" placeholder="${ph}" value="${escapeHtml(st[k])}" oninput="compCreateInput_(this,'${k}')" ${extra || ''} ${dis}>`; };
+let cal = '';
+if (st.dcal) {
+const y = st.dcalY, m = st.dcalM;
+const lo = st.dcal === 'from' ? rg.yearStart : (st.dfrom && st.dfrom > rg.oldest ? st.dfrom : rg.oldest);
+const hi = st.dcal === 'from' ? (st.dto && st.dto < rg.today ? st.dto : rg.today) : rg.today;
+const cur = st.dcal === 'from' ? st.dfrom : st.dto;
+const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+let g = ['일', '월', '화', '수', '목', '금', '토'].map(function (w) { return `<span class="w">${w}</span>`; }).join('');
+for (let i = 0; i < first; i++) g += '<span></span>';
+for (let d = 1; d <= last; d++) {
+const iso = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+g += `<button type="button" class="${iso === cur ? 'sel' : ''}" ${iso < lo || iso > hi ? 'disabled' : ''} onclick="compCrisisPick_('${iso}')">${d}</button>`;
+}
+const ym = function (yy, mm) { return yy + '-' + String(mm).padStart(2, '0'); };
+const prevOff = ym(y, m) <= lo.slice(0, 7), nextOff = ym(y, m) >= hi.slice(0, 7);
+cal = `<div class="cr-cal"><div class="cr-calh"><button type="button" aria-label="이전 달" ${prevOff ? 'disabled' : ''} onclick="compCrisisMonth_(-1)">‹</button><b>${y}년 ${m}월</b><button type="button" aria-label="다음 달" ${nextOff ? 'disabled' : ''} onclick="compCrisisMonth_(1)">›</button></div><div class="cr-calg">${g}</div></div>`;
+}
+const cell = compCrisisPeriod_(st), scale = compCrisisScale_(st);
+const mr = rg.mr;
+const periodHelp = `끝난 일만 · 끝 날짜는 ${compYmRangeText_(mr.oldest, mr.now)}만(오늘까지) 고를 수 있어요${compMonthCloseText_(mr)}`;
+const msg = st.msg || null;
+const tx = compCreateTexts_(st);
+return `<div class="cr-card"><div class="cr-title">${tx.title}</div>
+<div class="rp-row"><span class="rp-k">고객사 <b>*</b></span>${inp('customer', '고객사 이름', 100)}<span class="rp-help">카드 제목으로 보입니다</span>${err('customer')}</div>
+<div class="rp-row"><span class="rp-k">공급사 <span class="rp-opt">(선택)</span></span>${inp('supplier', '관련 공급사가 있으면 적어 주세요', 100)}${err('supplier')}</div>
+<div class="rp-row"><span class="rp-k">대처 기간 <b>*</b></span><span class="rp-period">
+<button type="button" class="rp-pick${st.dcal === 'from' ? ' on' : ''}" onclick="compCrisisCal_('from')" ${dis}>📅 ${st.dfrom ? escapeHtml(compIsoText_(st.dfrom)) : '시작 날짜 고르기'}</button><span>~</span>
+<button type="button" class="rp-pick${st.dcal === 'to' ? ' on' : ''}" onclick="compCrisisCal_('to')" ${dis}>📅 ${st.dto ? escapeHtml(compIsoText_(st.dto)) : '끝 날짜 고르기'}</button>${cal}</span>
+<span class="rp-help">${periodHelp}${cell ? ' · 시트에는 ' + escapeHtml(cell) : ''}</span>${err('periodFrom')}${err('periodTo')}</div>
+<div class="rp-row"><span class="rp-k">위기 규모 <b>*</b></span><span><span style="white-space:nowrap">매출 <input class="rp-in" style="width:96px" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.sales)}" oninput="compCreateInput_(this,'sales')" ${dis}><span class="rp-u">천원</span></span> <span style="white-space:nowrap">이익 <input class="rp-in" style="width:96px" inputmode="numeric" placeholder="숫자" value="${escapeHtml(st.profit)}" oninput="compCreateInput_(this,'profit')" ${dis}><span class="rp-u">천원</span></span></span>
+<span class="rp-help">숫자만 · 단위 천원 · 0 가능, 마이너스 불가${scale ? ' · 시트에는 ' + escapeHtml(scale) : ''}</span>${err('sales')}${err('profit')}</div>
+<div class="rp-row"><span class="rp-k">위기 발생 원인 <b>*</b></span><textarea class="rp-in" rows="2" maxlength="2000" placeholder="어떤 위기가 왜 생겼는지" oninput="compCreateInput_(this,'cause')" ${dis}>${escapeHtml(st.cause)}</textarea>${err('cause')}</div>
+<div class="rp-row"><span class="rp-k">대처 결과 <b>*</b></span><textarea class="rp-in" rows="3" maxlength="2000" placeholder="어떻게 대처했고 결과가 어땠는지" oninput="compCreateInput_(this,'result')" ${dis}>${escapeHtml(st.result)}</textarea>${err('result')}</div>
+<div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : tx.save}</button></div>
+<div class="rp-msg${msg && msg.err ? ' err' : ''}">${escapeHtml((msg && msg.text) || tx.msg)}</div></div>`;
+}
+function compCrisisCal_(which) {
+const st = compCreateState_; if (!st || st.saving) return;
+st.dcal = st.dcal === which ? '' : which;
+const base = (which === 'to' ? (st.dto || st.dfrom) : st.dfrom) || compSeoulToday_();
+st.dcalY = +base.slice(0, 4); st.dcalM = +base.slice(5, 7);
+compCreateRender_();
+}
+function compCrisisMonth_(d) {
+const st = compCreateState_; if (!st) return;
+st.dcalM += d; if (st.dcalM < 1) { st.dcalM = 12; st.dcalY--; } if (st.dcalM > 12) { st.dcalM = 1; st.dcalY++; }
+compCreateRender_();
+}
+function compCrisisPick_(iso) {
+const st = compCreateState_; if (!st) return;
+if (st.dcal === 'from') { st.dfrom = iso; if (st.dto && st.dto < iso) st.dto = ''; } else { st.dto = iso; }
+st.dcal = ''; compCreateRender_();
+}
+// 화면 검사(서버 CREATE_RULES.crisis · checkRecordMonth와 같은 규칙)
+function compCreateCrisisCheck_(st) {
+const e = {};
+const cu = String(st.customer || '').trim(), su = String(st.supplier || '').trim();
+if (!cu || cu.length > 100) e.customer = '고객사를 적어 주세요.';
+if (su.length > 100) e.supplier = '공급사는 100자까지 적을 수 있어요.';
+const rg = compCrisisRange_();
+// 수정: 대처 기간이 그대로면 날짜 범위 검사 안 함(서버도 바뀐 때만 ㉑ 검사)
+const same = !!st.editRid && compCrisisPeriod_(st) === st.origPeriod;
+if (!st.dfrom) e.periodFrom = '시작 날짜를 골라 주세요.';
+else if (!same && (st.dfrom < rg.yearStart || st.dfrom > rg.today)) e.periodFrom = '시작 날짜는 올해 1월 1일부터 오늘까지 고를 수 있어요.';
+if (!st.dto) e.periodTo = '끝 날짜를 골라 주세요(끝난 일만 기록해요).';
+else if (st.dfrom && st.dto < st.dfrom) e.periodTo = '끝 날짜가 시작 날짜보다 앞서요.';
+else if (!same && (st.dto < rg.oldest || st.dto > rg.today)) e.periodTo = '끝 날짜는 ' + compYmRangeText_(rg.mr.oldest, rg.mr.now) + ' 안, 오늘까지만 고를 수 있어요.';
+if (compCrisisNum_(st.sales) === null) e.sales = '매출을 숫자로 적어 주세요(천원, 0 이상).';
+if (compCrisisNum_(st.profit) === null) e.profit = '이익을 숫자로 적어 주세요(천원, 0 이상).';
+if (!String(st.cause || '').trim()) e.cause = '위기 발생 원인을 적어 주세요.';
+if (!String(st.result || '').trim()) e.result = '대처 결과를 적어 주세요.';
+return e;
+}
 // 저장 성공: 서버가 돌려준 기록을 그 탭 목록 끝에 붙이고(시트 순서와 같음) 팀 현황 내 줄 +1 → 다시 그림 → 그 카드로 내려가 강조
 function compCreateApply_(rec) {
 const res = compMineRes_; if (!res) return;
@@ -5356,6 +5451,16 @@ if (open) { const nw = document.querySelector(`#comp-mine-view .cm-card[data-rid
 function compEditPrefill_(st, rec) {
 const f = rec.fields || {};
 const g = function (k) { return String(f[k] === undefined ? '' : f[k]).trim(); };
+if (st.form === 'crisis') { // 2026-11-10 위기관리
+st.customer = g('고객사'); st.supplier = g('공급사');
+st.origPeriod = g('대처 기간 (YYMMDD~YYMMDD)');
+const q = /^(\d{2})(\d{2})(\d{2})~(\d{2})(\d{2})(\d{2})$/.exec(st.origPeriod);
+if (q) { st.dfrom = '20' + q[1] + '-' + q[2] + '-' + q[3]; st.dto = '20' + q[4] + '-' + q[5] + '-' + q[6]; }
+const sc = g('위기 규모'), ms = /매출\s*([\d,]+)/.exec(sc), mp = /이익\s*([\d,]+)/.exec(sc);
+st.sales = ms ? ms[1].replace(/,/g, '') : ''; st.profit = mp ? mp[1].replace(/,/g, '') : '';
+st.cause = g('위기 발생 원인'); st.result = g('대처 결과');
+return;
+}
 if (!COMP_DONE_FORMS_[st.form]) { // 대면영업
 st.customer = g('고객사');
 const names = g('대면자').split(','), ranks = g('직급').split(',');
@@ -5386,7 +5491,7 @@ function compDonePeriod_(st) { return st.done === 'Y' && st.from ? st.from + '~'
 function compCreateTexts_(st) {
 if (!st.editRid) return { title: `${escapeHtml(st.emoji)} ${escapeHtml(st.label)} 기록 추가`, save: '기록 저장', msg: "이름·순번·기록ID·기록일시는 자동 · 저장하면 '미평가'로 팀장님 평가를 기다립니다" };
 return { title: '✏️ 기록 수정', save: '수정 저장',
-msg: '고친 칸과 수정일시만 바뀝니다 · ' + (COMP_DONE_FORMS_[st.form] ? '수행 기간을 바꾸면 고를 수 있는 달 안이어야 해요' : '미팅 일시를 바꾸면 최근 ' + compCreateWindow_() + '일 안이어야 해요') };
+msg: '고친 칸과 수정일시만 바뀝니다 · ' + (st.form === 'crisis' ? '대처 기간을 바꾸면 끝 날짜가 고를 수 있는 달 안이어야 해요' : COMP_DONE_FORMS_[st.form] ? '수행 기간을 바꾸면 고를 수 있는 달 안이어야 해요' : '미팅 일시를 바꾸면 최근 ' + compCreateWindow_() + '일 안이어야 해요') };
 }
 function compEditOpen_(btn) {
 const bar = btn && btn.closest('.ed-bar'); if (!bar || !compMineRes_) return;

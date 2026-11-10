@@ -768,12 +768,39 @@ function doneRule(label, itemH, reasonH, evalH) {
 }
 CREATE_RULES.selfDev = doneRule('자기개발', '자기개발 항목', '자기개발 사유', '자기 성취 평가 요약');
 CREATE_RULES.gradeComp = doneRule('직급역량', '개선 직급 역량 항목', '직급 역량 개선 사유', '자기 성취 평가');
+// 위기관리(2026-11-10 재홍님 결정): 고객사(필수) · 공급사(선택) · 대처 기간(날짜 단위 시작~끝, 끝 필수 — 끝난 일만, 끝 없음 없음)
+//   · 위기 규모(매출·이익 천원, 0 이상 정수 — 마이너스 불가) · 위기 발생 원인 · 대처 결과(필수).
+//   시트: 대처 기간 = 'YYMMDD~YYMMDD', 위기 규모 = '매출 12,000천원 / 이익 1,800천원'(추가매출 실적결산 settleText와 같은 모양).
+//   ㉑ 날짜 검사는 원가개선과 같은 달 단위(끝 날짜의 달 = 이번 달, 또는 지난달(월기록마감일까지)) + 끝 날짜가 오늘 이후면 DATE_FUTURE(checkRecordMonth에 날짜를 넘김).
+//   시트 탭 '역량-문제해결및위기관리능력-위기관리'(2026-11-10 재홍님이 만듦, 1행 직접 읽은 이름).
+CREATE_RULES.crisis = {
+  label: '위기관리',
+  headers: ['고객사', '공급사', '대처 기간 (YYMMDD~YYMMDD)', '위기 규모', '위기 발생 원인', '대처 결과'],
+  validate: function (b) {
+    const bad = function (field) { return { ok: false, error: 'BAD_INPUT', field: field }; };
+    const customer = cleanText(b.customer, 100); if (!customer) return bad('customer');
+    const sRaw = String(b.supplier === undefined || b.supplier === null ? '' : b.supplier).trim();
+    const supplier = sRaw ? cleanText(sRaw, 100) : ''; if (supplier === null) return bad('supplier');
+    const from = String(b.periodFrom || '').trim(), to = String(b.periodTo || '').trim();
+    if (!validIsoDate(from)) return bad('periodFrom');
+    if (!validIsoDate(to) || to < from) return bad('periodTo');
+    const sales = parseThousand(b.sales, false); if (sales === null) return bad('sales');
+    const profit = parseThousand(b.profit, false); if (profit === null) return bad('profit');
+    const cause = cleanText(b.cause, TEXT_MAX); if (!cause) return bad('cause');
+    const result = cleanText(b.result, TEXT_MAX); if (!result) return bad('result');
+    const d6 = function (d) { return d.slice(2, 4) + d.slice(5, 7) + d.slice(8, 10); };
+    return { ok: true, cells: { '고객사': customer, '공급사': supplier, '대처 기간 (YYMMDD~YYMMDD)': d6(from) + '~' + d6(to),
+      '위기 규모': settleText(sales, profit, false), '위기 발생 원인': cause, '대처 결과': result }, month: to, startMonth: from.slice(0, 7) };
+  }
+};
 // ㉑ 달 단위 검사(원가개선·자기개발·직급역량). month·startMonth = 'YYYY-MM', today = 'YYYY-MM-DD'.
 // v1.27(2026-10-28 재홍님): 허용 = 이번 달, 또는 지난달(오늘이 이번 달 closeDay일 이하일 때만). closeDay = monthCloseDay(인사평가설정).
 //   (예전: 오늘-(N-1)일이 속한 달까지 — 14일 규칙이 월 단위 항목에 맞지 않아 바꿈)
 // 반환 '' 또는 DATE_FUTURE / DATE_TOO_OLD / DATE_OTHER_YEAR
 function checkRecordMonth(month, startMonth, today, closeDay, fileYear) {
   if (Number(startMonth.slice(0, 4)) !== Number(fileYear)) return 'DATE_OTHER_YEAR';
+  // (2026-11-10 위기관리) month 자리에 끝 날짜 'YYYY-MM-DD'가 오면: 오늘 이후 날짜는 DATE_FUTURE, 나머지는 그 날짜의 달로 같은 검사
+  if (String(month).length === 10) { if (month > today) return 'DATE_FUTURE'; month = month.slice(0, 7); }
   const thisMonth = today.slice(0, 7);
   if (month > thisMonth) return 'DATE_FUTURE';
   if (month === thisMonth) return '';
@@ -850,7 +877,7 @@ module.exports.checkRecordMonth = checkRecordMonth;
 // - 지우기: 평가 전(팀장 의견 빈칸)만. 시트에서 그 줄을 통째로 지운다(deleteDimension, index.js).
 // =====================================================================
 const OPINION_HEADERS = ['팀장 의견', '팀장 의견 (상중하)'];
-const DATE_HEADERS = ['미팅 일시(YYMMDD-HH)', '수행 기간 (YYMMDD~YYMMDD)']; // 바뀌면 ㉑ 검사
+const DATE_HEADERS = ['미팅 일시(YYMMDD-HH)', '수행 기간 (YYMMDD~YYMMDD)', '대처 기간 (YYMMDD~YYMMDD)']; // 바뀌면 ㉑ 검사
 // 미팅 일시 'YYMMDD-H' → 'YYMMDD-HH'(그 밖의 글자는 그대로)
 function normMeetCell_(x) { const m = /^(\d{6})-(\d{1,2})$/.exec(String(x || '').trim()); return m ? m[1] + '-' + m[2].padStart(2, '0') : String(x || '').trim(); }
 function findOwnRow_(values, recordId, viewerEmail) {
