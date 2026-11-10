@@ -71,7 +71,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 
 1. **수집**: 활성 원자재 × 가격 키워드 조합으로 네이버 뉴스 검색 API를 배치 호출(`UrlFetchApp.fetchAll`, 10건씩·1.1초 간격 — 네이버 초당 10건 제한 준수). 한 배치가 실패해도 그 배치만 건너뛰고 나머지는 계속 진행(2026-08-31, 커밋 `3726e18`).
 2. **사전 중복 제거**: 이번 실행의 신규 후보끼리, 그리고 최근(설정 `기사최대경과일`) 게시된 기존 시황게시물 제목과도 제목 단어 겹침(`titleOverlap_`)으로 비교해 재보도 중복을 AI 호출 전에 걸러냅니다(토큰 절약).
-3. **AI 판단**: 남은 후보 전부에 대해 AI(Gemini/DeepSeek, `AI_PROVIDER`로 전환 가능)를 배치 호출해 `{relevant, summary, relevanceScore(1~5)}`를 받습니다. **동적 AI 시간예산**(2026-09-02, 커밋 `ef27a93`): `아이데드라인 = 스크립트시작 + 6분 − 60초(후처리 예약)` — 수집 단계가 오래 걸린 날은 AI에 쓸 수 있는 시간이 자동으로 줄어들어, 어떤 경우에도 뒤쪽 기록/게시 단계에 쓸 최소 시간이 보장됩니다. 이 예산을 넘겨 처리 못한 후보는 로그에 남기지 않고 다음 실행(1시간 뒤 자동 재실행 트리거)에서 재시도됩니다.
+3. **AI 판단**: 남은 후보 전부에 대해 AI(Gemini/DeepSeek/OpenAI, `AI_PROVIDER`로 전환 가능 — 2026-11-09부터 OpenAI `gpt-5.4-mini`·추론 강도 low)를 배치 호출해 `{relevant, summary, relevanceScore(1~5)}`를 받습니다. **동적 AI 시간예산**(2026-09-02, 커밋 `ef27a93`): `아이데드라인 = 스크립트시작 + 6분 − 60초(후처리 예약)` — 수집 단계가 오래 걸린 날은 AI에 쓸 수 있는 시간이 자동으로 줄어들어, 어떤 경우에도 뒤쪽 기록/게시 단계에 쓸 최소 시간이 보장됩니다. 이 예산을 넘겨 처리 못한 후보는 로그에 남기지 않고 다음 실행(1시간 뒤 자동 재실행 트리거)에서 재시도됩니다.
 4. **수집로그 배치 기록**: AI가 판단을 마친 후보는 (게시 여부와 무관하게) 전부 `수집로그` 시트에 중복 방지용으로 기록됩니다. 2026-09-02 이전에는 후보마다 `appendRow()`를 1회씩 호출해 후보가 많은 날 이 구간에서만 시간을 다 써버려 타임아웃으로 이어진 사고가 있었는데, 지금은 판단만 메모리에서 끝내고 루프 종료 후 `setValues()` 1회로 배치 기록합니다.
 5. **원자재별 순위 산정 + 유사 게시물 비게시**: `relevant:true`인 후보를 원자재(code)별로 모아 `relevanceScore` 높은 순(동점이면 발행일 최신순)으로 정렬한 뒤, 설정 `원자재별시황게시물출력건수`(기본 1)만큼만 게시 후보로 남깁니다. 게시 직전, 최근(설정 `유사게시물비교기간`, 기본 3일) 게시된 시황게시물과 제목/AI요약이 유사(`isSimilarToRecentPost_`, 겹침 ≥0.5)하면 게시하지 않습니다(2026-09-01, 커밋 `31e3b84`) — 사전 중복 제거(2단계, 원문 제목 기반)가 놓치는 "제목은 다르지만 AI 요약은 사실상 같은 내용" 케이스까지 잡기 위함입니다.
 6. **탈락뉴스 보관 (그룹B)**: `relevant:true`였지만 위 5단계에서 실제로는 게시되지 않은 후보 — 순위 경쟁에서 밀린 경우(사유 `순위밀림`)와 유사 게시물로 스킵된 경우(사유 `유사게시물스킵`) — 를 `탈락뉴스` 시트에 배치 기록합니다(2026-09-02, 커밋 `51820e8`). 본문 전체가 아니라 AI 요약만 저장하고, 원문 링크 저장 여부는 `Code.gs`의 `REJECTED_NEWS_STORE_LINK` 상수(기본 `true`)로 제어합니다. 컬럼: `수집일 / 원자재코드 / 원자재명 / 제목 / AI요약 / relevanceScore / 링크 / 탈락사유`. 시트는 기록할 게 실제로 생겼을 때만 자동 생성됩니다(기록이 한 번도 없으면 시트 자체가 없는 것이 정상).
@@ -128,8 +128,8 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 4. 이전에는 로그아웃(특히 무활동 자동 로그아웃) 후에도 구독이 살아있어 알림이 계속 오던 문제가 있었는데, 이번 수정으로 해결되었습니다.
 
 **발송 흐름** (사람이 호출하지 않음, Cloud Scheduler가 트리거)
-- `push-batch-5min`(5분마다) → `pushBatchTest`: `role !== '일반'`인 사용자 전원의 새 게시물/댓글 필요/답변 요청 건수를 집계해 통합 푸시 1건으로 발송. Firestore `pushNotifyState/{email}`에 저장한 이전 집계값(signature)과 같으면 재발송하지 않음.
-- `reminder-batch-hourly`(매시 정각) → `reminderBatchTest`: 설정 `담당자댓글리마인더사용=TRUE`일 때, `담당자댓글마감시각`(복수 시각 지원, 예 `13,17`)에 도달한 담당자에게 댓글 0건인 배정 품목이 있으면 리마인더 발송. Firestore `reminderDeliveries`로 시각별 하루 1회 발송 보장.
+- 5분마다(`dispatch-batch-5min` 경유) → `pushBatchTest`: `role !== '일반'`인 사용자 전원의 새 게시물/댓글 필요/답변 요청 건수를 집계해 통합 푸시 1건으로 발송. Firestore `pushNotifyState/{email}`에 저장한 이전 집계값(signature)과 같으면 재발송하지 않음.
+- 매시 2분(`dispatch-batch-5min` 경유) → `reminderBatchTest`: 설정 `담당자댓글리마인더사용=TRUE`일 때, `담당자댓글마감시각`(복수 시각 지원, 예 `13,17`)에 도달한 담당자에게 댓글 0건인 배정 품목이 있으면 리마인더 발송. Firestore `reminderDeliveries`로 시각별 하루 1회 발송 보장.
 - 두 함수 모두 실제 발송은 `lib/pushSender.js`(`sendConsolidatedPushForUser`/`sendReminderPushForUser`)가 FCM으로 보내고, 서버는 `notification` 페이로드가 아니라 `data` 페이로드만 보냅니다(브라우저 자동 표시 + `sw.js` 수동 표시가 겹쳐 중복되는 것을 막기 위함) — 실제 알림 표시는 클라이언트 쪽 `sw.js`의 `onBackgroundMessage`가 `showNotification()`으로 담당합니다.
 - Firestore 컬렉션 3개(`pushSubscriptions`/`pushNotifyState`/`reminderDeliveries`)의 정확한 문서 ID·필드 구성과 Cloud Scheduler 2개 작업의 cron·설명은 [`cloud-run/README.md`](./cloud-run/README.md)에 상세히 정리했습니다.
 
@@ -212,12 +212,15 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 8개입니다(전부 `mro-mark
 
 ## Cloud Scheduler 작업
 
-`pushBatchTest`/`reminderBatchTest`는 사람이 호출하는 API가 아니라 Cloud Scheduler(리전 `asia-northeast3`)가 정해진 주기로 트리거합니다.
+배치 함수들은 사람이 호출하는 API가 아닙니다. 2026-11-09부터 Cloud Scheduler 작업은 **`dispatch-batch-5min` 1개**(리전 `asia-northeast3`, 매시 2분부터 5분마다)이고, 이 작업이 비공개 함수 `dispatchBatchTest`를 부르면 그 함수가 아래 일정대로 나눠 호출합니다(옛 작업 4개는 삭제).
 
-| 작업 이름 | 주기 | 대상 함수 |
+| 호출 대상 | 주기 | 하는 일 |
 |---|---|---|
-| `push-batch-5min` | 5분마다 | `pushBatchTest` — 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송 |
-| `reminder-batch-hourly` | 매시 정각 | `reminderBatchTest` — 설정 `담당자댓글마감시각`(복수 시각 지원)에 맞춰 리마인더 발송 |
+| `pushBatchTest` | 5분마다 | 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송 |
+| `materialSweepTest` | 15분마다(매시 2·17·32·47분) | 원자재 추천 대기 품목 처리 |
+| `reminderBatchTest` | 매시 2분 | 설정 `담당자댓글마감시각`(복수 시각 지원)에 맞춰 리마인더 발송 |
+| `issueMailBatchTest` | 매시 2분 | 고정된 이슈 댓글 메일 발송(설정 시각일 때만) |
+| 만료 세션 정리 | 매시 2분 | 만료 후 24시간 지난 `sessions` 문서 최대 300개 삭제 |
 
 cron 표현식, 복수 시각(`13,17`) 처리 방식 등 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Cloud Scheduler 작업" 절 참고.
 

@@ -169,5 +169,35 @@
 ### 구현 파일
 - `lib/materialSuggest.js`: `callOpenAI`, `makeAiCaller` OPENAI 갈래, 시도 로그에 `usage`(모델·토큰 수).
 - `apps-script/Code.gs`: `callAI_`·`buildAIRequest_`·`parseAIResponse_` OPENAI 갈래, `openAIPayload_`·`callOpenAI_`.
-- 설정(없으면 기본값 gpt-6-luna / low): Cloud Run 환경변수 `OPENAI_MODEL`·`OPENAI_REASONING_EFFORT`, Apps Script 스크립트 속성 같은 이름.
+- 설정(없으면 기본값 gpt-5.4-mini / low — 11/9 커밋 `c01c71f`에서 gpt-6-luna → mini로 바꿈): Cloud Run 환경변수 `OPENAI_MODEL`·`OPENAI_REASONING_EFFORT`, Apps Script 스크립트 속성 같은 이름.
 - 시험: `tests/openai_provider_tests.js`(가짜 호출), `tests/ai_model_compare.js`(Cloud Shell 실제 비교 실행기, 샘플은 저장소 밖).
+
+## 9. ChatGPT 웹 사전 시험 결과 (2026-11-04, 재홍님 승인 "통과")
+
+- 방식: 93개 정답표 대신, 무료 계정 ChatGPT 웹(GPT-5.6 Luna)에 운영 프롬프트(원자재 목록 80개 포함)를 품목별 새 채팅으로 입력. 기준 = 품목마스터 F열(현재 운영값).
+- 결과 8개: 같음 5(방청비닐·중크롬산소다·아쿠아메이트·유산반토·절단석) / 절반 2(토너카트리지: 알루미늄 대신 안료, 터닝 인서트: 텅스텐 대신 초경합금 신규 제안) / 불일치 1(Sodium Hydrosulfite: F열 아연·황, ChatGPT 중아황산소다·소다애시 — 둘 다 규칙 1상 애매). F열 기준 75%, 형식 오류 0.
+- 지켜볼 점: 불필요한 신규 원자재 제안(isNew) 경향, 어려운 화학제품 판단.
+- 결정: 감각 확인 통과. 93개 전수 비교 시험은 생략.
+- 남은 확인(11/6 이후 API 연결 시): 결과가 달랐던 2·6·8번 3개를 tests/ai_model_compare.js로 gpt-6-luna에 실행 → 웹과 같거나 나으면 전환.
+
+## 10. API 재검증 결과 (2026-11-05, Cloud Shell, 6품목 × 2회)
+
+- gpt-6-luna: 회사 OpenAI 프로젝트에 모델 접근 권한 없음 — HTTP 403 "Project … does not have access to model `gpt-6-luna`" (model_not_found). gpt-5.4-mini는 정상 응답.
+- 결과(정확도 = 시트 F열 기준, 참고용):
+
+| 조합 | JSON 오류 | 평균/최대 초 | 정확도 | 1순위 | 흔들림 | 토큰(입력/출력/추론) |
+|---|---|---|---|---|---|---|
+| F DeepSeek low(현재) | 1/12 | 5.4 / 21.2 | 72.7% | 81.8% | 16.7% | - |
+| C gpt-5.4-mini none | 0 | 1.2 / 1.6 | 29.2% | 25.0% | 83.3% | 2340 / 63 / 0 |
+| D gpt-5.4-mini low | 0 | 2.2 / 4.0 | 83.3% | 100% | 0% | 2340 / 252 / 183 |
+
+- D는 8번 터닝 인서트에서 기존 "텅스텐, 코발트" 사용(신규 생성 없음) → 프롬프트 보강 불필요. 6번만 DeepSeek과 다름(아연·가성소다 vs DeepSeek 차아황산소다 신규).
+- C(추론 없음)는 엉뚱한 답(절단석→고무·알루미늄 등)과 큰 흔들림 → reasoning_effort는 반드시 low 이상.
+- 결정(2026-11-05 재홍님 확정): **gpt-5.4-mini + reasoning_effort low**. 코드 기본값도 gpt-5.4-mini로 바꿈(11/9 diff). gpt-6-luna 재시험은 하지 않음(재홍님 결정 — mini+low 결과로 충분).
+
+## 11. 운영 전환 결과 (2026-11-09)
+
+- Cloud Run `suggestMaterialsTest`·`materialSweepTest`: `AI_PROVIDER=OPENAI` + Secret `ai-openai-api-key` 연결로 재배포. 실제 추천 확인 — CAUSTIC SODA → 가성소다(2.4초), NBR폼코팅장갑 → 니트릴고무·폴리에스터(3.3초). [확인]
+- Apps Script: 재홍님이 스크립트 속성 `AI_PROVIDER=OPENAI`·`OPENAI_API_KEY` 입력. `testExportNewsRule` 3회 실행 5/6·6/6·6/6 — 3번(수출 통계만 있는 기사)이 한 번 3점. 결정: 프롬프트는 그대로 두고 실제 뉴스 수집에서 잘못 게시되는지 지켜봄(B안). [확인]
+- DeepSeek 키(Secret `ai-deepseek-api-key`, 스크립트 속성)와 DeepSeek·Gemini 코드 갈래는 남겨 둠 — 되돌릴 때는 `AI_PROVIDER=DEEPSEEK`만 바꾸면 됨.
+- 남은 확인: 첫 OpenAI 뉴스 수집 결과(11/11 아침 실행 기록 확인 예정).

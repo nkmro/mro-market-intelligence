@@ -97,7 +97,7 @@
 - 문서 ID = `{날짜(YYYY-MM-DD)}_{targetHour}_{email}` (예: `2026-09-01_17_jhjoo@nkmro.com`)
 - 시각(`targetHour`)별로 문서를 분리해서, 설정 `담당자댓글마감시각`에 여러 시각(예: `13,17`)을 지정해도 각 시각마다 하루에 딱 한 번씩만 발송됨 — 자세한 로직은 아래 "Cloud Scheduler 작업" 절 참고
 
-## Cloud Scheduler 작업 (2개)
+## Cloud Scheduler 작업 (현재 1개 — `dispatch-batch-5min`)
 
 `pushBatchTest`/`reminderBatchTest`는 사람이 호출하는 API가 아니라 Cloud Scheduler가 정해진 주기로 HTTP 호출을 트리거합니다. (콘솔: `console.cloud.google.com/cloudscheduler?project=mro-market-intelligence`, 리전 `asia-northeast3`, 2026-09-01 기준 둘 다 `Enabled`)
 
@@ -108,7 +108,17 @@
 
 > **(2026-11-04 요금 절감 1-다)** 위 2개와 `issue-mail-hourly`·`material-sweep-15m`(총 4개)을 작업 1개 `dispatch-batch-5min`(`2-59/5 * * * *`, OIDC → 비공개 함수 `dispatchBatchTest`)으로 합칩니다. `dispatchBatchTest`는 기존 함수 4개를 **기존 주소 그대로** ID 토큰으로 호출합니다 — push는 매번, sweep은 매시 2·17·32·47분, reminder·issueMail은 매시 2분(기존 정각보다 2분 늦음). 같은 매시 2분에 만료 후 24시간 지난 `sessions` 문서를 최대 300개 지웁니다. 코드: `lib/dispatch.js`, 테스트: `tests/dispatch_tests.js`. 옛 작업 4개는 일시중지 → 이틀 확인 후 삭제, 그 뒤 `pushBatchTest`/`reminderBatchTest`의 공개 호출(allUsers)을 제거합니다. 각 함수를 수동으로 호출해 볼 때는 위 "대상 함수"를 그대로 쓰면 됩니다(동작 변경 없음).
 
+> **(2026-11-09 완료)** 이틀 확인(11/5~11/8, `dispatch` 오류 0건·만료 세션 정리 끝) 뒤 옛 작업 4개를 **삭제**했고, `pushBatchTest`/`reminderBatchTest`의 공개 호출(allUsers)을 없애 지금은 기본 Compute 서비스 계정만 부를 수 있습니다. 이 프로젝트의 Scheduler 작업은 `dispatch-batch-5min` 1개뿐이고, 위 표는 각 배치가 하는 일을 설명하는 참고용입니다.
+
 **`담당자댓글마감시각` 복수 시각 지원 방식**: 매시 정각 실행마다 `deadlineHours`(설정값을 쉼표로 파싱한 배열, 예 `[13, 17]`) 중 `현재시각 >= 시각`을 만족하는 것들(`dueHours`)을 구하고, 그중 가장 큰 값을 `targetHour`로 삼아 `reminderDeliveries/{날짜}_{targetHour}_{email}` 문서 존재 여부로 발송 여부를 판정합니다. 예를 들어 `13,17`을 지정하면 13시 정각 실행에서 `targetHour=13` 문서가 만들어지고, 14~16시 정각 실행은 이미 그 문서가 있어 아무 것도 안 하다가, 17시 정각에 `targetHour=17` 문서가 새로 만들어지며 다시 한 번 발송됩니다 — 시각마다 독립적으로 하루 한 번씩 발송되는 구조입니다.
+
+## AI 공급자 (원자재 추천)
+
+- `suggestMaterialsTest`·`materialSweepTest`는 환경변수 `AI_PROVIDER`로 AI를 고릅니다(코드 기본값 `DEEPSEEK`).
+- **2026-11-09부터 `AI_PROVIDER=OPENAI`**. 키는 Secret `ai-openai-api-key` → 환경변수 `OPENAI_API_KEY`. 모델은 `OPENAI_MODEL`(없으면 `gpt-5.4-mini`), 추론 강도는 `OPENAI_REASONING_EFFORT`(없으면 `low`). 추론 강도 `none`은 시험에서 엉뚱한 답이 나와 쓰지 않습니다.
+- Apps Script(뉴스 수집 등 `callAI_`·일괄 호출)도 스크립트 속성 `AI_PROVIDER=OPENAI`로 같은 모델을 씁니다.
+- 되돌리기: Cloud Run은 배포 명령에 `--update-env-vars AI_PROVIDER=DEEPSEEK`, Apps Script는 속성 `AI_PROVIDER=DEEPSEEK`. DeepSeek 키(`ai-deepseek-api-key`)는 지우지 않고 남겨 둡니다.
+- 시험·결정 근거: [`OPENAI_PROVIDER_DESIGN_v1.md`](../OPENAI_PROVIDER_DESIGN_v1.md).
 
 ## 배포 방법
 
