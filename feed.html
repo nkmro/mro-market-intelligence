@@ -661,6 +661,14 @@ font-size: 13px; padding: 2px 4px; display: none;
 /* 팀 역량평가(1단계-라-라, 화면 ②) — 건수표·월별표·팀원별 묶음. 탭·필터·카드는 ①의 cm- 클래스 그대로 */
 .ct-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .ct-left-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; margin-top: 4px; }
+/* 역량평가 diff ②-2 (k) 연도 선택 + 안내 띠(2026-11-10 재홍님 결정) — 새 색 없음: 파랑·회색 = 기존 변수, 노랑 = .rq-wait와 같은 값, 빨강 = .report-prompt-btn.is-failed와 같은 값(🔔 .cm-notice #f6e2de와 구분) */
+.cy-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cy-sel { font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); margin-top: 4px; }
+.cy-band { font-size: 13px; border-radius: 8px; padding: 8px 12px; margin: 8px 0 4px; line-height: 1.5; }
+.cy-blue { background: var(--blue-soft); color: var(--blue-dark); }
+.cy-yellow { background: #fff6e0; color: #8a5a00; }
+.cy-red { background: #fbeceb; border: 1px solid #eccac6; color: var(--danger); }
+.cy-grey { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 .ct-summary { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0 14px; background: #faf9fc; }
 .ct-wrap { overflow-x: auto; }
 .ct-table { border-collapse: collapse; width: 100%; font-size: 13px; white-space: nowrap; }
@@ -4240,6 +4248,16 @@ return (String(categories[key] || '').trim() === '공통') === wantCommon;
 });
 const titleHtml = `<div class="settings-row-title" style="font-size:16px; margin:0 0 12px;">${wantCommon ? '공통 설정' : '시황 설정'}</div>`
 + (hasCategories ? '' : `<div class="form-hint" style="margin:0 0 12px;">구분 정보를 받지 못해 전체 설정을 한 화면에 보여줍니다.</div>`);
+// diff ②-2 (12/7 경고, 2026-11-10): 12월 7일부터 '인사평가파일_{다음 해}' 줄이 없으면 공통 설정 맨 위에 빨간 띠.
+// 자동 생성(Apps Script yearRolloverDaily)은 12월 1일부터 매일 새벽 4시 — 7일까지 없으면 실패가 이어진 것. 올해 파일 줄이 있는 응답에서만 판단(설정을 덜 받았을 때 잘못 띄우지 않음).
+const yrWarn = (function () {
+if (!wantCommon) return '';
+const today = compSeoulToday_(), y = Number(today.slice(0, 4));
+if (today.slice(5, 7) !== '12' || Number(today.slice(8, 10)) < 7) return '';
+const has = function (k) { return Object.prototype.hasOwnProperty.call(settings, k) && String(settings[k] === undefined || settings[k] === null ? '' : settings[k]).trim() !== ''; };
+if (!has('인사평가파일_' + y) || has('인사평가파일_' + (y + 1))) return '';
+return `<div class="cy-band cy-red" style="margin:0 0 12px;">⚠️ <b>다음 해(${y + 1}) 인사평가 파일이 아직 없습니다.</b> 자동 생성 실패 메일을 확인하거나, Apps Script 편집기에서 <b>yearRolloverRunNow</b>를 1번 실행해 주세요.</div>`;
+})();
 const rowsHtml = shownKeys.map(function (key) {
 const meta = SETTINGS_META[key] || { label: key, desc: '' };
 const desc = (descriptions && descriptions[key]) || meta.desc || '';
@@ -4256,6 +4274,7 @@ ${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}
 root.innerHTML = `
 <div class="settings-panel">
 ${titleHtml}
+${yrWarn}
 ${rowsHtml}
 <div id="settings-save-msg" class="form-hint" style="margin:10px 0;"></div>
 <div class="item-form-actions">
@@ -4303,6 +4322,11 @@ let compCriteriaReq_ = 0;
 function compNorm_(s) { return String(s || '').replace(/\(.*?\)/g, '').replace(/\s+/g, ''); }
 // 정리(2026-10-28): Google 시트 분당 읽기 한도에 걸린 응답(영어 원문 'Quota exceeded…' 또는 SHEET_ACCESS_FAILED 429)을 RATE_LIMITED 하나로 모은다
 const COMP_RATE_TEXT_ = '요청이 잠시 많아요. 1분 뒤 다시 눌러 주세요.';
+// diff ②-2: 연도 오류(서버 diff ②-1 competencyYear_) — YEAR_CLOSED = 입력 기간이 끝난 지난해에 저장, BAD_YEAR = 올해보다 큰 해·잘못된 연도 값
+const COMP_YEAR_ERR_ = {
+YEAR_CLOSED: '이 해의 기록은 입력 기간이 끝나 저장할 수 없어요(보기만 돼요). 화면을 새로 열어 주세요.',
+BAD_YEAR: '고른 연도를 열 수 없어요. 화면을 새로 열어 주세요.'
+};
 function compRateLimit_(res) {
 if (res && res.ok === false && (/quota exceeded|rate ?limit|resource_exhausted/i.test(String(res.error || '')) || (res.error === 'SHEET_ACCESS_FAILED' && Number(res.httpStatus) === 429))) res.error = 'RATE_LIMITED';
 return res;
@@ -4310,6 +4334,7 @@ return res;
 function compErrorText_(res, what) {
 if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
 if (res.error === 'RATE_LIMITED') return COMP_RATE_TEXT_;
+if (COMP_YEAR_ERR_[res.error]) return COMP_YEAR_ERR_[res.error]; // diff ②-2
 if (res.error === 'COMPETENCY_SETTINGS_MISSING') return (res.year || '올해') + '년 인사평가 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
 if (res.error === 'SHEET_ACCESS_FAILED') return '인사평가 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
 if (res.error === 'SESSION_EXPIRED' || res.error === 'SESSION_NOT_FOUND') return '로그인이 만료됐어요. 다시 로그인해 주세요.';
@@ -4581,6 +4606,40 @@ clearTimeout(timeoutId);
 return compRateLimit_(res);
 } catch (e) { return null; }
 }
+// ==== diff ②-2 (k) 연도 선택 + 안내 띠 (설계서 ㉑ v1.31 · 2026-11-10 재홍님 결정) ====
+// compYear_ = 고른 연도(null = 안 고름 → year를 안 보냄 → 서버가 올해). 내 역량 기록·팀 역량평가가 같이 씀. 할 일 배지(loadCompBadge_·loadCompLeadBadge_)는 늘 올해.
+// 서버 응답(diff ②-1·②-2 B안): years = 파일 있는 해(올해 이하, 큰 해부터) · yearMode = 'current' 올해 / 'grace' 1월 유예 중인 작년 / 'closed' 마감된 지난해 ·
+// graceDay = 작년 전년도입력마감일 — 1월에 올해(mine·team) 또는 작년을 고른 응답에만 숫자, 2~12월·작년 파일 없음은 null.
+let compYear_ = null;
+function compYearBody_(body) { return compYear_ ? Object.assign({ year: compYear_ }, body) : body; }
+// 연도 칸: 파일 있는 해가 2개 이상일 때만(1개면 숨김). 제목 줄 오른쪽 끝.
+function compYearSelHtml_(res, page) {
+const ys = Array.isArray(res && res.years) ? res.years : [];
+if (ys.length < 2) return '';
+return `<select class="cy-sel" aria-label="연도" onchange="compPickYear_('${page}', this.value)">${ys.map(function (y) { return `<option value="${escapeHtml(String(y))}" ${Number(y) === Number(res.year) ? 'selected' : ''}>${escapeHtml(String(y))}년</option>`; }).join('')}</select>`;
+}
+function compPickYear_(page, v) {
+const y = Number(v);
+compYear_ = (!Number.isInteger(y) || y === Number(compSeoulToday_().slice(0, 4))) ? null : y; // 올해를 고르면 null(서버 기본값과 같음)
+if (page === 'team') loadCompLeadPage(); else loadCompMinePage();
+}
+// 안내 띠 1줄(없으면 ''). 오늘 = 서울 날짜(compSeoulToday_). 마감일은 응답 graceDay만 씀(추측 안 함) — null이면 날짜가 필요한 띠는 안 띄움.
+// 노랑 = 유예 중(마감 3일 전까지) / 빨강 = 마감 3일 이내(오늘 포함 남은 날) / 회색 = 마감된 해(보기만) / 파랑 = 1월에 올해 화면 + 작년 파일 있음 + 마감 전(작년 고르라는 안내)
+function compYearBandHtml_(res) {
+if (!res) return '';
+const today = compSeoulToday_(), ty = Number(today.slice(0, 4)), jan = today.slice(5, 7) === '01', day = Number(today.slice(8, 10));
+const y = Number(res.year), gn = Number(res.graceDay), gd = (res.graceDay !== null && res.graceDay !== undefined && Number.isInteger(gn) && gn >= 1 && gn <= 31) ? gn : 0;
+if (res.yearMode === 'grace' && gd) {
+const left = gd - day + 1;
+if (left <= 3) return `<div class="cy-band cy-red">⏰ ${y}년 기록 입력 마감까지 <b>${left}일</b> 남았어요 (1월 ${gd}일까지)</div>`;
+return `<div class="cy-band cy-yellow">📝 ${y}년 기록은 <b>1월 ${gd}일까지</b> 입력할 수 있어요 · ${y}년 안의 날짜면 기간 제한 없이 저장돼요</div>`;
+}
+if (res.yearMode === 'closed') return `<div class="cy-band cy-grey">🔒 ${y}년 기록은 ${jan && y === ty - 1 && gd ? '1월 ' + gd + '일에 ' : ''}마감되어 <b>보기만</b> 할 수 있어요</div>`;
+if (res.yearMode === 'current' && jan && gd && day <= gd && (Array.isArray(res.years) ? res.years : []).map(Number).indexOf(ty - 1) >= 0) {
+return `<div class="cy-band cy-blue">📌 ${ty - 1}년 기록은 <b>1월 ${gd}일까지</b> 추가·수정할 수 있어요. 위 연도에서 <b>${ty - 1}년</b>을 고르세요.</div>`;
+}
+return '';
+}
 let compMineReq_ = 0;
 let compMineRes_ = null; // 마지막으로 받은 응답(탭을 바꿀 때 서버를 다시 부르지 않음)
 let compMineTab_ = '';
@@ -4588,9 +4647,10 @@ async function loadCompMinePage() {
 const root = document.getElementById('comp-mine-view');
 const reqNo = ++compMineReq_;
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
-const res = await compFetch_({ view: 'mine' });
+const res = await compFetch_(compYearBody_({ view: 'mine' })); // diff ②-2: 고른 연도가 있으면 year
 if (reqNo !== compMineReq_) return; // 그 사이 다시 눌렀으면 늦게 온 이 응답은 버린다
 if (!res || !res.ok) {
+if (res && (res.error === 'BAD_YEAR' || res.error === 'COMPETENCY_SETTINGS_MISSING')) compYear_ = null; // diff ②-2: 다시 열면 올해
 root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '기록'))}</div>`;
 return;
 }
@@ -4712,7 +4772,8 @@ const list = (isAdd && compMineFilter_ !== 'all') ? all.filter(function (r) { re
 const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILTERS_, compMineFilter_, 'switchCompMineFilter_') : '';
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
 // 2-나: 결과 적기는 본인 기록을 쓰는 일반·담당만(㉓, 서버도 같은 판정)
-const canReply = ['일반', '담당'].indexOf(String(((res && res.viewer) || {}).role || '')) >= 0;
+// diff ②-2: 마감된 해(yearMode 'closed')는 보기만 — 추가·입력·수정·삭제·수정 요청 버튼 모두 숨김(서버도 YEAR_CLOSED로 거절)
+const canReply = !(res && res.yearMode === 'closed') && ['일반', '담당'].indexOf(String(((res && res.viewer) || {}).role || '')) >= 0;
 const cards = list.length ? list.map(function (rec) { return compRecordCard_(t, rec, canReply ? { reply: true, edit: true } : undefined); }).join('') : `<div class="cm-empty">${empty}</div>`;
 // 2-다: 기록 추가 — 일반·담당이고 서버가 이 탭에 입력 칸 규칙이 있다고 알려 준 탭(createForms)만
 const form = canReply && res && res.createForms && res.createForms[t.key];
@@ -4761,8 +4822,9 @@ const nw = document.getElementById('nav-group-hr-new');
 if (nw) nw.style.display = (compTodo_.mine > 0 || compTodo_.lead > 0) ? 'inline-block' : 'none';
 }
 // 팀원(일반·담당): 결과를 적을 계획 + 수정이 승인됐는데 아직 고치지 않은 기록(승인 시각 뒤 '수정일시'가 없음)
-function compSetBadge_(n) { compTodo_.mine = Number(n) || 0; compSetNavBadge_('nav-comp-mine-badge', compTodo_.mine); }
+function compSetBadge_(n) { if (n === null) return; /* diff ②-2: 올해가 아닌 응답은 배지를 안 바꿈 */ compTodo_.mine = Number(n) || 0; compSetNavBadge_('nav-comp-mine-badge', compTodo_.mine); }
 function compMineTodo_(res) {
+if (res && res.yearMode && res.yearMode !== 'current') return null; // diff ②-2: 배지는 늘 올해(지난해를 고른 화면은 null → 배지 그대로)
 let n = Number(res && res.awaitingReply) || 0;
 const recs = (res && res.records) || {};
 Object.keys(recs).forEach(function (k) {
@@ -4775,6 +4837,7 @@ return n;
 }
 // 팀장: 재직 팀원 기록 중 미평가 + 수정 요청(승인·거절 대기). 임원은 할 일이 아니라 세지 않음.
 function compLeadTodo_(res) {
+if (res && res.yearMode && res.yearMode !== 'current') return null; // diff ②-2: 배지는 늘 올해
 if (!res || ((res.viewer || {}).role) !== '팀장') return 0;
 let n = 0;
 (Array.isArray(res.records) ? res.records : []).forEach(function (r) {
@@ -4784,7 +4847,7 @@ if (r.reviewState === 'pendingReview' || (rq && rq.state === '요청')) n++;
 });
 return n;
 }
-function compSetLeadBadge_(res) { compTodo_.lead = compLeadTodo_(res); compSetNavBadge_('nav-comp-team-badge', compTodo_.lead); }
+function compSetLeadBadge_(res) { const n = compLeadTodo_(res); if (n === null) return; compTodo_.lead = n; compSetNavBadge_('nav-comp-team-badge', compTodo_.lead); }
 // 앱 시작 때 1번 부른다(기다리지 않음). 실패하면 배지만 안 보이고 다른 동작에는 영향 없음.
 async function loadCompBadge_() {
 const res = await compFetch_({ view: 'mine' });
@@ -4815,9 +4878,9 @@ const firstWith = compTabs_.filter(function (t) { return compMineList_(res, t.ke
 const replyTab = compTabs_.filter(function (t) { return t.hasReply; })[0];
 compMineTab_ = (n > 0 && replyTab) ? replyTab.key : (firstWith ? firstWith.key : compTabs_[0].key);
 }
-const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">내 역량 기록</div>
-<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div>`;
-const notice = n > 0 ? `<div class="cm-notice">🔔 추가매출 <b>결과를 적을 계획이 ${n}건</b> 있어요. 카드의 [입력]을 눌러 주세요.</div>` : '';
+const head = `<div class="ct-head"><div><div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">내 역량 기록</div>
+<div class="settings-row-desc" style="margin-bottom:6px;">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(viewer.name || '')}</div></div>${compYearSelHtml_(res, 'mine')}</div>${compYearBandHtml_(res)}`; // diff ②-2: 제목 줄 오른쪽 끝 연도 칸 + 띠
+const notice = n > 0 && res.yearMode !== 'closed' ? `<div class="cm-notice">🔔 추가매출 <b>결과를 적을 계획이 ${n}건</b> 있어요. 카드의 [입력]을 눌러 주세요.</div>` : '';
 const cols = `--cm-cols:${compColsCss_(compTabs_.length, 6)}; --cm-mcols:${compColsCss_(compTabs_.length, 5)};`;
 root.innerHTML = `<div class="settings-panel" style="${cols}">${head}${notice}${compTeamHtml_(res)}
 <div class="cm-mine"><div class="cm-tabs" id="cm-tabs">${compMineTabsHtml_(res)}</div><div class="cm-tab-body" id="cm-tab-body">${compMineTabBody_(res, compMineTab_)}</div></div></div>`;
@@ -4972,10 +5035,14 @@ if (card) compScrollFlash_(card, true);
 let compCreateState_ = null;
 const COMP_CREATE_MINUTES_ = [20, 30, 40, 60];
 function compSeoulToday_() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); }
+// diff ②-2: 1월 유예(yearMode 'grace')로 작년을 고른 화면이면 그해 연도, 아니면 0. 달력은 그해 1월 1일~12월 31일 전체(서버 checkGraceRecord: 그해 날짜 + 오늘 이후 아님)
+function compGraceYear_() { return compMineRes_ && compMineRes_.yearMode === 'grace' ? Number(compMineRes_.year) : 0; }
+function compFormToday_() { const g = compGraceYear_(); return g ? g + '-12-31' : compSeoulToday_(); }
 function compIsoAdd_(iso, days) { return new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) + days * 86400000).toISOString().slice(0, 10); }
 function compCreateWindow_() { const n = Number(compMineRes_ && compMineRes_.recordWindowDays); return Number.isInteger(n) && n >= 1 && n <= 60 ? n : 14; }
 // 고를 수 있는 날짜 범위: 오늘 포함 최근 N일, 단 올해(1월 1일)보다 앞은 안 됨(1월 유예 없음)
 function compCreateRange_() {
+const g = compGraceYear_(); if (g) return { from: g + '-01-01', to: g + '-12-31' }; // diff ②-2
 const today = compSeoulToday_();
 let from = compIsoAdd_(today, -(compCreateWindow_() - 1));
 if (from.slice(0, 4) !== today.slice(0, 4)) from = today.slice(0, 4) + '-01-01';
@@ -5025,7 +5092,7 @@ return `<div class="cr-card"><div class="cr-title">${tx.title}</div>
 <div class="rp-row"><span class="rp-k">고객사 <b>*</b></span><input class="rp-in" style="width:100%" maxlength="100" placeholder="고객사 이름" value="${escapeHtml(st.customer)}" oninput="compCreateInput_(this,'customer')" ${dis}>${err('customer')}</div>
 <div class="rp-row"><span class="rp-k">대면자 · 직급 <b>*</b></span><div>${pairs}${st.people.length < 10 ? `<button type="button" class="cr-add" onclick="compCreatePerson_(-1)" ${dis}>＋ 사람 추가</button>` : ''}</div><span class="rp-help cr-people-help">${escapeHtml(compCreatePeopleText_(st))}</span>${err('people')}</div>
 <div class="rp-row"><span class="rp-k">미팅 일시 <b>*</b></span><div class="cr-when"><button type="button" class="rp-pick${st.cal ? ' on' : ''}" onclick="compCreateCal_()" ${dis}>📅 ${st.date ? escapeHtml(compIsoText_(st.date)) : '날짜 고르기'}</button><select class="rp-in" aria-label="미팅 시" onchange="compCreateHour_(this)" ${dis}>${hours}</select>${cal}</div>
-<span class="rp-help">오늘 포함 최근 ${compCreateWindow_()}일(${Number(rg.from.slice(5, 7))}월 ${Number(rg.from.slice(8, 10))}일~${Number(rg.to.slice(5, 7))}월 ${Number(rg.to.slice(8, 10))}일)만 고를 수 있어요${cell ? ' · 시트에는 ' + cell : ''}</span>${err('meetDate')}${err('meetHour')}</div>
+<span class="rp-help">${compGraceYear_() ? compGraceYear_() + '년 안의 날짜(1월 1일~12월 31일)만 고를 수 있어요' : `오늘 포함 최근 ${compCreateWindow_()}일(${Number(rg.from.slice(5, 7))}월 ${Number(rg.from.slice(8, 10))}일~${Number(rg.to.slice(5, 7))}월 ${Number(rg.to.slice(8, 10))}일)만 고를 수 있어요`}${cell ? ' · 시트에는 ' + cell : ''}</span>${err('meetDate')}${err('meetHour')}</div>
 <div class="rp-row"><span class="rp-k">미팅 시간 <b>*</b></span><div class="cr-min"><span class="cr-seg">${segs}</span>${other}</div>${st.other ? '<span class="rp-help">1~600분 숫자</span>' : ''}${err('minutes')}</div>
 <div class="rp-row"><span class="rp-k">기대 효과 <b>*</b></span><textarea class="rp-in" rows="3" maxlength="2000" placeholder="이번 미팅으로 기대하는 성과" oninput="compCreateInput_(this,'expected')" ${dis}>${escapeHtml(st.expected)}</textarea>${err('expected')}</div>
 <div class="rp-act"><button type="button" class="btn-secondary" onclick="compCreateCancel_()" ${dis}>취소</button><button type="button" class="btn-primary" onclick="compCreateSave_()" ${dis}>${st.saving ? '저장하는 중...' : tx.save}</button></div>
@@ -5054,7 +5121,7 @@ compCreateRender_();
 }
 // 입력 칸 상태 처음 값(2-라: 기록 추가·수정 같이 씀)
 function compCreateInit_(t, form) {
-const today = compSeoulToday_();
+const today = compFormToday_(); // diff ②-2: 1월 유예면 달력이 작년 12월에서 열림
 return { tab: t.key, form: form, label: t.label, emoji: t.emoji, customer: '', people: [{ name: '', rank: '' }], date: '', hour: '', minutes: '', other: false, otherMin: '', expected: '',
 cal: false, calY: +today.slice(0, 4), calM: +today.slice(5, 7), saving: false, key: '', errs: null, msg: null,
 supplier: '', item: '', reason: '', done: '', from: '', to: '', open: false, mcal: '', mcalY: +today.slice(0, 4), amount: '', keys: '', evaluation: '',
@@ -5080,7 +5147,7 @@ compCreateRender_();
 function compCreateCal_() {
 const st = compCreateState_; if (!st || st.saving) return;
 st.cal = !st.cal;
-if (st.cal) { const base = st.date || compSeoulToday_(); st.calY = +base.slice(0, 4); st.calM = +base.slice(5, 7); }
+if (st.cal) { const base = st.date || compFormToday_(); st.calY = +base.slice(0, 4); st.calM = +base.slice(5, 7); }
 compCreateRender_();
 }
 function compCreateMonth_(d) {
@@ -5132,7 +5199,7 @@ const body = st.form === 'crisis'
 : COMP_DONE_FORMS_[st.form] ? { item: st.item, reason: st.reason, done: st.done, periodFrom: st.from, periodTo: st.to, periodOpen: false, evaluation: st.evaluation }
 : { customer: st.customer, people: st.people.map(function (p) { return { name: p.name, rank: p.rank }; }), meetDate: st.date, meetHour: Number(st.hour),
 minutes: Number(st.other ? String(st.otherMin).trim() : st.minutes), expected: st.expected };
-const res = await compSaveFetch_(Object.assign({ action: st.editRid ? 'update' : 'create', tab: st.tab, form: st.form, idempotencyKey: st.key }, st.editRid ? { recordId: st.editRid } : {}, body), 30000);
+const res = await compSaveFetch_(Object.assign({ action: st.editRid ? 'update' : 'create', tab: st.tab, form: st.form, idempotencyKey: st.key, year: compMineRes_ && compMineRes_.year }, st.editRid ? { recordId: st.editRid } : {}, body), 30000);
 if (compCreateState_ !== st) return;
 st.saving = false;
 if (res) st.key = '';
@@ -5140,7 +5207,8 @@ if (res && res.ok && res.record) { if (st.editRid) compEditApply_(res.record); e
 const m = { FORBIDDEN: '팀원(일반·담당)만 기록을 추가할 수 있어요.', TAB_NOT_SUPPORTED: '이 탭은 아직 앱에서 추가할 수 없어요.', TAB_NOT_FOUND: '시트에서 이 탭을 찾지 못했어요. 화면을 새로 열어 주세요.',
 HEADER_NOT_READY: '시트 머리글이 맞지 않아 저장하지 못했어요. 팀장님께 알려 주세요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.',
 DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
-DATE_TOO_OLD: st.form === 'crisis' ? '끝 날짜는 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: '올해 날짜만 기록할 수 있어요.',
+DATE_TOO_OLD: st.form === 'crisis' ? '끝 날짜는 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : COMP_DONE_FORMS_[st.form] ? '끝 달(끝 없음이면 시작 달)은 이번 달, 또는 지난달(이번 달 ' + ((res && res.monthCloseDay) || compMonthClose_()) + '일까지)만 기록할 수 있어요.' : '오늘 포함 최근 ' + ((res && res.windowDays) || compCreateWindow_()) + '일 안의 날짜만 기록할 수 있어요.', DATE_FUTURE: '앞으로의 날짜는 기록할 수 없어요.', DATE_OTHER_YEAR: compGraceYear_() ? compGraceYear_() + '년 날짜만 기록할 수 있어요.' : '올해 날짜만 기록할 수 있어요.',
+YEAR_CLOSED: COMP_YEAR_ERR_.YEAR_CLOSED, BAD_YEAR: COMP_YEAR_ERR_.BAD_YEAR, // diff ②-2
 BAD_INPUT: '입력값을 확인해 주세요.', RATE_LIMITED: COMP_RATE_TEXT_ };
 if (st.editRid) Object.assign(m, COMP_EDIT_ERR_, { FORBIDDEN: '팀원(일반·담당)만 기록을 고칠 수 있어요.' }); // 2-라
 let text;
@@ -5164,6 +5232,8 @@ return `<span class="rp-guide">💡 ${open ? `끝 없음(계속)이라 <b>한 �
 function compYm_(iso) { return iso.slice(2, 4) + iso.slice(5, 7); }
 function compMonthClose_() { const n = Number(compMineRes_ && compMineRes_.monthCloseDay); return Number.isInteger(n) && n >= 1 && n <= 28 ? n : 10; }
 function compCostMonths_() {
+const g = compGraceYear_(); // diff ②-2: 1월 유예면 그해 1~12월 전체, 지난달 마감 없음
+if (g) { const yy = String(g % 100).padStart(2, '0'); return { yearStart: yy + '01', oldest: yy + '01', now: yy + '12', prev: '', prevOpen: false, close: compMonthClose_() }; }
 const today = compSeoulToday_();
 const close = compMonthClose_();
 const y = +today.slice(0, 4), m = +today.slice(5, 7);
@@ -5238,7 +5308,7 @@ function compCreateMCal_(which) {
 const st = compCreateState_; if (!st || st.saving) return;
 st.mcal = st.mcal === which ? '' : which;
 const base = which === 'to' ? (st.to || st.from) : st.from;
-st.mcalY = base ? 2000 + Number(base.slice(0, 2)) : Number(compSeoulToday_().slice(0, 4));
+st.mcalY = base ? 2000 + Number(base.slice(0, 2)) : Number(compFormToday_().slice(0, 4));
 compCreateRender_();
 }
 function compCreateMYear_(d) { const st = compCreateState_; if (!st) return; st.mcalY += d; compCreateRender_(); }
@@ -5278,7 +5348,7 @@ return e;
 // 고객사(필수)·공급사(선택)·대처 기간(날짜 달력 시작~끝, 끝 필수)·위기 규모(매출·이익 천원, 0 이상)·위기 발생 원인·대처 결과(필수).
 // 날짜 범위(원가개선과 같은 달 단위): 끝 날짜 = 지난달 1일(월기록마감일까지만)~오늘, 시작 날짜 = 올해 1월 1일~끝 날짜(끝이 없으면 오늘).
 function compCrisisRange_() {
-const mr = compCostMonths_(), today = compSeoulToday_();
+const mr = compCostMonths_(), today = compFormToday_(); // diff ②-2
 return { yearStart: today.slice(0, 4) + '-01-01', oldest: '20' + mr.oldest.slice(0, 2) + '-' + mr.oldest.slice(2) + '-01', today: today, mr: mr };
 }
 function compCrisisPeriod_(st) { const d6 = function (d) { return d.slice(2, 4) + d.slice(5, 7) + d.slice(8, 10); }; return st.dfrom && st.dto ? d6(st.dfrom) + '~' + d6(st.dto) : ''; }
@@ -5329,7 +5399,7 @@ return `<div class="cr-card"><div class="cr-title">${tx.title}</div>
 function compCrisisCal_(which) {
 const st = compCreateState_; if (!st || st.saving) return;
 st.dcal = st.dcal === which ? '' : which;
-const base = (which === 'to' ? (st.dto || st.dfrom) : st.dfrom) || compSeoulToday_();
+const base = (which === 'to' ? (st.dto || st.dfrom) : st.dfrom) || compFormToday_();
 st.dcalY = +base.slice(0, 4); st.dcalM = +base.slice(5, 7);
 compCreateRender_();
 }
@@ -5400,6 +5470,7 @@ DUPLICATE_IN_PROGRESS_RETRY_LATER: '저장하는 중이에요. 잠시 후 화면
 PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
 FORBIDDEN: '팀원(일반·담당)만 고치거나 지울 수 있어요.',
 APPROVED_EDIT_ONLY: '팀장님이 수정을 승인한 기록은 고칠 수만 있어요(삭제는 안 돼요).',
+YEAR_CLOSED: COMP_YEAR_ERR_.YEAR_CLOSED, BAD_YEAR: COMP_YEAR_ERR_.BAD_YEAR, // diff ②-2
 RATE_LIMITED: COMP_RATE_TEXT_
 };
 function compMineBodyRender_() {
@@ -5622,6 +5693,7 @@ FORBIDDEN: '이 일을 할 권한이 없어요.', NOT_YOUR_RECORD: '본인 기�
 RECORD_NOT_FOUND: '시트에서 이 줄을 찾지 못했어요(지워졌거나 바뀜). 화면을 새로 열어 주세요.', DUPLICATE_RECORD_ID: '같은 기록ID가 시트에 2줄 있어요. 관리자에게 알려 주세요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '처리하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
 PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 확인해 주세요.',
+YEAR_CLOSED: COMP_YEAR_ERR_.YEAR_CLOSED, BAD_YEAR: COMP_YEAR_ERR_.BAD_YEAR, // diff ②-2
 RATE_LIMITED: COMP_RATE_TEXT_
 };
 function compHasReqCol_(rec) { return Object.prototype.hasOwnProperty.call((rec && rec.fields) || {}, '수정 요청'); }
@@ -5701,7 +5773,7 @@ const items = list.slice(0, 5).map(function (r) {
 const t = compLeadTabs_.filter(function (x) { return x.key === r.tab; })[0];
 return `<button type="button" class="rq-go" onclick="compLeadReqGo_('${escapeHtml(r.tab)}','${escapeHtml(r.recordId)}')">${t ? escapeHtml(t.emoji + ' ' + t.label) : ''} · ${escapeHtml(r.name || '')}</button>`;
 }).join(', ') + (list.length > 5 ? ` 외 ${list.length - 5}건` : '');
-return `<div class="cm-notice" style="margin:4px 0 8px">✋ <b>수정 요청 ${list.length}건</b> — ${items}${(res.viewer || {}).role === '팀장' ? ' · 카드에서 [승인]·[거절]을 눌러 주세요.' : ''}</div>`;
+return `<div class="cm-notice" style="margin:4px 0 8px">✋ <b>수정 요청 ${list.length}건</b> — ${items}${(res.viewer || {}).role === '팀장' && res.yearMode !== 'closed' ? ' · 카드에서 [승인]·[거절]을 눌러 주세요.' : ''}</div>`;
 }
 function compLeadReqGo_(tab, rid) {
 if (!compLeadRes_) return;
@@ -5858,9 +5930,10 @@ const reqNo = ++compLeadReq_;
 if (!keep) { compLeadIncludeLeft_ = false; compLeadTab_ = ''; compLeadFilter_ = 'all'; compLeadShowPlan_ = false; compLeadRv_ = null; }
 if (!(compLeadDec_ && compLeadDec_.saving)) compLeadDec_ = null; // 2-마-1: 다시 불러오면 승인·거절 안내 닫힘
 root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
-const res = await compFetch_({ view: 'team', includeLeft: compLeadIncludeLeft_ });
+const res = await compFetch_(compYearBody_({ view: 'team', includeLeft: compLeadIncludeLeft_ })); // diff ②-2: 고른 연도가 있으면 year
 if (reqNo !== compLeadReq_) return; // 그 사이 다시 눌렀으면 늦게 온 이 응답은 버린다
 if (!res || !res.ok) {
+if (res && (res.error === 'BAD_YEAR' || res.error === 'COMPETENCY_SETTINGS_MISSING')) compYear_ = null; // diff ②-2: 다시 열면 올해
 root.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '팀 기록'))}</div>`;
 return;
 }
@@ -6018,7 +6091,7 @@ if (!fl.some(function (f) { return f.key === compLeadFilter_; })) compLeadFilter
 const shown = compLeadFilter_ === 'all' ? all : all.filter(function (r) { return r.reviewState === compLeadFilter_; });
 const filters = all.length ? compFilterChipsHtml_(all, fl, compLeadFilter_, 'switchCompLeadFilter_') : '';
 const members = Array.isArray(res.members) ? res.members : [];
-const isLeadRole = (res.viewer || {}).role === '팀장'; // 2-마-1: 승인·거절은 팀장만(임원은 보기만, 서버도 같은 판정)
+const isLeadRole = (res.viewer || {}).role === '팀장' && res.yearMode !== 'closed'; // diff ②-2: 마감된 해는 평가·승인·거절 숨김 / 2-마-1: 승인·거절은 팀장만(임원은 보기만, 서버도 같은 판정)
 // 팀원별 묶음(부록 B): 순서 = 서버 members 순서, 짝 = record.authorEmail = member.email. 머리 숫자는 필터와 무관하게 그 팀원의 이 탭 전체 줄 기준.
 const groupHtml = function (m) {
 const mineAll = all.filter(function (r) { return r.authorEmail === m.email; });
@@ -6078,7 +6151,7 @@ const nLeft = members.length - nActive;
 const sub = (isExec ? '전체 팀' : teamLabel(viewer.team || '')) + ' · 재직 팀원 ' + nActive + '명' + (nLeft ? ' · 퇴사 ' + nLeft + '명' : '');
 const head = `<div class="ct-head"><div><div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">팀 역량평가</div>
 <div class="settings-row-desc">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(sub)}${isExec ? ' · 보기 전용' : ''}</div></div>
-<label class="ct-left-toggle"><input type="checkbox" ${compLeadIncludeLeft_ ? 'checked' : ''} onchange="toggleCompLeadLeft_(this.checked)"> 퇴사자 포함</label></div>`;
+<div class="cy-right">${compYearSelHtml_(res, 'team')}<label class="ct-left-toggle"><input type="checkbox" ${compLeadIncludeLeft_ ? 'checked' : ''} onchange="toggleCompLeadLeft_(this.checked)"> 퇴사자 포함</label></div></div>${compYearBandHtml_(res)}`; // diff ②-2: 연도 칸(퇴사자 포함 위) + 띠
 const cols = `--cm-cols:${compColsCss_(compLeadTabs_.length, 6)}; --cm-mcols:${compColsCss_(compLeadTabs_.length, 5)};`;
 root.innerHTML = `<div class="settings-panel" style="${cols}">${head}
 <div class="ct-summary">${compLeadTableHtml_(res)}${compLeadMonthHtml_(res)}<div class="cc-note">기록 수는 참고용입니다. 평가는 내용으로 합니다.${compReplyNote_(compLeadTabs_, true)}</div></div>
