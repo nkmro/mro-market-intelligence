@@ -4942,3 +4942,229 @@ Logger.log(JSON.stringify({ total, outcomeCounts, actionCounts, recent }, null, 
 function runRemoveLoginDiagFlushTriggerOnce() {
   removeLoginDiagFlushTrigger_();
 }
+
+// ===================== 인사평가 자동 연도 전환 (2026-11-10, 역량평가 설계서 6-3절·8장 ⑯, 5단계) =====================
+// 매일 새벽 4시(서울) 예약 실행. 12월 '연도전환시작일'(인사평가설정 탭, 기본 1)~31일에만 일한다.
+// (11/10 재홍님 확인 4) 12월에 끝내 실패하면 1월에도 그해 파일(인사평가파일_{올해})이 없을 때만 이어서 시도한다(작년 파일을 복사).
+// 수동 복구: yearRolloverRunNow — 실제 모드로 1번. 12월이면 다음 해, 그 밖엔 올해 파일이 없을 때만 작년→올해. 둘 다 아니면 아무것도 안 함.
+// 하는 일: 올해 파일 복사(이름 앞 연도만 바꿈) → 기록 탭('역량-'로 시작·숨기지 않은 탭) 2행 아래 내용만 지움 →
+// 올해 파일의 서비스 계정 편집자를 새 파일에도 편집자로 추가 → '설정' 탭 마지막 '공통' 줄 아래 인사평가파일_{다음 해} 등록 → 메일.
+// - 이미 인사평가파일_{다음 해}가 있으면 조용히 끝(중복 생성 방지). 실패하면 메일(매번)·다음 날 같은 시각 재시도.
+// - 중간에 실패해도 파일을 또 만들지 않게, 만든 파일 ID를 스크립트 속성 YR_{다음 해}_FILEID에 적어 두고 이어서 한다.
+// - 시험 모드(yearRolloverTest): TEST_ 이름으로 만들고 '설정' 탭에는 쓰지 않는다. 날짜·중복 판단 없음. 메일 제목 앞 [시험].
+// - 정리(yearRolloverCleanupTest): 시험 파일을 휴지통으로(30일 안 복구 가능). 이름이 TEST_로 시작하는 파일만.
+const YR_FILE_KEY_PREFIX_ = '인사평가파일_';
+const YR_SETTINGS_TAB_ = '인사평가설정';
+const YR_START_DAY_KEY_ = '연도전환시작일';
+const YR_RECORD_TAB_PREFIX_ = '역량-';
+const YR_TEST_PREFIX_ = 'TEST_';
+const YR_HANDLER_ = 'yearRolloverDaily';
+
+// 올해 파일 이름 → 다음 해 이름: 이름 안의 올해 숫자(처음 1번)만 다음 해로. 없으면 '다음해_' + 이름.
+function yrNextName_(name, y, ny) {
+const s = String(name || '');
+return s.indexOf(String(y)) >= 0 ? s.replace(String(y), String(ny)) : (ny + '_' + s);
+}
+
+// 인사평가설정 행([키, 값, …]) → 연도전환시작일(1~31 정수, 아니면 1)
+function yrStartDay_(rows) {
+for (let i = 0; i < (rows || []).length; i++) {
+if (String((rows[i] && rows[i][0]) || '').trim() === YR_START_DAY_KEY_) {
+const n = Number(String(rows[i][1] === undefined ? '' : rows[i][1]).trim());
+return (Number.isInteger(n) && n >= 1 && n <= 31) ? n : 1;
+}
+}
+return 1;
+}
+
+// '설정' 탭 값(1행 머리글 포함) → 끼워 넣을 줄 번호(시트 1부터). 마지막 D열 '공통' 줄 바로 아래, 공통 줄이 없으면 맨 아래.
+function yrSettingInsertRow_(data) {
+let last = -1;
+for (let i = 1; i < data.length; i++) {
+if (String((data[i] && data[i][3]) || '').trim() === '공통') last = i;
+}
+return last >= 0 ? last + 2 : data.length + 1;
+}
+
+// 어느 해 파일을 복사해 어느 해 파일을 만들지. null = 오늘은 할 일 없음.
+// 12월: 올해 → 다음 해 / 올해 키가 없음: 작년 → 올해(12월 실패 구제 — 예약은 1월만, 수동은 언제든) / 그 밖: null
+// (11/10 재홍님 지적 반영) 수동이라도 올해 파일이 이미 있는 1~11월에는 다음 해 파일을 미리 만들지 않는다.
+function yrTarget_(month, y, hasKey, manual) {
+if (month === 12) return { src: y, dst: y + 1 };
+if ((month === 1 || manual) && !hasKey(y)) return { src: y - 1, dst: y };
+return null;
+}
+
+// 예약 실행 진입점 (installYearRolloverTrigger로 등록)
+function yearRolloverDaily() {
+yrRun_(false, new Date());
+}
+
+// 시험 모드 — 편집기에서 직접 1번 실행. 결과는 메일 + 실행 로그.
+function yearRolloverTest() {
+return yrRun_(true, new Date());
+}
+
+// 수동 복구 — 예약이 실패했을 때 재홍님이 편집기에서 1번 실행(실제 모드, 12월 시작일 무시, 1월 이후 올해 파일이 없으면 만듦).
+function yearRolloverRunNow() {
+return yrRun_(false, new Date(), true);
+}
+
+// 시험 파일 정리 — 재홍님이 시험 파일을 확인한 뒤 편집기에서 1번 실행.
+function yearRolloverCleanupTest() {
+const props = PropertiesService.getScriptProperties();
+const y = Number(Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy'));
+const ny = y + 1;
+const trashed = [];
+const propKey = 'YR_' + YR_TEST_PREFIX_ + ny + '_FILEID';
+const id = props.getProperty(propKey);
+if (id) {
+try {
+const f = DriveApp.getFileById(id);
+if (String(f.getName()).indexOf(YR_TEST_PREFIX_) === 0 && !f.isTrashed()) { f.setTrashed(true); trashed.push(f.getName()); }
+} catch (e) { Logger.log('시험 파일 찾기 실패(이미 지워졌을 수 있음): ' + e); }
+props.deleteProperty(propKey);
+}
+Logger.log('휴지통으로 옮긴 시험 파일: ' + (trashed.length ? trashed.join(', ') : '없음'));
+return trashed;
+}
+
+// 예약 등록 — 재홍님이 편집기에서 1번 실행. 다시 실행해도 기존 것을 지우고 1개만 남긴다.
+function installYearRolloverTrigger() {
+ScriptApp.getProjectTriggers().forEach(function (t) {
+if (t.getHandlerFunction() === YR_HANDLER_) ScriptApp.deleteTrigger(t);
+});
+ScriptApp.newTrigger(YR_HANDLER_).timeBased().atHour(4).everyDays(1).inTimezone('Asia/Seoul').create();
+const n = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === YR_HANDLER_; }).length;
+Logger.log('연도 전환 예약 등록 완료: 매일 4시(서울), ' + YR_HANDLER_ + ' 트리거 ' + n + '개');
+return n;
+}
+
+function yrMail_(test, subject, body) {
+try {
+GmailApp.sendEmail(ADMIN_EMAIL, (test ? '[시험] ' : '') + '[MRO 워크허브] ' + subject, body, { from: ADMIN_EMAIL, name: 'MRO 워크허브' });
+} catch (e) {
+Logger.log('연도 전환 메일 실패: ' + e);
+}
+}
+
+function yrRun_(test, now, manual) {
+const today = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd');
+const ty = Number(today.slice(0, 4)), month = Number(today.slice(5, 7)), day = Number(today.slice(8, 10));
+// 0) 할 일이 있는 날인지(2~11월 예약 실행은 '설정' 캐시만 보고 바로 끝남). 시험 모드는 늘 올해 → 다음 해
+const hasKey = function (yy) { return !!getSetting_(YR_FILE_KEY_PREFIX_ + yy); };
+const tg = test ? { src: ty, dst: ty + 1 } : yrTarget_(month, ty, hasKey, !!manual);
+if (!tg) {
+if (manual) Logger.log('연도 전환 수동 실행: 할 일 없음 (' + YR_FILE_KEY_PREFIX_ + ty + ' 있음, 12월 아님)');
+return { skipped: 'NOTHING_TO_DO' };
+}
+const y = tg.src, ny = tg.dst, nextKey = YR_FILE_KEY_PREFIX_ + ny;
+// 실패 메일 끝 문장: 예약이 다음 날 다시 하는지(12/1~1/30), 아니면 수동 실행이 필요한지(수동·1/31)
+const retryLine = test ? '' : ((manual || (month === 1 && day === 31)) ? '자동 재시도는 없습니다 — 원인을 고친 뒤 편집기에서 yearRolloverRunNow를 1번 실행해 주세요.' : '내일 새벽 다시 시도합니다.');
+if (!test && getSetting_(nextKey)) return { skipped: 'ALREADY_DONE' };
+const lock = LockService.getScriptLock();
+if (!lock.tryLock(30000)) {
+yrMail_(test, ny + ' 인사평가 파일 생성 실패 — 0단계', '다른 작업이 잠금을 쓰고 있어 시작하지 못했습니다.\n' + retryLine);
+return { ok: false, step: 0, error: 'LOCK_TIMEOUT' };
+}
+let step = 0;
+const report = [];
+try {
+const props = PropertiesService.getScriptProperties();
+invalidateSheetCache_(SHEET_SETTING);
+if (!test && getSetting_(nextKey)) return { skipped: 'ALREADY_DONE' }; // 잠금 안에서 한 번 더
+const curId = String(getSetting_(YR_FILE_KEY_PREFIX_ + y) || '').trim();
+if (!curId) throw new Error("'설정' 탭에 " + YR_FILE_KEY_PREFIX_ + y + ' 키가 없음');
+const cur = DriveApp.getFileById(curId);
+const curSS = SpreadsheetApp.openById(curId);
+report.push('원본: ' + cur.getName() + ' (' + y + ') → 만들 해: ' + ny + (manual ? ' [수동]' : ''));
+if (!test && !manual && month === 12) {
+const st = curSS.getSheetByName(YR_SETTINGS_TAB_);
+const startDay = yrStartDay_(st ? st.getDataRange().getValues() : []);
+if (day < startDay) return { skipped: 'BEFORE_START_DAY', startDay: startDay };
+}
+// 1) 복사 (이미 만든 파일이 있으면 이어서)
+step = 1;
+const propKey = 'YR_' + (test ? YR_TEST_PREFIX_ : '') + ny + '_FILEID';
+const realName = yrNextName_(cur.getName(), y, ny);
+const newName = (test ? YR_TEST_PREFIX_ : '') + realName;
+let nf = null;
+const savedId = props.getProperty(propKey);
+if (savedId) {
+try { const f = DriveApp.getFileById(savedId); if (!f.isTrashed()) nf = f; } catch (e) { nf = null; }
+}
+if (!nf) {
+const parents = cur.getParents();
+if (!parents.hasNext()) throw new Error('올해 파일의 폴더를 찾지 못함');
+nf = cur.makeCopy(newName, parents.next());
+props.setProperty(propKey, nf.getId());
+report.push('복사: ' + newName + ' (새로 만듦)');
+} else {
+report.push('복사: ' + nf.getName() + ' (어제 만든 파일 이어서)');
+}
+// 2) 기록 탭 2행 아래 내용만 지움 (머리글·서식·드롭다운 규칙은 그대로)
+step = 2;
+const nss = SpreadsheetApp.openById(nf.getId());
+const kept = [];
+nss.getSheets().forEach(function (sh) {
+const name = sh.getName();
+if (name.indexOf(YR_RECORD_TAB_PREFIX_) === 0 && !sh.isSheetHidden()) {
+const lr = sh.getLastRow(), lc = sh.getLastColumn();
+if (lr > 1 && lc > 0) sh.getRange(2, 1, lr - 1, lc).clearContent();
+report.push('지움: ' + name + ' ' + Math.max(lr - 1, 0) + '줄');
+} else {
+kept.push(name);
+}
+});
+SpreadsheetApp.flush();
+report.push('그대로 둔 탭: ' + kept.join(', '));
+// 3) 서비스 계정 편집자 공유 (올해 파일의 서비스 계정 편집자를 그대로)
+step = 3;
+const sa = cur.getEditors().map(function (u) { return String(u.getEmail() || ''); })
+.filter(function (e) { return /\.gserviceaccount\.com$/i.test(e); });
+if (!sa.length) throw new Error('올해 파일에 서비스 계정 편집자가 없음');
+sa.forEach(function (e) { nf.addEditor(e); });
+const nEditors = nf.getEditors().map(function (u) { return String(u.getEmail() || '').toLowerCase(); });
+const missing = sa.filter(function (e) { return nEditors.indexOf(e.toLowerCase()) < 0; });
+if (missing.length) throw new Error('서비스 계정 편집자 추가 확인 실패: ' + missing.join(', '));
+report.push('서비스 계정 편집자: ' + sa.join(', '));
+report.push('소유자: ' + (nf.getOwner() ? nf.getOwner().getEmail() : '?') + ' / 링크 공유: ' + nf.getSharingAccess());
+// (시험 확인용) 추가매출 탭 '달성 여부 (Y/N)' 칸 드롭다운이 따라왔는지
+nss.getSheets().forEach(function (sh) {
+if (sh.getName().indexOf(YR_RECORD_TAB_PREFIX_) !== 0 || sh.getName().indexOf('추가매출') < 0) return;
+const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(function (v) { return String(v).trim(); });
+const c = head.indexOf('달성 여부 (Y/N)');
+report.push('추가매출 Y/N 드롭다운: ' + (c < 0 ? '칸 없음' : (sh.getRange(2, c + 1).getDataValidation() ? '있음' : '없음')));
+});
+const url = 'https://docs.google.com/spreadsheets/d/' + nf.getId() + '/edit';
+// 4) '설정' 탭 등록 (실제만)
+step = 4;
+if (!test) {
+const sheet = getSheetObj_(SHEET_SETTING);
+const data = sheet.getDataRange().getValues();
+const row = yrSettingInsertRow_(data);
+if (row <= data.length) sheet.insertRowAfter(row - 1);
+sheet.getRange(row, 1, 1, 4).setValues([[nextKey, nf.getId(), ny + '년 인사평가 파일 ID (자동 연도 전환 ' + today + ')', '공통']]);
+invalidateSheetCache_(SHEET_SETTING);
+props.deleteProperty(propKey);
+report.push("'설정' 탭 " + row + '행에 ' + nextKey + ' 등록');
+} else {
+report.push("'설정' 탭: 시험 모드라 쓰지 않음");
+}
+// 5) 성공 메일 (실제는 이 뒤로 키가 있어 다시 오지 않음 = 1번)
+step = 5;
+yrMail_(test, ny + ' 인사평가 파일 생성 완료' + (test ? '' : ' — 1월 중 추가매출 계획을 입력해 주세요'),
+(test ? '시험 파일입니다. 확인 후 편집기에서 yearRolloverCleanupTest를 1번 실행해 휴지통으로 옮겨 주세요.\n\n' : '') +
+'파일: ' + url + '\n\n' + report.join('\n'));
+Logger.log('연도 전환 ' + (test ? '[시험] ' : '') + '완료\n' + report.join('\n'));
+return { ok: true, test: test, fileId: nf.getId(), name: nf.getName(), report: report };
+} catch (e) {
+const msg = String((e && e.message) || e);
+Logger.log('연도 전환 ' + (test ? '[시험] ' : '') + step + '단계 실패: ' + msg + '\n' + report.join('\n'));
+yrMail_(test, ny + ' 인사평가 파일 생성 실패 — ' + step + '단계',
+step + '단계에서 실패했습니다: ' + msg + '\n\n지금까지 한 일:\n' + (report.join('\n') || '(없음)') + '\n\n' + retryLine);
+return { ok: false, step: step, error: msg, report: report };
+} finally {
+lock.releaseLock();
+}
+}
