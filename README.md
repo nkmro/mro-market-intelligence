@@ -12,6 +12,23 @@ mro-market-intelligence/
 └── README.md           ← 이 문서
 ```
 
+## 처음 작업하는 AI·개발자를 위한 안내 (2026-11-10)
+
+이 저장소를 처음 보는 AI·개발자가 **수정·개발 요청을 받았을 때 먼저 읽을 요약**입니다. 아래 날짜별 업데이트 기록은 이력이므로, 지금 상태는 이 절과 각 절의 표를 기준으로 보세요.
+
+- **사람과 역할**: 운영자 재홍님(동부 팀장, 비개발자)이 승인 클릭·비밀값 입력·로그인·Apps Script 편집기 저장·운영 시트 값 수정·Cloud Shell 배포 실행을 맡습니다. AI는 분석·코드·시험·커밋·확인을 맡고, 설명은 비개발자가 화면을 보며 따라 할 수 있게 한국어로 합니다.
+- **작업 순서**: 분석 → 시안(화면이면 그림, 깨끗한 실제 같은 예시 데이터) → diff(채팅에 직접 보여줌) → **승인** → 커밋 → 저장소를 다시 받아 sha256 앞 16자리 지문 대조 → 배포 → 실제 화면·로그 확인. 승인 없이 커밋·배포하지 않습니다.
+- **확인 원칙**: 추측을 사실처럼 쓰지 않습니다. 근거는 파일·행 번호로 대고 [확인]/[추정]/[미확인]을 붙입니다. 코드에 처음 쓰는 API는 공식 문서를 확인하고 링크를 남깁니다. 새 화면·메뉴는 기존 화면과 같은 데이터·같은 목적인지(중복) 먼저 점검합니다.
+- **배포 경로가 셋입니다** (자세히는 아래 "배포/롤백 방법"):
+  - 저장소 루트의 `feed.html`·`index.html` 등 → **커밋하면 1~2분 뒤 GitHub Pages로 바로 운영 반영**됩니다. 커밋 = 배포입니다.
+  - `apps-script/Code.gs`·`appsscript.json` → **편집기가 원본, 저장소는 미러**입니다. 저장소 `Code.gs`의 맨 위 미러 안내(13줄)는 편집기에는 `// [DELIVERY]` 1줄로 들어갑니다. 편집기 저장(Ctrl+S)은 재홍님이 합니다.
+  - `cloud-run/mro-functions/` → 소스 1개에 함수 41개(`exports.*`). 고친 코드를 쓰는 함수만 각각 `gcloud functions deploy`합니다(재홍님이 Cloud Shell에 붙여넣기).
+- **보안 금지(재홍님 규칙)**: 비밀값(키·비밀번호) 출력, 스크립트 속성 화면 열기, 비밀값이 보이는 Cloud Shell 화면 보기, 브라우저로 운영 시트 값 수정(읽기는 가능), 비밀번호가 입력된 로그인 폼 제출은 하지 않습니다. 시험 기록을 운영 데이터에 쓰지 않고, 다른 사용자로 로그인하지 않습니다. 비밀값은 이름만 문서에 적습니다.
+- **시험**: `cloud-run/mro-functions/tests/`(46개). `cd cloud-run/mro-functions && npm ci && node tests/<파일>.js`로 돌리고, 마지막 줄 `pass N / fail 0`을 봅니다. 최근 시험(예: `competency_*`)은 Google·Firestore를 가짜로 바꿔 실제 접속 0건이며 파일 첫 줄 주석에 범위가 적혀 있습니다. 화면(`feed.html`)은 Playwright로 가짜 응답을 넣어 시험해 왔습니다. 알려진 예외: `competency_create_tests.js`의 BC6은 실행 날짜에 따라 실패합니다(코드 문제 아님).
+- **비용**: 2026-11에 요금 절감 작업(Cloud Scheduler 작업 4개 → 1개 등)을 했습니다. 호출·읽기를 늘리는 변경은 diff에 "예상 요금 영향"을 적습니다. Google Sheets API는 사용자(서비스 계정 1개 = 1명)당 분당 읽기 60회 한도가 있어 메모리 저장(TTL)을 씁니다.
+
+## 업데이트 기록 (날짜순)
+
 > **2026-08-18 업데이트**: `apps-script/Code.gs`, `apps-script/appsscript.json`, `cloud-run/mro-functions/*`(index.js·package.json·package-lock.json·fix.py·fix2.py) 실제 소스 파일을 이 저장소에 처음으로 커밋했습니다. 지금까지는 README만 있고 실제 코드는 Apps Script 편집기/GCP 콘솔에만 있었는데, 이제 GitHub에서도 실제 코드를 볼 수 있습니다. (세부 사항은 각 하위 README 참고.)
 
 > **2026-08-21 업데이트**: 아래 API 매핑표를 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드를 직접 대조해 갱신했습니다. `getFeed`·`getNotifications`·`getPostById`·`getComments`·`getThreadSeen`·`markThreadSeen`·`postComment`가 그 사이 실제로 Cloud Run 전환·실서비스 연동까지 완료되어 있었는데 표에는 반영되지 않고 있었습니다.
@@ -45,7 +62,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
       │
       ├── 기존 경로 (아직 Cloud Run으로 안 옮긴 API의 기본 경로) ──► [Google Apps Script Web App] ─┐
       │                                                              (Code.gs, doPost)              │
-      └── 신규 경로 (읽기 9개 + 쓰기 2개, 상수로 켜짐, 실패 시 자동 폴백) ─► [Google Cloud Run 함수들] │
+      └── 신규 경로 (Cloud Run 함수 41개 — 대부분의 읽기·쓰기, 상수로 켜짐)   ─► [Google Cloud Run 함수들] │
                                                                       (cloud-run/mro-functions)       │
                                                                      │                        │
                                                                      ▼                        ▼
@@ -55,8 +72,8 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 ```
 
 - **Google Sheets가 실제 데이터베이스입니다.** 사용자 계정(사용자팀마스터), 설정값(설정), 시황 게시물, 품목, 고객, 댓글, 수집로그, 탈락뉴스, 삭제이력 등 모든 "업무 데이터"가 스프레드시트에 저장됩니다.
-- **Google Apps Script(Code.gs)가 원래이자 지금도 대부분의 쓰기 기능을 담당하는 백엔드입니다.** 로그인(세션 발급), 뉴스 수집·게시(`collectMarketNews()`, 아래 "뉴스 수집·게시 파이프라인" 절 참고), 항목/고객/사용자 관리, 설정 변경 등을 처리합니다. **(2026-09-02 기준)** `doPost` action 중 `markChecked`/`suggestMaterials`/`getAttentionPosts`/`clientDebugLog` 4개만 아직 Apps Script 전용으로 남아 있고, 나머지 실사용 action(약 21개)은 아래 "Cloud Run 전환 상태"대로 전부 Cloud Run으로 전환·연동 완료된 상태입니다 — 다만 Apps Script 코드 자체는 폴백 대상으로 그대로 남아 있습니다(아래 전환 원칙 참고).
-- **Google Cloud Run은 Apps Script의 느린 응답(특히 CacheService 기반 세션 조회)을 개선하기 위해 도입된 신규 백엔드입니다.** 전체 기능을 옮기는 게 아니라, **실제로 트래픽이 있고 안전하게 검증 가능한 API부터 하나씩** Cloud Run으로 옮기고 있습니다. **(2026-09-02 기준)** 읽기·쓰기 합쳐 약 21개 action이 전환·실서비스 연동 완료됐고(`getTeamManagers`/`upsertCustomer`는 배포·검증만 되고 프론트 단독 연동은 없음 — 아래 API 매핑표 참고), 여기에 Apps Script에는 대응 기능 자체가 없는 신규 기능(FCM 푸시 토큰 등록, 5분 주기 통합 푸시, 매시 리마인더 배치) 3개까지 Cloud Run에서만 서비스합니다. Cloud Run은 세션을 Apps Script의 캐시가 아니라 Firestore에서 조회합니다 (Apps Script 로그인 시 Firestore에도 세션을 같이 기록하는 "이중 쓰기" 방식으로 동기화, 세션 조회마다 슬라이딩 연장도 동일하게 적용).
+- **Google Apps Script(Code.gs)가 원래이자 지금도 대부분의 쓰기 기능을 담당하는 백엔드입니다.** 로그인(세션 발급), 뉴스 수집·게시(`collectMarketNews()`, 아래 "뉴스 수집·게시 파이프라인" 절 참고), 항목/고객/사용자 관리, 설정 변경 등을 처리합니다. **(2026-09-02 기준)** `doPost` action 중 `markChecked`/`suggestMaterials`/`getAttentionPosts`/`clientDebugLog` 4개만 아직 Apps Script 전용으로 남아 있고, 나머지 실사용 action(약 21개)은 아래 "Cloud Run 전환 상태"대로 전부 Cloud Run으로 전환·연동 완료된 상태입니다 — 다만 Apps Script 코드 자체는 폴백 대상으로 그대로 남아 있습니다(아래 전환 원칙 참고). **(2026-11-10 보강)** 그 뒤 `suggestMaterials`(AI 원자재 추천, 2026-10-14~)와 회원가입·비밀번호 찾기(`authCodeTest`, 2026-10-08~)도 Cloud Run 우선으로 옮겨졌습니다. 지금 Apps Script는 폴백 경로와 시간 트리거 작업(뉴스 수집 `collectMarketNews`, 인사평가 연도 전환 `yearRolloverDaily`, 일일 백업 `runDailyBackup_`)을 맡습니다.
+- **Google Cloud Run은 Apps Script의 느린 응답(특히 CacheService 기반 세션 조회)을 개선하기 위해 도입된 신규 백엔드입니다.** 전체 기능을 옮기는 게 아니라, **실제로 트래픽이 있고 안전하게 검증 가능한 API부터 하나씩** Cloud Run으로 옮기고 있습니다. **(2026-09-02 기준)** 읽기·쓰기 합쳐 약 21개 action이 전환·실서비스 연동 완료됐고(`getTeamManagers`/`upsertCustomer`는 배포·검증만 되고 프론트 단독 연동은 없음 — 아래 API 매핑표 참고), 여기에 Apps Script에는 대응 기능 자체가 없는 신규 기능(FCM 푸시 토큰 등록, 5분 주기 통합 푸시, 매시 리마인더 배치) 3개까지 Cloud Run에서만 서비스합니다. **(2026-11-10)** 지금 `index.js`의 함수는 41개이고 함수별 상태는 [`cloud-run/README.md`](./cloud-run/README.md)의 함수별 목록에 있습니다. 인사평가처럼 Apps Script 대체 경로가 없는 Cloud Run 전용 기능도 있습니다. Cloud Run은 세션을 Apps Script의 캐시가 아니라 Firestore에서 조회합니다 (Apps Script 로그인 시 Firestore에도 세션을 같이 기록하는 "이중 쓰기" 방식으로 동기화, 세션 조회마다 슬라이딩 연장도 동일하게 적용).
 - **전환 원칙(중요): 기존 Apps Script 코드는 절대 삭제하지 않습니다.** 프론트엔드에는 `CLOUD_RUN_..._URL`이라는 이름의 상수가 있고, 이 상수가 채워져 있으면 Cloud Run을 먼저 시도하고, 비어 있으면(혹은 실패하면) 기존 Apps Script로 자동/수동 롤백됩니다.
 
 ## 데이터 저장 위치: Google Sheets vs Firestore
@@ -65,7 +82,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 
 - **Google Sheets = 사람이 보고 고치는 "진짜" 업무 데이터.** 사용자 계정·설정값·시황게시물·품목·고객·댓글·수집로그·탈락뉴스·삭제이력 등, 재홍님이나 팀원이 직접 열어서 확인하거나 손으로 고칠 수 있어야 하는 데이터는 전부 Sheets에 있습니다. Apps Script(`Code.gs`)와 Cloud Run 함수 양쪽 다 이 Sheets를 읽고 씁니다(Cloud Run은 서비스 계정 IAM 권한으로 접근).
 - **인사평가 파일은 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-10 문서화).** 파일 ID는 코드에 적지 않고 MRO 본 시트 '설정' 탭의 `인사평가파일_{연도}` 키에서 읽습니다. 그 안에 역량 기록 탭(`역량-…`, 자동 인식)·평가 기준 탭(`CRM-역량평가-기준`)·`인사평가설정` 탭이 있고, `getCompetencyTest`/`saveCompetencyTest`(Cloud Run)가 읽고 씁니다. 다음 해 파일은 Apps Script `yearRolloverDaily`가 만듭니다(아래 "Cloud Scheduler 작업" 절 끝 참고).
-- **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 전체 목록(13개, 2026-11-10 코드 대조)은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
+- **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 전체 목록(15개, 2026-11-10 코드 대조)은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
 - **판단 기준**: "사람이 직접 열람/수정해야 하는가?"가 갈림길입니다. 그렇다면 Sheets, 아니라면(휘발성이거나 순수 동시성 제어용이라면) Firestore입니다. 이 기준 때문에 예를 들어 알림 자체의 원본 판정 데이터(게시물/댓글)는 Sheets에 있지만, "이 사용자에게 마지막으로 어떤 상태를 보냈는지"(중복 발송 방지 signature) 같은 부가 상태는 Firestore(`pushNotifyState` 등)에 있습니다.
 
 ## 뉴스 수집·게시 파이프라인 (`collectMarketNews()`)
@@ -84,6 +101,17 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 > **2026-09-02 사고 이력**: 위 4·7·8단계는 전부 이 날 발생한 실제 사고(수집이 평소보다 오래 걸린 날, 6분 하드리밋에 걸려 그날 게시물이 0건이 된 사고)를 Executions 로그·Cloud 로그로 직접 진단한 뒤 만든 재발 방지 장치입니다. 자세한 원인 분석은 이 세션에서 다뤘고 별도 설계 문서로는 남기지 않았습니다 — 코드 안 주석(`collectMarketNews()` 상단 및 각 단계)에 근거와 함께 기록되어 있습니다.
 
 > **남은 과제 — 같은 통계를 다른 표현으로 다시 보도한 기사 (2026-10-23 등록, 아직 손대지 않음)**: 10/21(인천뉴스)과 10/23(연합뉴스) 프로필렌 게시물이 같은 여수세관 통계(프로필렌 수출액 -42%)를 다른 제목·요약으로 보도해 두 번 게시됐다. 2단계 제목 겹침, 5단계 유사도(≥0.5), 숫자매칭 드라이런(`isNumericMatchDryRun_`, 요약 겹침 0.35 이상 조건) 모두 문구가 달라 잡지 못했다(10/23 탈락뉴스에 해당 줄 없음 — 재홍님 확인). 이 사례는 2026-10-23 수출입 기준 변경(`buildSummarizePrompt_`)으로 함께 걸러지지만, 가격 기사에서도 같은 일이 생길 수 있다 → "원자재 + 핵심 숫자 + 방향" 일치 비교로 보강할지 검토한다.
+
+## 인사평가(역량평가) 구조 (2026-11-10)
+
+팀원의 역량 기록을 앱에서 쓰고, 팀장이 평가하는 기능입니다. 자세한 규칙은 [`COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md`](./COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md).
+
+- **메뉴(인사평가 묶음)**: 내 역량 기록(일반·담당 — 쓰기), 팀 역량평가(팀장 — 평가·승인 / 임원 — 보기), 평가 기준 보기, 인사평가 설정(관리자, 보기 전용).
+- **데이터**: 해마다 인사평가 파일 1개(위 "데이터 저장 위치"). 기록 탭은 이름이 `역량-`으로 시작하면 자동 인식하고, 탭 이름 끝부분이 앱 탭 이름이 됩니다(코드에 탭 목록을 적지 않음 — 시트에 탭을 추가하면 앱에도 생김). 각 기록 탭 끝에는 `기록ID`·`작성자이메일`·`기록일시`·`수정일시`·`팀장한줄의견`·`첨부`와 `팀`·`수정 요청` 칸이 있습니다.
+- **기록 상태**: 계획(추가매출에서 결과를 아직 안 적은 줄) → 미평가 → 평가 완료. 팀원은 미평가만 고치기·삭제할 수 있고, 평가 완료 기록은 1회 수정 요청 → 같은 팀 팀장 승인 뒤 다시 미평가가 됩니다.
+- **입력 칸 규칙**: 서버 `lib/competency.js`의 `CREATE_RULES`(대면영업 `faceSales`·원가개선 `costSave`·자기개발 `selfDev`·직급역량 `gradeComp`·위기관리 `crisis`). 화면은 같은 규칙으로 먼저 검사하고, 서버가 한 번 더 검사합니다. 날짜는 대면영업 = 최근 N일(`기록가능기간일`), 월 단위 항목 = 이번 달 또는 지난달(`월기록마감일`까지).
+- **연도**: 12월에 Apps Script `yearRolloverDaily`가 다음 해 파일을 만들고, 1월 1일부터 새해 파일이 기본입니다. 1/1~`전년도입력마감일`(기본 15)에는 화면 연도 칸에서 작년을 골라 저장할 수 있고, 그 뒤 작년은 보기 전용(서버 `YEAR_CLOSED`)입니다.
+- **코드 위치**: 화면 `feed.html`의 `comp*` 함수들, 서버 `index.js`의 `getCompetencyTest`·`saveCompetencyTest`(쓰기는 `writeLocks/competencyEval` + `writeIdempotency`), 판정 순수 함수 `lib/competency.js`, 시험 `tests/competency_*.js`·`tests/year_rollover_tests.js`.
 
 ## API 매핑표 (프론트 호출 → 백엔드 대응)
 
@@ -104,7 +132,9 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | 시황게시물별 AI 보고서 작성용 프롬프트 생성 (`feed.html` "📝 AI 보고서 프롬프트 생성" 버튼) | `generateReportPrompt` | — (Cloud Run 전환 대상 아님, Apps Script 전용 신규 기능) | `handleGenerateReportPrompt_` | 2026-09-04 신규(커밋 `1e87cb0`). 게시물의 원자재명/제목/AI요약/링크를 '설정' 시트 `보고서프롬프트템플릿` 키의 메타 프롬프트에 채워 DeepSeek을 1회 호출해 "프롬프트 텍스트"만 생성(뉴스 재분석 아님). hedge/재시도(`RETRYABLE_API_ACTIONS`) 대상에서 제외되고, 실측 응답 26~40초에 맞춰 클라이언트 타임아웃도 이 액션만 60초로 별도 설정(다른 액션은 20초, 커밋 `eb311eb`) |
 | 댓글 고정/해제/목록 조회 (`feed.html` "📌 이슈 댓글" 배너, 팀장/임원 전용) | `pinComment`, `unpinComment`, `getPinnedComments` | ✅ 3개 전부 Cloud Run 전용 신규 (`pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-09-14 신규. 전역 최대 3개 고정, 고정 시점 스냅샷 저장, 원본 삭제 시 자가정리, Firestore 트랜잭션으로 동시성 제어. 자세한 내용은 위 "댓글 고정(Pin Comment) 기능" 절 참고 |
 | 인사평가 › 내 역량 기록·팀 역량평가·평가 기준 보기·인사평가 설정 (`feed.html`) | `getCompetencyTest`(view `mine`/`team`/`criteria`/`ping`), `saveCompetencyTest`(action `backfill`/`create`/`update`/`delete`/`reply`/`replyEdit`/`replyClear`/`editRequest`/`editApprove`/`editReject`/`review`/`reviewEdit`) | ✅ Cloud Run 전용 신규 (`CLOUD_RUN_GET_COMPETENCY_URL`/`CLOUD_RUN_SAVE_COMPETENCY_URL`) — Apps Script 대체 경로 없음 | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-10-19 설계 승인 후 단계별 추가(2026-11-10 이 표에 추가). 보기는 `year`(없으면 올해)로 연도를 고르고 응답에 `years`·`yearMode`(`current`/`grace`/`closed`)·`graceDay`를 줌. 저장은 올해 파일, 또는 1월 유예 기간의 작년 파일만(그 밖은 `YEAR_CLOSED`, 올해보다 큰 해는 `BAD_YEAR`). 쓰기는 `writeLocks/competencyEval` + `writeIdempotency`. 리비전 `getcompetencytest-00015-kes`·`savecompetencytest-00016-fub`(2026-11-10). 설계: `COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md` |
-| 그 외 나머지 action (`markChecked`, `suggestMaterials`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
+| 품목 등록 화면 AI 원자재 추천 + 품목마스터 F열 자동 채움 | `suggestMaterials` | ✅ Cloud Run 우선 (`CLOUD_RUN_SUGGEST_MATERIALS_URL` → `suggestMaterialsTest`, 2026-10-14~) — `AI_FAILED`·`LOCK_TIMEOUT`·5xx·연결 실패일 때만 Apps Script로 넘김 | `handleSuggestMaterials_`, `suggestRawMaterials` | 시트에서 품목명을 고치면 Apps Script `onEditInstallable`이 Cloud Run에 보내 처리(스크립트 속성 `SUGGEST_PROXY_URL`·`SUGGEST_PROXY_TOKEN`이 스위치). 빈 F열은 15분 점검 `materialSweepTest`가 채움. `MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md` |
+| 회원가입·비밀번호 찾기 (`index.html`) | `requestSignup`/`verifySignup`/`requestPasswordReset`/`confirmPasswordReset` | ✅ Cloud Run 우선 (`CLOUD_RUN_AUTH_CODE_URL` → `authCodeTest`, 2026-10-08~) — 1단계(인증코드 받기)에서 응답이 없거나 메일 발송이 실패하면 Apps Script로 자동 전환 | Code.gs 같은 이름의 처리 | 판단 규칙 `lib/authCodes.js`(Code.gs와 같은 순서·오류 코드), 회사 메일 서버로 발송 |
+| 그 외 나머지 action (`markChecked`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
 
 > 이 표는 2026-09-01 기준입니다(2026-11-10: 인사평가 줄만 추가 — 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
 
@@ -199,7 +229,7 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 
 ## Firestore 컬렉션 전체 목록
 
-Cloud Run 함수들이 쓰는 Firestore 컬렉션 13개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스. 진단용 `firestoreTest`가 쓰는 `sessions_test`는 제외). **2026-11-10**: `cloud-run/mro-functions/index.js`·`lib/*.js`의 컬렉션 이름을 직접 대조해, 그동안 빠져 있던 5개(`issueMailRuns`·`issueMailDeliveries`·`authCodes`·`authRateLimits`·`materialRowClaims`)를 추가하고 `writeLocks`·`writeIdempotency` 사용 함수를 갱신했습니다. 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
+Cloud Run 함수들이 쓰는 Firestore 컬렉션 15개입니다(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스. 진단용 `firestoreTest`가 쓰는 `sessions_test`는 제외). **2026-11-10**: `cloud-run/mro-functions/index.js`·`lib/*.js`의 컬렉션 이름을 직접 대조해, 그동안 빠져 있던 7개(`issueMailRuns`·`issueMailDeliveries`·`authCodes`·`authRateLimits`·`materialRowClaims`·`sweepRuns`·`materialSweepFails`)를 추가하고 `writeLocks`·`writeIdempotency` 사용 함수를 갱신했습니다. 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
 
 | 컬렉션 | 문서 ID | 쓰는 함수 | 용도 |
 |---|---|---|---|
@@ -216,6 +246,8 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 13개입니다(전부 `mro-mar
 | `authCodes` | (`lib/authCodes.js`가 정함) | `authCodeTest` | 회원가입·비밀번호 찾기 인증코드(10분 보관) |
 | `authRateLimits` | (`lib/authCodes.js`가 정함) | `authCodeTest` | 인증코드 요청 횟수 제한(1시간) |
 | `materialRowClaims` | 품목 행 키(품목코드, 없으면 행 번호) | `suggestMaterialsTest`/`materialSweepTest`(`lib/rowClaim.js`) | AI 원자재 추천의 품목 행 처리권(같은 행을 두 요청이 동시에 처리하지 않게, 90초 만료) |
+| `sweepRuns` | `material`, `material_{서울시각}_{runId}` | `materialSweepTest` | 15분 점검 회차 겹침 방지 표시 + 회차 요약 |
+| `materialSweepFails` | `{날짜}_{행키}` | `materialSweepTest` | 같은 품목 행의 하루 실패 횟수(설정 `원자재추천일일실패한도`, 기본 3 — 넘으면 그날 건너뜀) |
 
 > `loginLocks`/`writeLocks`/`writeIdempotency` 3개는 2026-09-02 이 문서 정리 작업 중 코드(`cloud-run/mro-functions/index.js`, `lib/writeLock.js`, `lib/writeIdempotency.js`)를 직접 확인해 처음으로 문서화했습니다 — 이전까지는 `cloud-run/README.md`의 "Firestore 구조" 절에도 빠져 있었습니다. 상세 필드 구성 등은 `cloud-run/README.md`도 함께 갱신해 두었습니다.
 
