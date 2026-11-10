@@ -29,6 +29,8 @@ mro-market-intelligence/
 > **2026-09-04~07 업데이트**: 시황게시물에서 외부 AI(Claude/Gemini 등)에 그대로 붙여넣을 리서치 보고서 작성 프롬프트를 생성해주는 "📝 AI 보고서 프롬프트 생성" 버튼을 추가했습니다(Apps Script 신규 액션 `generateReportPrompt`, 커밋 `1e87cb0`) — 자세한 내용은 아래 API 매핑표 참고. 이 액션의 실측 응답 시간(26~40초)이 기존 공용 20초 타임아웃보다 길어 서버는 정상 완료됐는데 클라이언트가 먼저 끊어 "생성 실패"로 잘못 표시되던 문제를 액션별 60초 타임아웃으로 수정했고(커밋 `eb311eb`), 그 여파로 패널이 열려 있는 시간이 30초 폴링 재렌더링과 겹치면서 "열리자마자 닫히는" 버그가 생긴 것도 함께 수정했습니다(커밋 `cbbb227`). 또한 로그아웃(수동/무활동 자동 모두) 시 그 기기의 FCM 푸시 구독을 비활성화하도록 해, 로그아웃 후에도 알림이 계속 오던 문제를 해결했습니다(신규 Cloud Run 함수 `unregisterPushSubscriptionTest`, 커밋 `d347f85`/`ec663ed`) — 자세한 내용은 아래 "Web Push / FCM 알림 구조" 절 참고. 이 외에 `suggestMaterials`(품목 등록 시 AI 원자재 추천)의 hedge/재시도 로직이 DeepSeek 중복 호출을 유발하던 문제도 함께 수정했습니다(커밋 `46f6180`) — 아래 "알려진 주요 버그 수정 이력" 절 참고.
 >
 > **2026-09-09~15 업데이트**: 이 기간 커밋들은 GitHub 웹 업로드로 "Update feed.html" 같은 내용 없는 메시지로만 올라가 있어, 이번에 코드 diff를 직접 대조해 소급 문서화했습니다. ① **다중 기기 로그인 시 푸시 오발송 버그**: 같은 계정으로 PC·폰 등 여러 기기에 로그인해 있을 때 세션 활동 판정이 이메일 단위였던 탓에, 그중 한 기기만 로그아웃해도 이미 로그아웃한 그 기기에까지 푸시가 계속 발송되고 있었습니다. 이메일 단위 "살아있는 세션 없음" 판정을 우선 추가해 완화했고(커밋 `fb016f7`/`88c933a`), 로그인 세션에 `deviceId`를 저장해 기기 단위로 재판정하고 로그아웃 시점에 세션을 즉시 무효화하도록 근본 수정했습니다(커밋 `99ab87b`/`8a6410d`/`f88c8d2`/`f1b6cb8`/`2494fb5`) — 같은 배치에서 `doLogout()`이 실수로 `await` 처리되어 로그아웃 버튼을 눌러도 화면 전환이 몇 초씩 멈추던 회귀 버그도 함께 발견해 수정했습니다(`f88c8d2`). 자세한 내용은 아래 "알려진 주요 버그 수정 이력" 절 참고. ② **임원 댓글 팀 스코프 버그 수정**(커밋 `7d6fc9c`): 임원이 다른 팀 품목에 남긴 댓글이 정작 그 팀 담당자·팀장에게는 안 보이던 문제 — 작성자가 임원이면 조회자의 역할·팀과 무관하게 항상 노출되도록 수정. 아래 "알려진 주요 버그 수정 이력" 절 참고. ③ **댓글 고정(Pin Comment) 기능 신규 추가**(커밋 `631ca1e` 등 다수): 팀장/임원이 중요 댓글을 전역 최대 3개까지 고정해 상단에 상시 노출하는 기능을 새로 추가했습니다(Code.gs에는 대응 기능 없음, 신규 Firestore 컬렉션 `pinnedComments`). 자세한 내용은 아래 "댓글 고정(Pin Comment) 기능" 절과 API 매핑표 참고. ④ **알림 선택 삭제/읽음 처리**(커밋 `cf39a16`): 2026-09-01에 추가했던 팀장/임원 전용 "알림 전체 지우기" 일괄 버튼을, 개별 알림을 체크박스로 골라 삭제/읽음 처리할 수 있는 방식으로 교체했습니다(전체선택 체크 시 기존과 동일하게 동작해 기능 손실 없음) — 아래 "Web Push / FCM 알림 구조" 절의 "알림 탭 선택 삭제/읽음 처리" 항목 참고.
+>
+> **2026-11-10 업데이트**: 인사평가(역량평가) 기능이 이 문서에 빠져 있어 함께 정리했습니다(아래 "데이터 저장 위치"·API 매핑표·Firestore 컬렉션·Cloud Scheduler 절의 Apps Script 트리거 참고·설정 시트 주요 키·하위 문서). 이번 작업 묶음: ① **연도 자동 전환**(커밋 `bf495fc`·`1970fce`) — Apps Script `yearRolloverDaily`가 12월 `연도전환시작일`(인사평가설정, 기본 1)부터 매일 오전 4~5시(서울)에 올해 인사평가 파일을 복사해 다음 해 파일을 만들고 '설정' 탭에 `인사평가파일_{다음 해}`를 등록합니다. 결과 메일은 `MailApp.sendEmail`(권한 `script.send_mail`). ② **1월 유예·연도 선택**(커밋 `1e9d152`·`6b98b88`·`df70cb7`) — 1/1~`전년도입력마감일`(기본 15)에는 작년 파일 저장을 허용하고 그다음 날 0시(서울)부터 서버가 `YEAR_CLOSED`로 거절합니다. 화면 오른쪽 위 연도 칸(파일 있는 해 2개 이상일 때)·안내 띠, 마감된 해는 보기 전용, 관리 › 공통 설정에 12/7~12/31 "다음 해 인사평가 파일이 아직 없습니다" 경고. ③ **위기관리 탭 앱 입력**(커밋 `80787ad`). ④ **팀장 평가 줄 음영**(커밋 `dc9acfb`). 뉴스 AI는 2026-11-09부터 OpenAI `gpt-5.4-mini`·추론 강도 low로 운영 중입니다(커밋 `4276058`에서 반영 — 아래 "뉴스 수집·게시 파이프라인" 3단계).
 
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
@@ -62,6 +64,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 이 시스템은 데이터 저장소가 하나가 아니라 **역할이 분리된 두 곳**입니다. 새로 합류하는 개발자/AI가 "이 값은 어디에 저장돼 있지?"를 헷갈리지 않도록 명확히 구분합니다.
 
 - **Google Sheets = 사람이 보고 고치는 "진짜" 업무 데이터.** 사용자 계정·설정값·시황게시물·품목·고객·댓글·수집로그·탈락뉴스·삭제이력 등, 재홍님이나 팀원이 직접 열어서 확인하거나 손으로 고칠 수 있어야 하는 데이터는 전부 Sheets에 있습니다. Apps Script(`Code.gs`)와 Cloud Run 함수 양쪽 다 이 Sheets를 읽고 씁니다(Cloud Run은 서비스 계정 IAM 권한으로 접근).
+- **인사평가 파일은 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-10 문서화).** 파일 ID는 코드에 적지 않고 MRO 본 시트 '설정' 탭의 `인사평가파일_{연도}` 키에서 읽습니다. 그 안에 역량 기록 탭(`역량-…`, 자동 인식)·평가 기준 탭(`CRM-역량평가-기준`)·`인사평가설정` 탭이 있고, `getCompetencyTest`/`saveCompetencyTest`(Cloud Run)가 읽고 씁니다. 다음 해 파일은 Apps Script `yearRolloverDaily`가 만듭니다(아래 "Cloud Scheduler 작업" 절 끝 참고).
 - **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 7개의 전체 목록은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
 - **판단 기준**: "사람이 직접 열람/수정해야 하는가?"가 갈림길입니다. 그렇다면 Sheets, 아니라면(휘발성이거나 순수 동시성 제어용이라면) Firestore입니다. 이 기준 때문에 예를 들어 알림 자체의 원본 판정 데이터(게시물/댓글)는 Sheets에 있지만, "이 사용자에게 마지막으로 어떤 상태를 보냈는지"(중복 발송 방지 signature) 같은 부가 상태는 Firestore(`pushNotifyState` 등)에 있습니다.
 
@@ -100,9 +103,10 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | 새 게시물/댓글 필요/답변 요청 통합 푸시, 담당자 댓글 마감 리마인더 푸시 (Code.gs에는 없는 신규 기능) | (Cloud Run 전용 신규 API, action 이름 없음) | ✅ 전부 배포·연동 완료 — FCM 토큰 등록(`registerPushSubscriptionTest`, 로그인 시 자동 호출), 5분 주기 통합 푸시(`pushBatchTest`, Cloud Scheduler `push-batch-5min`), 매시 정각 리마인더(`reminderBatchTest`, Cloud Scheduler `reminder-batch-hourly`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | `registerPushSubscriptionTest`는 코드가 8/28에 커밋된 뒤 Cloud Run 배포가 누락된 채 방치되어 있다가 **2026-09-01에 배포 완료**됨(그 전까지는 로그인해도 어떤 기기도 실제로 푸시를 등록하지 못하는 상태였음). `PUSH_NOTIFICATION_STAGE3~STAGE6_DESIGN.md` 참고. 전체 구조·Firestore 스키마·Cloud Scheduler 설정·버그 수정 이력(`be8d6fa`, `2d142b6`, `f214df0`, `f8ad0da`, `abc64bf`)은 아래 "Web Push / FCM 알림 구조" 절 참고 |
 | 시황게시물별 AI 보고서 작성용 프롬프트 생성 (`feed.html` "📝 AI 보고서 프롬프트 생성" 버튼) | `generateReportPrompt` | — (Cloud Run 전환 대상 아님, Apps Script 전용 신규 기능) | `handleGenerateReportPrompt_` | 2026-09-04 신규(커밋 `1e87cb0`). 게시물의 원자재명/제목/AI요약/링크를 '설정' 시트 `보고서프롬프트템플릿` 키의 메타 프롬프트에 채워 DeepSeek을 1회 호출해 "프롬프트 텍스트"만 생성(뉴스 재분석 아님). hedge/재시도(`RETRYABLE_API_ACTIONS`) 대상에서 제외되고, 실측 응답 26~40초에 맞춰 클라이언트 타임아웃도 이 액션만 60초로 별도 설정(다른 액션은 20초, 커밋 `eb311eb`) |
 | 댓글 고정/해제/목록 조회 (`feed.html` "📌 이슈 댓글" 배너, 팀장/임원 전용) | `pinComment`, `unpinComment`, `getPinnedComments` | ✅ 3개 전부 Cloud Run 전용 신규 (`pinCommentTest`/`unpinCommentTest`/`getPinnedCommentsTest`) | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-09-14 신규. 전역 최대 3개 고정, 고정 시점 스냅샷 저장, 원본 삭제 시 자가정리, Firestore 트랜잭션으로 동시성 제어. 자세한 내용은 위 "댓글 고정(Pin Comment) 기능" 절 참고 |
+| 인사평가 › 내 역량 기록·팀 역량평가·평가 기준 보기·인사평가 설정 (`feed.html`) | `getCompetencyTest`(view `mine`/`team`/`criteria`/`ping`), `saveCompetencyTest`(action `backfill`/`create`/`update`/`delete`/`reply`/`replyEdit`/`replyClear`/`editRequest`/`editApprove`/`editReject`/`review`/`reviewEdit`) | ✅ Cloud Run 전용 신규 (`CLOUD_RUN_GET_COMPETENCY_URL`/`CLOUD_RUN_SAVE_COMPETENCY_URL`) — Apps Script 대체 경로 없음 | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-10-19 설계 승인 후 단계별 추가(2026-11-10 이 표에 추가). 보기는 `year`(없으면 올해)로 연도를 고르고 응답에 `years`·`yearMode`(`current`/`grace`/`closed`)·`graceDay`를 줌. 저장은 올해 파일, 또는 1월 유예 기간의 작년 파일만(그 밖은 `YEAR_CLOSED`, 올해보다 큰 해는 `BAD_YEAR`). 쓰기는 `writeLocks/competencyEval` + `writeIdempotency`. 리비전 `getcompetencytest-00015-kes`·`savecompetencytest-00016-fub`(2026-11-10). 설계: `COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md` |
 | 그 외 나머지 action (`markChecked`, `suggestMaterials`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
 
-> 이 표는 2026-09-01 기준입니다(실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
+> 이 표는 2026-09-01 기준입니다(2026-11-10: 인사평가 줄만 추가 — 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
 
 ## getTeamManagers 분석 (2026-08-14)
 
@@ -201,8 +205,8 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 8개입니다(전부 `mro-mark
 |---|---|---|---|
 | `sessions` | `sessionToken` | `sessionSyncTest`(기록), 나머지 대부분(조회) | 로그인 세션(Apps Script 로그인 시 이중 쓰기로 동기화, 6시간 만료) |
 | `loginLocks` | `email` | `loginTest`(`acquireLoginLock_`/`releaseLoginLock_`) | 같은 이메일로 동시에 들어오는 로그인 시도를 직렬화하는 분산 락(죽은 락은 10초 후 자가 회수) |
-| `writeLocks` | `lockName`(예: `upsertItemAndCustomer`) | `upsertItemTest`/`upsertCustomerTest`(`lib/writeLock.js`) | 품목·고객사마스터에 동시에 쓸 수 있는 두 함수가 공유하는 분산 락. `loginLocks`와 같은 정책(트랜잭션 선점 + 죽은 락 자가 회수)을 재사용 가능한 모듈로 일반화한 것 |
-| `writeIdempotency` | `idempotencyKey`(`feed.html`의 `generateIdempotencyKey_()`가 생성) | `markThreadSeenTest`/`postCommentTest`/`loginTest`/`updateCommentTest`/`deleteCommentTest`/`upsertItemTest`/`upsertCustomerTest`/`updateUserTest`/`changePasswordTest`/`updateSettingsTest` (총 10개 쓰기 함수, `lib/writeIdempotency.js`) | "같은 요청이 재시도로 두 번 도착해도 실제 쓰기는 한 번만" 보장. `Code.gs`의 `withIdempotency_`(CacheService+LockService)와 동일한 정책을 Firestore 트랜잭션으로 재현(TTL 6시간) |
+| `writeLocks` | `lockName`(예: `upsertItemAndCustomer`, `competencyEval`) | `upsertItemTest`/`upsertCustomerTest`(`lib/writeLock.js`), `saveCompetencyTest`(`competencyEval`, 2026-11-10 문서화) | 품목·고객사마스터에 동시에 쓸 수 있는 두 함수가 공유하는 분산 락. `loginLocks`와 같은 정책(트랜잭션 선점 + 죽은 락 자가 회수)을 재사용 가능한 모듈로 일반화한 것 |
+| `writeIdempotency` | `idempotencyKey`(`feed.html`의 `generateIdempotencyKey_()`가 생성) | `markThreadSeenTest`/`postCommentTest`/`loginTest`/`updateCommentTest`/`deleteCommentTest`/`upsertItemTest`/`upsertCustomerTest`/`updateUserTest`/`changePasswordTest`/`updateSettingsTest`/`saveCompetencyTest` (총 11개 쓰기 함수, `lib/writeIdempotency.js`) | "같은 요청이 재시도로 두 번 도착해도 실제 쓰기는 한 번만" 보장. `Code.gs`의 `withIdempotency_`(CacheService+LockService)와 동일한 정책을 Firestore 트랜잭션으로 재현(TTL 6시간) |
 | `pushSubscriptions` | `{email}_{deviceId}` | `registerPushSubscriptionTest` | 기기별 FCM 푸시 토큰 |
 | `pushNotifyState` | `email` | `pushBatchTest` | 5분 주기 통합 푸시의 중복 발송 방지(직전 집계값 signature 비교) |
 | `reminderDeliveries` | `{날짜}_{targetHour}_{email}` | `reminderBatchTest` | 담당자 댓글 마감 리마인더의 시각별 하루 1회 발송 보장 |
@@ -224,6 +228,8 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 8개입니다(전부 `mro-mark
 
 cron 표현식, 복수 시각(`13,17`) 처리 방식 등 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Cloud Scheduler 작업" 절 참고.
 
+> 참고(2026-11-10): Cloud Scheduler가 아니라 **Apps Script 시간 트리거**로 도는 작업도 있습니다 — `collectMarketNews()`(설정 `트리거시각`), `yearRolloverDaily`(매일 오전 4~5시 서울. 12월 `연도전환시작일`~31일에 다음 해 인사평가 파일이 없으면 만들고, 12월에 끝내 실패했으면 1월에도 그해 파일이 없을 때만 이어서 시도. 이미 있으면 조용히 끝. 실패할 때마다 메일). 수동 실행은 편집기에서 `yearRolloverRunNow`.
+
 ## 설정 시트 주요 키
 
 '설정' 시트(키/값/설명 3열 구조)에서 코드가 실제로 읽는 주요 키입니다. 라벨·설명 문구는 `feed.html`의 `SETTINGS_META`에 등록돼 있어야 설정 화면에도 노출됩니다 — 새 설정 키를 추가할 때는 시트 행 + `SETTINGS_META` 항목을 항상 함께 추가해야 합니다.
@@ -240,9 +246,12 @@ cron 표현식, 복수 시각(`13,17`) 처리 방식 등 상세는 [`cloud-run/R
 | `탈락뉴스보관기간` | 30(일) | `getSettings_().rejectedNewsRetentionDays` | `탈락뉴스` 시트 자동 삭제 기준(수집일 기준) |
 | `뉴스피드출력기간` | (프론트 전용) | `feed.html` | 피드에 표시되는 최근 게시물 기간(일). 담당이 확인 안 한 게시물은 예외적으로 계속 노출 |
 | `담당자댓글리마인더사용` | — | `reminderBatchTest`(Cloud Run) | `TRUE`일 때만 담당자 댓글 마감 리마인더 배치 동작 |
+| `인사평가파일_{연도}` | — | `getCompetencyTest`/`saveCompetencyTest`(Cloud Run), Apps Script `yearRolloverDaily`·인사평가 백업 | 그해 인사평가 파일 ID(구분 `공통` — 관리 › 공통 설정). 다음 해 줄은 `yearRolloverDaily`가 자동 추가하고, 12/7까지 없으면 공통 설정 화면 맨 위에 경고(2026-11-10) |
 | `담당자댓글마감시각` | — | `reminderBatchTest`(Cloud Run) | 리마인더 발송 기준 시각. 쉼표로 복수 시각 지정 가능(예 `13,17`) — 각 시각마다 독립적으로 하루 1회 발송 |
 
 > 이 외에도 `가격키워드`(뉴스 판단 키워드), `팀장_열람범위`, `무활동로그아웃분`, `비밀번호만료일수`, `백업시각` 등이 있습니다 — 전체 최신 목록과 설명 문구는 `feed.html`의 `SETTINGS_META` 객체가 항상 최신 소스입니다.
+
+> 인사평가 파일 안의 `인사평가설정` 탭은 이 '설정' 시트와 별개입니다 — `전년도입력마감일`(기본 15)·`연도전환시작일`(기본 1)·`기록가능기간일`(기본 14)·`월기록마감일`(기본 10)·`탭이모지_…`. 관리 › 인사평가 설정 화면에서 보기만 할 수 있고(값은 시트에서 고침), 행 설명은 `COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md` 4-5절 참고.
 
 ## 알려진 주요 버그 수정 이력
 
@@ -292,3 +301,6 @@ Web Push/알림 관련 버그 4건(중복 표시 3건 + 구조 재설계 1건)�
 - [`POSTCOMMENT_CLOUDRUN_DESIGN_v2.md`](./POSTCOMMENT_CLOUDRUN_DESIGN_v2.md) — postComment 전환 최종 설계(3단 폴백 정책 등, 승인·구현·연동 완료) — 최신
 - [`PIN_COMMENT_CLOUDRUN_DESIGN.md`](./PIN_COMMENT_CLOUDRUN_DESIGN.md) — 댓글 고정(Pin Comment) 기능 설계 (정책·Firestore 스키마·동시성 제어 등, 승인·구현·연동 완료)
 - [`PIN_COMMENT_CODE_DIFF.md`](./PIN_COMMENT_CODE_DIFF.md) — 댓글 고정(Pin Comment) 기능 구현 코드 diff 상세
+- [`COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md`](./COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md) — 인사평가(역량평가) 설계서: 화면·서버·기록 탭 자동 인식·팀장 평가·연도 자동 전환·1월 유예(v1.31)
+- [`MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md`](./MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md) — AI 원자재 추천 Cloud Run 이전 설계 v2(감지는 Apps Script, 처리는 Cloud Run, 2026-10-12 승인)
+- [`OPENAI_PROVIDER_DESIGN_v1.md`](./OPENAI_PROVIDER_DESIGN_v1.md) — AI 공급자 OpenAI 추가 설계·모델 비교 시험·전환 결과(2026-11-04~)
