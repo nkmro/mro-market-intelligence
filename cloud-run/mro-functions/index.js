@@ -3804,6 +3804,20 @@ const competency = require('./lib/competency');
 // mode: 'current' 올해 / 'grace' 작년 + 오늘이 1월 1일~전년도입력마감일 / 'closed' 그 밖의 지난해(보기만).
 // forWrite면 closed를 YEAR_CLOSED로 거절(1월 16일 0시 서울부터 — 날짜는 서버가 판단).
 // 전년도입력마감일은 작년 파일(입력받는 쪽) 인사평가설정에서 읽는다 — 1월에 작년을 고른 요청만 1번 더 읽음(못 읽으면 15).
+// diff ②-2 B안(2026-11-10 재홍님): 전년도입력마감일 읽기 — 그 파일 인사평가설정 A1:C 1번(못 읽으면 기본 15, 이때는 저장 안 함).
+// useCache = true는 보기의 '1월 올해 화면'(파랑 띠)만 — 서버 메모리 10분(competency.GRACE_DAY_TTL_MS, 인스턴스마다 따로).
+// 저장 요청과 작년 화면(yearMode 판단)은 useCache = false로 늘 새로 읽는다(마감 판단은 바로 맞아야 함). 새로 읽은 값은 메모리도 갱신.
+const competencyGraceCache_ = competency.makeTtlCache(competency.GRACE_DAY_TTL_MS);
+async function competencyGraceDay_(client, fileId, useCache) {
+  if (useCache) { const hit = competencyGraceCache_.get(fileId); if (hit) return hit; }
+  let vr;
+  try {
+    vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C')]);
+  } catch (e) { return competency.graceDayOf([]); }
+  const g = competency.graceDayOf((vr[0] && vr[0].values) || []);
+  competencyGraceCache_.set(fileId, g);
+  return g;
+}
 async function competencyYear_(client, settingRows, reqYear, nowMs, forWrite) {
   const thisYear = competency.seoulYear(nowMs);
   const y = (reqYear === undefined || reqYear === null || reqYear === '') ? thisYear : Number(reqYear);
@@ -3812,10 +3826,7 @@ async function competencyYear_(client, settingRows, reqYear, nowMs, forWrite) {
   if (!fileId) return { ok: false, error: 'COMPETENCY_SETTINGS_MISSING', year: y };
   let graceDay = null;
   if (y === thisYear - 1 && competency.seoulIsoDate(nowMs).slice(5, 7) === '01') {
-    try {
-      const vr = await batchGetValues(client, fileId, [encodeURIComponent(competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C')]);
-      graceDay = competency.graceDayOf((vr[0] && vr[0].values) || []);
-    } catch (e) { graceDay = competency.graceDayOf([]); }
+    graceDay = await competencyGraceDay_(client, fileId, false); // diff ②-2: 함수로 꺼냄 — 저장·작년 화면은 메모리 안 씀(늘 새로 읽음)
   }
   const mode = competency.yearMode(y, nowMs, graceDay);
   if (forWrite && mode === 'closed') return { ok: false, error: 'YEAR_CLOSED', year: y, graceDay: graceDay };
@@ -3958,6 +3969,12 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   const yr = await competencyYear_(client, (mro[1] && mro[1].values) || [], year, nowMs, false);
   if (!yr.ok) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: yr.error, year: yr.year }); return; }
   const targetYear = yr.year, fileId = yr.fileId;
+  // diff ②-2 B안: 1월에 올해 화면(mine·team)이면 작년 마감일도 응답에 담음(화면 파랑 띠). 작년 파일 줄이 없으면 null. 2~12월은 읽지 않음.
+  let graceDay = yr.graceDay;
+  if (graceDay === null && yr.mode === 'current' && (view === 'mine' || view === 'team') && competency.graceLookupYear(targetYear, nowMs) !== null) {
+    const lastId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear - 1);
+    if (lastId) graceDay = await competencyGraceDay_(client, lastId, true);
+  }
   // v1.11 (설계서 4-2-1): 기록 탭 자동 인식 — 시트 정보(메모리 5분 저장) + 값 읽기 1번.
   let loaded;
   const c0 = Date.now();
@@ -3969,7 +3986,7 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   }
   timings.competencySheetMs = Date.now() - c0;
   const base = { ok: true, view: view, year: targetYear,
-    years: competency.yearsFromSettings((mro[1] && mro[1].values) || [], competency.seoulYear(nowMs)), yearMode: yr.mode, graceDay: yr.graceDay,
+    years: competency.yearsFromSettings((mro[1] && mro[1].values) || [], competency.seoulYear(nowMs)), yearMode: yr.mode, graceDay: graceDay,
     viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
   const criteriaRows = competency.criteriaRows(loaded.get('criteria') || []);
   if (view === 'criteria') {

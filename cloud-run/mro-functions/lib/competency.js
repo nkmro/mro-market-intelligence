@@ -823,6 +823,15 @@ function yearMode(year, nowMs, graceDay) {
   if (Number(year) === ty - 1 && today.slice(5, 7) === '01' && Number(today.slice(8, 10)) <= Number(graceDay || GRACE_DEFAULT)) return 'grace';
   return 'closed';
 }
+// diff ②-2 B안(2026-11-10 재홍님): 보기 응답에 전년도입력마감일(graceDay)을 담기 위해 읽을 해.
+// 서울 날짜 1월이고 고른 해가 올해 또는 작년이면 작년(마감일은 작년 파일 인사평가설정에 있음), 그 밖은 null(2~12월은 읽지 않음).
+function graceLookupYear(reqYear, nowMs) {
+  const today = seoulIsoDate(nowMs), ty = Number(today.slice(0, 4)), y = Number(reqYear);
+  if (today.slice(5, 7) !== '01') return null;
+  return (y === ty || y === ty - 1) ? ty - 1 : null;
+}
+// 보기의 올해 화면(파랑 띠)용 마감일 메모리 저장 시간 — 인스턴스마다 따로. 저장 판단에는 쓰지 않음(index.js competencyGraceDay_)
+const GRACE_DAY_TTL_MS = 10 * 60 * 1000;
 // 1월 유예 기간에 전년도 파일로 저장할 때의 날짜 검사(v1.31 2026-11-10 재홍님): 일 단위·월 단위 기간 제한 모두 면제.
 // 날짜(대면영업 date, 월 단위 month·startMonth, 위기관리 끝 날짜 month)가 모두 그 파일 연도 안 + 끝 날짜(달)가 오늘(이번 달) 이후가 아니면 ''.
 function checkGraceRecord(v, today, fileYear) {
@@ -904,6 +913,8 @@ module.exports.createFormFor = createFormFor;
 module.exports.checkRecordMonth = checkRecordMonth;
 module.exports.graceDayOf = graceDayOf;
 module.exports.yearMode = yearMode;
+module.exports.graceLookupYear = graceLookupYear;
+module.exports.GRACE_DAY_TTL_MS = GRACE_DAY_TTL_MS;
 module.exports.checkGraceRecord = checkGraceRecord;
 module.exports.yearsFromSettings = yearsFromSettings;
 

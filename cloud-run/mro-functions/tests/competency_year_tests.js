@@ -2,6 +2,7 @@
 // 설계서 6-3 "1월 전년도 입력 허용", ㉑ ⑤·v1.31(2026-11-10 재홍님: 유예 기간 작년 파일은 일·월 단위 기간 제한 모두 면제).
 // A: lib 순수 함수(graceDayOf·yearMode·checkGraceRecord·yearsFromSettings)
 // B: index.js saveCompetencyTest·getCompetencyTest 그대로 실행 — 가짜 날짜(2026-12-15 / 2027-01-05 / 2027-01-14 / 2027-01-16)
+// G: diff ②-2 B안(2026-11-10) — 1월 올해 화면 graceDay·메모리 10분·저장은 새로 읽음
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const dir = path.join(__dirname, '..');
 const c = require(path.join(dir, 'lib', 'competency.js'));
@@ -59,8 +60,8 @@ function makeEnv(nowMs, opts) {
   opts = opts || {};
   const files = { F2026: fileTabs(2026), F2027: fileTabs(2027) };
   const grace = { F2026: opts.grace2026 === undefined ? '15' : opts.grace2026, F2027: '15' };
-  const mroSet = [['인사평가파일_2026', 'F2026', ''], ['인사평가파일_2027', 'F2027', '']];
-  const st = { files, requests: [] };
+  const mroSet = opts.no2026 ? [['인사평가파일_2027', 'F2027', '']] : [['인사평가파일_2026', 'F2026', ''], ['인사평가파일_2027', 'F2027', '']];
+  const st = { files, requests: [], grace: grace }; // diff ②-2: grace를 시험에서 바꿀 수 있게
   const trim = rows => rows.map(r => { const x = r.slice(); while (x.length && (x[x.length - 1] === '' || x[x.length - 1] === undefined)) x.pop(); return x; });
   const fileOf = url => Object.keys(files).find(f => url.includes('/' + f));
   function readRange(fid, a1) {
@@ -184,6 +185,47 @@ const brief = r => Object.fromEntries(['view', 'create', 'update', 'reply', 'rep
     t('B17 reply year 글자 → BAD_YEAR', x.error === 'BAD_YEAR', x);
     x = await e.save({ sessionToken: 'TOK_KIM', action: 'reply', tab: 'addSales', recordId: 'Y2027-R', achieved: 'N', idempotencyKey: K(), year: 2027 });
     t('B18 reply year 2027(올해) → ok', x.ok === true, x);
+  }
+  // ── diff ②-2 B안: 1월 올해 화면에도 작년 마감일(graceDay) — 보기만 메모리 10분, 저장은 늘 새로 읽음 ──
+  t('G1 graceLookupYear: 1/5 올해·작년 → 2026 / 1/31 올해 → 2026 / 2/1 → null / 12/15 → null / 1/5 2025 → null',
+    c.graceLookupYear(2027, KST(2027, 1, 5)) === 2026 && c.graceLookupYear(2026, KST(2027, 1, 5)) === 2026 && c.graceLookupYear(2027, KST(2027, 1, 31)) === 2026 &&
+    c.graceLookupYear(2027, KST(2027, 2, 1)) === null && c.graceLookupYear(2026, KST(2026, 12, 15)) === null && c.graceLookupYear(2025, KST(2027, 1, 5)) === null);
+  { let now = 0; const m = c.makeTtlCache(c.GRACE_DAY_TTL_MS, () => now); m.set('F', 15); now = 10 * 60 * 1000; const a = m.get('F'); now += 1; const b = m.get('F');
+    t('G2 메모리 저장 시간 = 10분(10분까지 그대로, 10분 지나면 없음)', c.GRACE_DAY_TTL_MS === 600000 && a === 15 && b === null, { a, b }); }
+  const setReads = (e, f) => e.st.requests.filter(q => q.url.includes('/' + f) && decodeURIComponent(q.url).includes("인사평가설정'!A1:C") && (q.url.match(/ranges=/g) || []).length === 1).length; // 마감일만 읽는 요청(범위 1개) — 기록 읽기 묶음(설정+기록 탭 여러 범위)과 구분
+  {
+    const e = makeEnv(KST(2027, 1, 5), { grace2026: '9' });
+    let v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G3 1/5 올해 화면(year 없음) → yearMode current · graceDay 9(작년 파일 설정) · 작년 설정 읽기 1번', v.ok && v.year === 2027 && v.yearMode === 'current' && v.graceDay === 9 && setReads(e, 'F2026') === 1, { v: [v.year, v.yearMode, v.graceDay], n: setReads(e, 'F2026') });
+    v = await e.get({ sessionToken: 'TOK_LEAD', view: 'team' });
+    t('G4 10분 안 두 번째 올해 화면(팀) → graceDay 9 · 작년 설정 추가 읽기 0(메모리)', v.ok && v.graceDay === 9 && setReads(e, 'F2026') === 1, { g: v.graceDay, n: setReads(e, 'F2026') });
+    e.st.grace.F2026 = '3'; // 재홍님이 1월 5일에 마감일을 3으로 바꿈
+    let x = await e.save({ sessionToken: 'TOK_KIM', action: 'reply', tab: 'addSales', recordId: 'Y2026-R', achieved: 'N', idempotencyKey: K(), year: 2026 });
+    t('G5 마감일을 바꾼 뒤 저장(2026) → 메모리 안 쓰고 새로 읽어 바로 YEAR_CLOSED(graceDay 3)', x.error === 'YEAR_CLOSED' && x.graceDay === 3, x);
+    v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G6 그 뒤 올해 화면 → 저장 때 새로 읽은 값으로 메모리 갱신 → graceDay 3', v.graceDay === 3, v.graceDay);
+    v = await e.get({ sessionToken: 'TOK_KIM', view: 'criteria' });
+    t('G7 평가 기준 보기(criteria)는 작년 설정을 읽지 않음 · graceDay null', v.ok && v.graceDay === null, v.graceDay);
+  }
+  {
+    const e = makeEnv(KST(2027, 2, 1));
+    const v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G8 2/1 올해 화면 → graceDay null · 작년 설정 읽기 0', v.ok && v.graceDay === null && setReads(e, 'F2026') === 0, { g: v.graceDay, n: setReads(e, 'F2026') });
+  }
+  {
+    const e = makeEnv(KST(2026, 12, 15));
+    const v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G9 12/15 올해 화면 → graceDay null · 설정 읽기 0', v.ok && v.graceDay === null && setReads(e, 'F2025') === 0 && setReads(e, 'F2026') === 0, v.graceDay);
+  }
+  {
+    const e = makeEnv(KST(2027, 1, 5), { no2026: true });
+    const v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G10 1/5 작년 파일 줄 없음 → graceDay null(띠 안 뜸) · 보기 정상', v.ok && v.yearMode === 'current' && v.graceDay === null, [v.ok, v.graceDay]);
+  }
+  {
+    const e = makeEnv(KST(2027, 1, 16));
+    const v = await e.get({ sessionToken: 'TOK_KIM', view: 'mine' });
+    t('G11 1/16 올해 화면 → graceDay 15(화면이 16 > 15로 파랑 띠 숨김)', v.ok && v.graceDay === 15, v.graceDay);
   }
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);
