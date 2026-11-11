@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-10-19 시황 뉴스 품질: AI 지시문 보강·요약 자기모순 감지·최저 점수(시황게시최소점수) — buildSummarizePrompt_·parseSummarizeResult_·getSettings_·collectMarketNews)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-11 시황 뉴스 기준 A단계(시험만, 운영 코드 변경 없음): isDigestNewsTitle_·testDigestTitleScan·testNewsRule1111 추가 — 아무 곳에서도 부르지 않음)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -2583,6 +2583,94 @@ Logger.log('결과: 실패!! 기대값과 다름 - 코드를 다시 확인해야
 * 실제 AI(callAI_)를 6번 부른다. 기사 내용은 원문을 요약해 만든 시험용 문장(실제 수집 데이터 아님).
 * 실행 후 "실행 로그"에서 각 줄의 [기대]와 결과(relevant·점수·요약)를 비교한다. AI 판단이라 같은 입력도 결과가 조금 다를 수 있다.
 */
+/**
+* 2026-11-11 A단계(시험만 — 아직 아무 곳에서도 부르지 않음): 뉴스 모음·브리핑 기사 제목인지(순수 함수).
+* 11/11 철 사례 "페로타임즈 손바닥뉴스 11월9일(월)" — 여러 소식을 한 줄씩 모은 기사라 원문에 요약 내용이 따로 없음.
+* 판정(좁힌 안): ① 제목 맨 끝이 날짜+요일 괄호("11월9일(월)") ② 모음 기사에만 쓰는 낱말.
+*/
+const DIGEST_TITLE_WORDS_ = ['손바닥뉴스', '모닝브리핑', '모닝 브리핑', '뉴스 모음', '뉴스모음', '뉴스 다이제스트'];
+function isDigestNewsTitle_(title) {
+const t = String(title || '');
+if (/\d{1,2}\s*월\s*\d{1,2}\s*일\s*\(\s*[월화수목금토일]\s*\)\s*$/.test(t)) return true;
+return DIGEST_TITLE_WORDS_.some(function (w) { return t.indexOf(w) >= 0; });
+}
+// 2026-11-11 A단계 시험(읽기만 — 시트에 쓰지 않음): 시황게시물·탈락뉴스·수집로그의 1행(머리글)과 행 수,
+// 시황게시물·탈락뉴스 제목(D열) 중 isDigestNewsTitle_에 걸리는 제목만 로그로 보여준다.
+function testDigestTitleScan() {
+const t0 = new Date().getTime();
+const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+['시황게시물', '탈락뉴스', '수집로그'].forEach(function (name) {
+const sh = ss.getSheetByName(name);
+if (!sh) { Logger.log(name + ': 시트 없음'); return; }
+const v = sh.getDataRange().getValues();
+Logger.log(name + ' 머리글: ' + JSON.stringify(v[0]) + ' / 행 ' + (v.length - 1) + '개');
+if (name === '수집로그') return;
+const hit = v.slice(1).map(function (r) { return String(r[3] || ''); }).filter(isDigestNewsTitle_);
+Logger.log(name + ' 제목 중 걸림 ' + hit.length + '건' + (hit.length ? ':\n - ' + hit.join('\n - ') : ''));
+});
+Logger.log('소요 ' + ((new Date().getTime() - t0) / 1000) + '초');
+}
+// 2026-11-11 A단계 시험(시트 쓰기 없음): 지시문 A안·B안을 시험 안에서만 끼워 넣어 같은 기사를 3회씩 AI에 보낸다(운영 지시문은 그대로).
+// 실제 2건은 시황게시물에서 제목·링크를 찾아 네이버 뉴스 검색을 1번씩 다시 해, 같은 링크의 짧은 본문(수집 때 AI가 받은 것과 같은 종류)을 쓴다.
+// 호출: 네이버 2회(실제 2건) + AI 24회(4건 × 2안 × 3회, callAIBatch_ 한 번에).
+// 실제 기사를 못 찾으면 그 건은 빼고(로그에 남김) 찾은 건과 시험용 글만 시험한다.
+// 다른 기사로 재시험하려면 아래 상수에 시황게시물 D열 제목을 그대로(또는 제목 일부) 넣고 다시 실행 — 비워 두면 기본 낱말('롯데칠성'·'손바닥뉴스')로 찾는다.
+const TEST1111_REAL_TITLES_ = { '알루미늄': '', '철': '' };
+function testNewsRule1111() {
+const props = PropertiesService.getScriptProperties();
+const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+const posts = ss.getSheetByName('시황게시물').getDataRange().getValues().slice(1);
+let missing = 0;
+const real = function (label, m, word) {
+const want = String(TEST1111_REAL_TITLES_[m] || '').trim() || word;
+const row = posts.filter(function (r) { return String(r[3]).indexOf(want) >= 0; }).pop();
+if (!row) { missing++; Logger.log(label + ': 시황게시물에서 "' + want + '" 제목을 못 찾음 — 이 건은 빼고 진행'); return null; }
+const res = UrlFetchApp.fetch('https://openapi.naver.com/v1/search/news.json?query=' + encodeURIComponent(String(row[3])) + '&display=30&sort=sim', {
+headers: { 'X-Naver-Client-Id': props.getProperty('NAVER_CLIENT_ID'), 'X-Naver-Client-Secret': props.getProperty('NAVER_CLIENT_SECRET') }, muteHttpExceptions: true });
+const items = res.getResponseCode() === 200 ? (JSON.parse(res.getContentText()).items || []) : [];
+const it = items.filter(function (x) { return x.link === row[5]; })[0];
+if (!it) { missing++; Logger.log(label + ': 네이버 재검색에서 같은 링크를 못 찾음(HTTP ' + res.getResponseCode() + ', ' + items.length + '건) — 이 건은 빼고 진행'); return null; }
+const desc = decodeHtmlEntities_(it.description.replace(/<[^>]+>/g, ''));
+Logger.log(label + ' 입력 — 제목: ' + row[3] + ' / 짧은 본문: ' + desc + ' / 지금 게시 요약: ' + row[4]);
+return { label: label, m: m, title: String(row[3]), desc: desc };
+};
+const cases = [
+real('알루미늄(실제)', '알루미늄', '롯데칠성'),
+real('철(실제)', '철', '손바닥뉴스'),
+{ label: '포스코형(시험용 글, 가격 수치 있음)', m: '철광석', title: '포스코, 3분기 영업이익 증가…철광석 가격 하락 영향',
+desc: '포스코의 3분기 영업이익이 전 분기보다 늘었다. 원료인 철광석 가격이 톤당 105달러로 석 달 새 12% 하락하면서 원가 부담이 줄어든 영향이다.' },
+{ label: '현대제철형(시험용 글, 수치 없이 원가 부담)', m: '원료탄', title: '현대제철, 원료탄 가격 상승으로 마진 축소',
+desc: '현대제철의 3분기 영업이익이 1,200억원으로 전년 대비 30% 줄었다. 원료탄 가격 부담이 커지면서 마진이 축소됐다고 회사는 설명했다.' }
+].filter(Boolean);
+Logger.log('실제 기사: 2건 중 ' + (2 - missing) + '건 찾음' + (missing === 2 ? ' — 실제 2건 미발견, 시험용 2건만 시험' : (missing ? ' — ' + missing + '건 미발견' : '')));
+const ANCHOR = '관련 없으면 요약은 빈 문자열로 둬.\n';
+const SUBJECT = '요약의 주어는 [M] 시황이어야 해. 기업 실적 문장을 요약에 쓰지 말고, 기업을 꼭 언급해야 하면 기업 이름을 생략하지 마.\n';
+const DIGEST = "여러 기사의 제목이나 한 줄 소식을 모아 놓은 뉴스 모음·브리핑 기사(예: '○○뉴스 11월9일(월)', '오늘의 주요 뉴스')면 관련 없음으로 판단해.\n";
+const V = {
+A: '기사의 중심이 특정 기업의 실적(매출·영업이익·흑자/적자 전환·실적 전망)이고 [M]은 그 기업의 원가 요인으로만 나오면, 관련 있음으로 판단하더라도 relevanceScore는 최대 2로 줘.\n' + SUBJECT + DIGEST,
+B: '기업 실적 기사에서 [M]의 가격 변화 수치(오름·내림 금액이나 %) 없이 원가 부담만 언급하면, 관련 있음으로 판단하더라도 relevanceScore는 최대 2로 줘. [M]의 가격 변화 수치가 있으면 이 제한에 해당하지 않아.\n' + SUBJECT + DIGEST
+};
+const jobs = [], prompts = [];
+cases.forEach(function (c) {
+['A', 'B'].forEach(function (v) {
+const base = buildSummarizePrompt_(c.m, c.title, c.desc);
+if (base.indexOf(ANCHOR) < 0) throw new Error('지시문 기준 문장을 못 찾음');
+const p = base.replace(ANCHOR, ANCHOR + V[v].split('[M]').join('[' + c.m + ']'));
+for (let k = 0; k < 3; k++) { jobs.push({ c: c, v: v }); prompts.push(p); }
+});
+});
+const out = callAIBatch_(prompts, new Date().getTime() + 240000);
+const agg = {};
+out.texts.forEach(function (text, i) {
+const j = jobs[i], key = j.c.label + ' | ' + j.v + '안';
+const r = parseSummarizeResult_(text, j.c.title);
+const first = !agg[key];
+(agg[key] = agg[key] || []).push((r.relevant ? 'Y' : 'N') + '/' + (r.relevanceScore === null ? '-' : r.relevanceScore) + (r.relevant && r.relevanceScore >= 3 ? '/게시' : '/안게시') + (first && r.summary ? ' 「' + r.summary + '」' : ''));
+});
+Object.keys(agg).forEach(function (k) { Logger.log(k + ' → ' + agg[k].join('  ||  ')); });
+Logger.log('AI ' + out.processedCount + '/' + prompts.length + '건 처리, 제목 필터: 손바닥뉴스→' + isDigestNewsTitle_('페로타임즈 손바닥뉴스 11월9일(월)') + ', "12월 5일(금) 발표 예정"→' + isDigestNewsTitle_('철강 감산 12월 5일(금) 발표 예정'));
+}
+
 function testExportNewsRule() {
 const minScore = 3; // 설정 '시황게시최소점수' 기본값
 const cases = [
