@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-11 시황 뉴스 기준 A단계(시험만, 운영 코드 변경 없음): isDigestNewsTitle_·testDigestTitleScan·testNewsRule1111 추가 — 아무 곳에서도 부르지 않음)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-11 시황 뉴스 기준 B단계(운영 반영): 뉴스 모음 제목 사전 제외(isDigestNewsTitle_ → 수집로그·탈락뉴스 '뉴스모음제목')·AI 지시문 3문장(수치 없는 기업 원가 기사 최대 2점·요약 주어·뉴스 모음 관련 없음)·testNewsRule1111b 추가 — collectMarketNews·buildSummarizePrompt_)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -1659,6 +1659,10 @@ props.setProperty('CMN_LAST_STAGE', '수집완료@' + new Date(scriptStartTime_)
 // 2단계: 원자재별 중복 제거 후 AI 판단 대상 후보 생성 (원자재 간 교차 중복도 방지)
 const runningLinks = new Set(existingLinks);
 const candidates = [];
+// 2026-11-11 (재홍님 승인, 시황 뉴스 기준 B단계): 뉴스 모음·브리핑 기사(예: "페로타임즈 손바닥뉴스 11월9일(월)")는
+// 원문에 요약할 내용이 따로 없어 AI에 보내지 않는다. 다음 수집 때 다시 가져오지 않도록 수집로그에, 확인용으로
+// 탈락뉴스('뉴스모음제목')에 남긴다 — 아래 수집로그·탈락뉴스 배치 기록(setValues 1회)에 합친다.
+const digestRows_ = [];
 materials.forEach((m, mi) => {
 const code = m[0];
 const korean = m[1];
@@ -1677,6 +1681,7 @@ const description = decodeHtmlEntities_(it.description.replace(/<[^>]+>/g, ''));
 if (!/[0-9%]/.test(title + ' ' + description)) return; // 숫자/퍼센트 없는 기사는 AI 호출 없이 사전 배제
 const pubDateObj = new Date(it.pubDate);
 if (!isNaN(pubDateObj.getTime()) && (Date.now() - pubDateObj.getTime()) > settings.maxArticleAgeDays * 24 * 60 * 60 * 1000) return; // 설정된 경과일보다 오래된 기사는 AI 호출 없이 사전 배제
+if (isDigestNewsTitle_(title)) { digestRows_.push({ code: code, korean: korean, title: title, link: it.link }); return; } // 뉴스 모음 제목은 AI 호출 없이 사전 배제(수집로그·탈락뉴스 기록)
 candidates.push({
 code: code,
 korean: korean,
@@ -1771,6 +1776,8 @@ const relevantByCode = {};
 const logRowsToAppend_ = [];
 // 2026-10-19: 요약 자기모순으로 관련 없음 처리된 후보 — 아래 탈락뉴스 배치 기록에 '자기모순'으로 합친다.
 const contradictionRows_ = [];
+// 2026-11-11: 사전 배제한 뉴스 모음 기사도 수집로그에 남겨 다음 수집 때 다시 가져오지 않게 한다.
+digestRows_.forEach(d => { logRowsToAppend_.push([d.code, d.link, new Date()]); });
 candidates.slice(0, processedCount).forEach((c, idx) => {
 const result = parseSummarizeResult_(aiTexts[idx], c.title);
 
@@ -1850,6 +1857,10 @@ const rejectedAt_ = new Date();
 contradictionRows_.forEach(r => {
 rejectedNewsRows_.push([rejectedAt_, r[0], r[1], r[2], r[3], r[4], REJECTED_NEWS_STORE_LINK ? r[5] : '', '자기모순', '']);
 });
+// 2026-11-11: 뉴스 모음 제목으로 사전 배제한 기사 — AI를 거치지 않아 AI요약·relevanceScore는 빈칸.
+digestRows_.forEach(d => {
+rejectedNewsRows_.push([rejectedAt_, d.code, d.korean, d.title, '', '', REJECTED_NEWS_STORE_LINK ? d.link : '', '뉴스모음제목', '']);
+});
 Object.keys(relevantByCode).forEach(code => {
 const allGroup_ = relevantByCode[code];
 allGroup_.sort(compareByRelevanceThenDate_);
@@ -1901,7 +1912,7 @@ const skipped = candidates.length - processedCount;
 if (skipped > 0) {
 Logger.log('시간 제한으로 이번 실행에서 처리하지 못한 후보: ' + skipped + '건 (로그에 남기지 않아 다음 수집 때 재시도됨)');
 }
-Logger.log('신규 게시된 기사 수: ' + posted + ' / 탈락뉴스 기록: ' + rejectedNewsRows_.length);
+Logger.log('신규 게시된 기사 수: ' + posted + ' / 탈락뉴스 기록: ' + rejectedNewsRows_.length + ' / 뉴스 모음 제목 제외: ' + digestRows_.length);
 
 // 안전마진 도달 시 1시간 뒤 자동 재실행 예약 (상대시간 기반, v14)
 const ss_props = PropertiesService.getScriptProperties();
@@ -2456,6 +2467,11 @@ let prompt = "너는 MRO(산업 소모성 자재) 원자재 시황 뉴스 분석
 "수출액·수입액·수출량·수입량 같은 수출입 통계만 있고, 그 변화가 [" + materialName + "]의 가격(오름·내림)이나 공급 부족·과잉에 미친 영향이 기사에 없으면 관련 없음으로 판단해. 수출입 숫자는 [" + materialName + "]의 가격이나 공급 부족·과잉과 연결해 설명될 때만 시황 수치로 인정해.\n" +
 "기사 제목이나 전체 논조가 특정 방향(상승/하락)을 암시하더라도, 개별 원자재의 수치는 정반대 방향일 수 있어. 예를 들어 \"수입물가 전체 하락\" 기사 안에서도 특정 품목만 상승했다고 나올 수 있으니, 반드시 [" + materialName + "] 바로 옆에 명시된 숫자와 방향(상승/하락/%)만 근거로 판단하고, 기사 제목이나 전체 톤에 맞춰 방향을 추측하지 마.\n" +
 "관련 있으면 반드시 [" + materialName + "]의 가격/수급/물량/생산량 등 시황 동향을 나타내는 구체적인 숫자나 퍼센트(%)를 포함해 2문장 이내 한국어로 중심 요약하고(주가·기업 실적 등 원자재와 무관한 내용은 요약에서 제외), 관련 없으면 요약은 빈 문자열로 둬.\n" +
+// 2026-11-11 (재홍님 승인, 시황 뉴스 기준 B단계 — 11/11 A단계 시험에서 B안 4건×3회 모두 의도대로): 알루미늄 롯데칠성 실적 기사
+// 사례 — 요약이 "LME 알루미늄 가격은…"으로 시작해 "흑자전환할 전망"으로 끝나 원자재가 흑자전환하는 것처럼 읽힘.
+"기업 실적 기사에서 [" + materialName + "]의 가격 변화 수치(오름·내림 금액이나 %) 없이 원가 부담만 언급하면, 관련 있음으로 판단하더라도 relevanceScore는 최대 2로 줘. [" + materialName + "]의 가격 변화 수치가 있으면 이 제한에 해당하지 않아.\n" +
+"요약의 주어는 [" + materialName + "] 시황이어야 해. 기업 실적 문장을 요약에 쓰지 말고, 기업을 꼭 언급해야 하면 기업 이름을 생략하지 마.\n" +
+"여러 기사의 제목이나 한 줄 소식을 모아 놓은 뉴스 모음·브리핑 기사(예: '○○뉴스 11월9일(월)', '오늘의 주요 뉴스')면 관련 없음으로 판단해.\n" +
 "관련 있으면 이 기사가 [" + materialName + "]의 시황(가격/수급) 변화를 얼마나 구체적이고 직접적으로 반영하는지 1(약함)~5(매우 강함) 정수로 평가해 relevanceScore에 담고, 관련 없으면 relevanceScore는 0으로 둬.\n" +
 // 2026-10-23: 수출입 금액·물량 중심이고 가격 변화 수치가 없는 기사는 관련 있음이어도 최대 2점 → 설정 '시황게시최소점수'(기본 3) 미만이라 '점수미달'로 탈락.
 "기사의 중심이 수출입 금액·물량(수출액·수입액·수출량·수입량)이고 [" + materialName + "]의 가격 변화 수치(오름·내림 금액이나 %)가 없으면, 공급 영향이 함께 적혀 있어 관련 있음으로 판단하더라도 relevanceScore는 최대 2로 줘. [" + materialName + "]의 가격 변화 수치가 있거나 수출입 단가(가격)의 오름·내림을 다루면 이 제한에 해당하지 않아.\n" +
@@ -2579,12 +2595,7 @@ Logger.log('결과: 실패!! 기대값과 다름 - 코드를 다시 확인해야
 }
 
 /**
-* 2026-10-23: 수출입 통계 기준(buildSummarizePrompt_) 확인용 수동 테스트 — 편집기에서 직접 실행(트리거·자동 실행 없음).
-* 실제 AI(callAI_)를 6번 부른다. 기사 내용은 원문을 요약해 만든 시험용 문장(실제 수집 데이터 아님).
-* 실행 후 "실행 로그"에서 각 줄의 [기대]와 결과(relevant·점수·요약)를 비교한다. AI 판단이라 같은 입력도 결과가 조금 다를 수 있다.
-*/
-/**
-* 2026-11-11 A단계(시험만 — 아직 아무 곳에서도 부르지 않음): 뉴스 모음·브리핑 기사 제목인지(순수 함수).
+* 2026-11-11 뉴스 모음·브리핑 기사 제목인지(순수 함수). A단계(시험)에서 만들고, B단계부터 collectMarketNews 2단계 사전 배제에서 부른다.
 * 11/11 철 사례 "페로타임즈 손바닥뉴스 11월9일(월)" — 여러 소식을 한 줄씩 모은 기사라 원문에 요약 내용이 따로 없음.
 * 판정(좁힌 안): ① 제목 맨 끝이 날짜+요일 괄호("11월9일(월)") ② 모음 기사에만 쓰는 낱말.
 */
@@ -2617,6 +2628,7 @@ Logger.log('소요 ' + ((new Date().getTime() - t0) / 1000) + '초');
 // 다른 기사로 재시험하려면 아래 상수에 시황게시물 D열 제목을 그대로(또는 제목 일부) 넣고 다시 실행 — 비워 두면 기본 낱말('롯데칠성'·'손바닥뉴스')로 찾는다.
 const TEST1111_REAL_TITLES_ = { '알루미늄': '', '철': '' };
 function testNewsRule1111() {
+if (buildSummarizePrompt_('철', '', '').indexOf('기업 실적 기사에서 [철]의 가격 변화 수치') >= 0) throw new Error('A단계 전용 시험: 운영 지시문에 B단계 문장이 이미 있어 다시 넣으면 두 번 들어감 — B단계 확인은 testNewsRule1111b를 실행하세요'); // 2026-11-11 B단계 반영 뒤 재실행 방지
 const props = PropertiesService.getScriptProperties();
 const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
 const posts = ss.getSheetByName('시황게시물').getDataRange().getValues().slice(1);
@@ -2671,6 +2683,56 @@ Object.keys(agg).forEach(function (k) { Logger.log(k + ' → ' + agg[k].join('  
 Logger.log('AI ' + out.processedCount + '/' + prompts.length + '건 처리, 제목 필터: 손바닥뉴스→' + isDigestNewsTitle_('페로타임즈 손바닥뉴스 11월9일(월)') + ', "12월 5일(금) 발표 예정"→' + isDigestNewsTitle_('철강 감산 12월 5일(금) 발표 예정'));
 }
 
+// 2026-11-11 B단계 시험(시트 쓰기 없음): 처음 문제였던 알루미늄 '흑자전환' 기사로 B단계 지시문(운영 buildSummarizePrompt_ 그대로)을 3회 확인한다.
+// 시황게시물에서 제목(D열) 또는 요약(E열)에 '흑자전환'이 들어간 행을 찾아(알루미늄 행 우선, 가장 아래 행) 네이버 뉴스 검색을 1번 다시 해
+// 같은 링크의 짧은 본문을 쓴다. 행이나 링크를 못 찾으면 재홍님 캡처 문구 그대로 시험용 글로 재현한다. (TEST1111_REAL_TITLES_는 쓰지 않음)
+// 호출: 네이버 최대 1회 + AI 3회(callAIBatch_ 한 번에).
+function testNewsRule1111b() {
+const props = PropertiesService.getScriptProperties();
+const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+const rows = ss.getSheetByName('시황게시물').getDataRange().getValues().slice(1)
+.filter(function (r) { return (String(r[3]) + ' ' + String(r[4])).indexOf('흑자전환') >= 0; });
+Logger.log('시황게시물에서 제목·요약에 "흑자전환"이 들어간 행: ' + rows.length + '건' + (rows.length ? ':\n - ' + rows.map(function (r) { return r[2] + ' | ' + r[3]; }).join('\n - ') : ''));
+const row = rows.filter(function (r) { return String(r[2]) === '알루미늄'; }).pop() || rows.pop();
+let c = null;
+if (row) {
+const res = UrlFetchApp.fetch('https://openapi.naver.com/v1/search/news.json?query=' + encodeURIComponent(String(row[3])) + '&display=30&sort=sim', {
+headers: { 'X-Naver-Client-Id': props.getProperty('NAVER_CLIENT_ID'), 'X-Naver-Client-Secret': props.getProperty('NAVER_CLIENT_SECRET') }, muteHttpExceptions: true });
+const items = res.getResponseCode() === 200 ? (JSON.parse(res.getContentText()).items || []) : [];
+const it = items.filter(function (x) { return x.link === row[5]; })[0];
+if (it) {
+c = { label: row[2] + '(실제)', m: String(row[2]), title: String(row[3]), desc: decodeHtmlEntities_(it.description.replace(/<[^>]+>/g, '')) };
+Logger.log(c.label + ' 입력 — 제목: ' + c.title + ' / 짧은 본문: ' + c.desc + ' / 지금 게시 요약: ' + row[4]);
+} else {
+Logger.log('네이버 재검색에서 같은 링크를 못 찾음(HTTP ' + res.getResponseCode() + ', ' + items.length + '건) — 시험용 글로 재현');
+}
+}
+if (!c) {
+c = { label: '알루미늄(시험용 글, 캡처 문구 재현)', m: '알루미늄', title: '(시험용 제목) 롯데칠성 4분기 실적 전망',
+desc: 'LME 알루미늄 가격은 6월 고점 대비 19.1% 하락했고, 원화 강세까지 더해져 4분기 연결 영업이익이 240억원으로 흑자전환할 전망이라고 분석했다.' };
+Logger.log(c.label + ' 입력 — 제목: ' + c.title + ' / 짧은 본문: ' + c.desc);
+}
+const p = buildSummarizePrompt_(c.m, c.title, c.desc);
+if (p.indexOf('기업 실적 기사에서 [' + c.m + ']의 가격 변화 수치') < 0) throw new Error('운영 지시문에 B단계 문장이 없음 — 저장(Ctrl+S)을 확인하세요');
+const minScore = getSettings_().minPostScore;
+const out = callAIBatch_([p, p, p], new Date().getTime() + 240000);
+out.texts.forEach(function (text, i) {
+const r = parseSummarizeResult_(text, c.title);
+const post = r.relevant && (r.relevanceScore === null || r.relevanceScore >= minScore);
+const sm = String(r.summary || '');
+// 판정 보조(사람이 최종 판정): 흑자전환 문장 / 롯데칠성 언급 / 요약에 숫자(가격 변화 수치) — 확인 2(점수 3 이상인데 요약에 수치 없음) 감시용
+Logger.log((i + 1) + '회: ' + (r.relevant ? 'Y' : 'N') + '/' + (r.relevanceScore === null ? '-' : r.relevanceScore) + '/' + (post ? '게시' : '안게시') +
+' [흑자전환 ' + (sm.indexOf('흑자') >= 0 ? '있음' : '없음') + ' · 롯데칠성 ' + (sm.indexOf('롯데칠성') >= 0 ? '있음' : '없음') + ' · 요약 수치 ' + (/[0-9]/.test(sm) ? '있음' : '없음') + ']' +
+(sm ? ' 「' + sm + '」' : ''));
+});
+Logger.log('AI ' + out.processedCount + '/3건 처리, 게시 최소 점수 ' + minScore + ', 지시문: 운영 buildSummarizePrompt_ 그대로');
+}
+
+/**
+* 2026-10-23: 수출입 통계 기준(buildSummarizePrompt_) 확인용 수동 테스트 — 편집기에서 직접 실행(트리거·자동 실행 없음).
+* 실제 AI(callAI_)를 6번 부른다. 기사 내용은 원문을 요약해 만든 시험용 문장(실제 수집 데이터 아님).
+* 실행 후 "실행 로그"에서 각 줄의 [기대]와 결과(relevant·점수·요약)를 비교한다. AI 판단이라 같은 입력도 결과가 조금 다를 수 있다.
+*/
 function testExportNewsRule() {
 const minScore = 3; // 설정 '시황게시최소점수' 기본값
 const cases = [
