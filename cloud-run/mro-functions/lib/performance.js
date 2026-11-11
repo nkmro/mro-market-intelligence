@@ -1,6 +1,6 @@
 // cloud-run/mro-functions/lib/performance.js
 // 성과평가(60%) — 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7.
-// 1-가: 연결 시험(ping)에 쓰는 순수 함수만 (시트 접근 없음). 점수 계산은 1-나에서 이 파일에 추가한다.
+// 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 모두 시트 접근 없음.
 
 // 5-2절: 인사평가 연도 파일 안 탭 3개 (이름·머리글 고정)
 const TAB_MONTHLY = '성과-월실적';
@@ -123,7 +123,116 @@ function officeSummary(users, modes) {
   return out;
 }
 
+// =====================================================================
+// 1-나: 점수 계산 (설계서 2장 — 엑셀 '사무소평가' 시트 J9·J13·J17·J18 수식 그대로)
+// 순수 함수만. 시트 읽기·권한·화면은 1-다에서. 금액 단위 천원.
+// =====================================================================
+
+// 2-2절: 비율을 소수 10자리에서 반올림한 뒤 "초과" 비교(엑셀 15자리 비교와 같게 — 1.1000000000000001 같은 오차로 등급이 바뀌지 않게)
+function r10(x) { return Math.round(x * 1e10) / 1e10; }
+// grades = parseGrades 결과. 비율이 over 초과인 첫 단의 점수, 없으면 '나머지'
+function gradeOf(ratio, grades) {
+  const r = r10(ratio);
+  for (let i = 0; i < grades.length - 1; i++) if (r > grades[i].over) return grades[i].pts;
+  return grades[grades.length - 1].pts;
+}
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+// 1월~m월 누계 (arr[0] = 1월)
+function sumTo(arr, m) { let s = 0; for (let i = 0; i < m; i++) s += num((arr || [])[i]); return s; }
+function round2(x) { return Math.round(x * 100) / 100; }
+
+// 2-2절 ① 세부 비율. 당해 매출·인원이 0이면 그 비율은 0(최저 등급)으로 본다(마감 전 빈칸은 마감 검사가 막음).
+function growthRatios(P, C) {
+  const mP = P.sales ? P.profit / P.sales : 0, mC = C.sales ? C.profit / C.sales : 0;
+  const hP = P.heads ? P.profit / P.heads : 0, hC = C.heads ? C.profit / C.heads : 0;
+  return { sales: C.sales / P.sales, profit: C.profit / P.profit, margin: mP ? mC / mP : 0, perHead: hP ? hC / hP : 0 };
+}
+
+// 팀 점수 계산.
+// input = { criteria: parseCriteria 결과(ok여야 함), closeMonth: 1~12,
+//   units: [{ key, name, rank?: false면 순위 제외(퇴사 등),
+//             cur: { sales:[12], profit:[12], heads:[12] }, prev: { 같은 모양 } }],
+//   teamCost: { cur:[12], prev:[12] } }
+// 결과 = { ok, error?, closeMonth, maxPoints, team: {...}, units: [{ key, name, P, C, noPrev, items:[{key,ratio,grade,pts}], growth, team, total, rank }] }
+function scoreTeam(input) {
+  const crit = input && input.criteria;
+  if (!crit || !crit.ok) return { ok: false, error: 'PERF_CRITERIA_INVALID', errors: (crit && crit.errors) || [] };
+  const m = Number(input.closeMonth);
+  if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'BAD_CLOSE_MONTH' };
+  const byKey = {}; crit.items.forEach(function (it) { byKey[it.key] = it; });
+  const growthKeys = ['sales', 'profit', 'margin', 'perHead'];
+  const units = (input.units || []).map(function (u) {
+    const P = { sales: sumTo(u.prev && u.prev.sales, m), profit: sumTo(u.prev && u.prev.profit, m), heads: sumTo(u.prev && u.prev.heads, m) };
+    const C = { sales: sumTo(u.cur && u.cur.sales, m), profit: sumTo(u.cur && u.cur.profit, m), heads: sumTo(u.cur && u.cur.heads, m) };
+    // 2-5절 (확정 v0.6): 전년 같은 기간 매출·이익·인원 누계 중 하나라도 0이면 "전년 실적 없음"
+    const noPrev = P.sales === 0 || P.profit === 0 || P.heads === 0;
+    const prevMonths = ((u.prev && u.prev.heads) || []).slice(0, m).filter(function (h) { return num(h) > 0; }).length;
+    let items = null, growth = null;
+    if (!noPrev) {
+      const R = growthRatios(P, C);
+      items = growthKeys.map(function (k) {
+        const it = byKey[k], g = gradeOf(R[k], it.grades);
+        return { key: k, ratio: R[k], grade: g, pts: round2(it.groupWeight * it.ratio * g) };
+      });
+      growth = round2(items.reduce(function (a, x) { return a + x.pts; }, 0));
+    }
+    return { key: u.key, name: u.name, rankable: u.rank !== false, P: P, C: C, noPrev: noPrev, prevMonths: prevMonths, items: items, growth: growth };
+  });
+  // 2-3절: 팀 경상이익 = 단위 이익 합 − 팀 총비용 (팀 공통 실적 줄 없음, 결정 ⑥)
+  const prevProfit = units.reduce(function (a, u) { return a + u.P.profit; }, 0);
+  const curProfit = units.reduce(function (a, u) { return a + u.C.profit; }, 0);
+  const prevCost = sumTo(input.teamCost && input.teamCost.prev, m), curCost = sumTo(input.teamCost && input.teamCost.cur, m);
+  const prevOp = prevProfit - prevCost, curOp = curProfit - curCost;
+  const T = byKey.teamOp, tg = T.grades;
+  let teamGrade;
+  if (prevOp <= 0) teamGrade = curOp > prevOp ? tg[0].pts : tg[tg.length - 1].pts; // 엑셀 J13: 전년 0 이하면 커졌는지만
+  else teamGrade = gradeOf(curOp / prevOp, tg);
+  const teamPts = round2(T.groupWeight * T.ratio * teamGrade);
+  units.forEach(function (u) {
+    u.team = teamPts;
+    u.total = u.noPrev ? null : round2(u.growth + teamPts);
+  });
+  // 2-4절: 순위 = 팀 안 합계 높은 순, 동점 같은 순위·다음 순위 건너뜀(엑셀 RANK). 전년 실적 없음·순위 제외 단위는 빠짐
+  const eligible = units.filter(function (u) { return u.rankable && u.total !== null; });
+  units.forEach(function (u) {
+    u.rank = (u.rankable && u.total !== null) ? 1 + eligible.filter(function (x) { return x.total > u.total; }).length : null;
+  });
+  return { ok: true, closeMonth: m, maxPoints: crit.maxPoints, rankCount: eligible.length,
+    team: { prevProfit: prevProfit, curProfit: curProfit, prevCost: prevCost, curCost: curCost, prevOp: prevOp, curOp: curOp,
+      ratio: prevOp > 0 ? curOp / prevOp : null, grade: teamGrade, pts: teamPts },
+    units: units };
+}
+
+// 성과-월실적 줄 → scoreTeam 입력의 units·teamCost (한 팀).
+// rows = A~K 값 배열(1행 머리글 제외). curYear·prevYear 줄을 함께 받는다(전년 줄은 호출하는 쪽이 전년도 파일 또는 이 파일에서 골라 넘김 — 설계서 5-1).
+// mode '사무소': 단위구분 '사무소' 줄, 인원 = 인원 칸 / mode '개인': 단위구분 '개인' 줄, 인원 = 줄이 있으면 1(근무, 2-2절).
+// 팀비용 = 단위구분 '팀비용' 줄의 이익 칸. 단위 순서 = 사무소는 가나다, 개인은 단위이름 가나다.
+function buildTeamInput(rows, team, curYear, mode) {
+  const unitType = mode === '사무소' ? '사무소' : '개인';
+  const units = {}, cost = { cur: new Array(12).fill(0), prev: new Array(12).fill(0) };
+  const empty = function () { return { sales: new Array(12).fill(0), profit: new Array(12).fill(0), heads: new Array(12).fill(0) }; };
+  (rows || []).forEach(function (r) {
+    const y = num(r[0]), mo = num(r[1]);
+    if (cell(r[2]) !== team || !(mo >= 1 && mo <= 12) || (y !== curYear && y !== curYear - 1)) return;
+    const side = y === curYear ? 'cur' : 'prev', kind = cell(r[3]);
+    if (kind === '팀비용') { cost[side][mo - 1] += num(r[7]); return; }
+    if (kind !== unitType) return;
+    const key = cell(r[4]); if (!key) return;
+    const u = units[key] = units[key] || { key: key, name: cell(r[5]) || key, cur: empty(), prev: empty() };
+    if (cell(r[5])) u.name = cell(r[5]);
+    u[side].sales[mo - 1] += num(r[6]); u[side].profit[mo - 1] += num(r[7]);
+    u[side].heads[mo - 1] += unitType === '개인' ? 1 : num(r[8]);
+  });
+  const list = Object.keys(units).map(function (k) { return units[k]; });
+  list.sort(function (a, b) { return (unitType === '사무소' ? a.key : a.name).localeCompare(unitType === '사무소' ? b.key : b.name, 'ko'); });
+  return { units: list, teamCost: cost };
+}
+
+// 화면 표시용 %: 소수 첫째 자리 버림(2-2절 — 99.97%를 100.0%로 보이지 않게)
+function pctFloor1(ratio) { return Math.floor(r10(ratio) * 1000) / 10; }
+
 module.exports = {
   TAB_MONTHLY, TAB_CLOSE, TAB_CRITERIA, HEADERS, UNIT_KEY_PREFIX, PUBLISH_DAYS_KEY, ITEM_KEYS, TOTAL_WEIGHT,
-  checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary
+  checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary,
+  gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1
 };
