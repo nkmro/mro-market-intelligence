@@ -678,6 +678,67 @@ font-size: 13px; padding: 2px 4px; display: none;
 .ct-table .ct-total td { font-weight: 700; border-bottom: none; }
 .ct-table .ct-team-row td { text-align: left; position: static; font-weight: 700; color: var(--accent); background: #efedf3; }
 .ct-th-label { display: block; font-size: 11px; }
+/* 성과평가 · 60% (성과평가 1-다, 설계서 4장 · 시안 v0.5) — 색은 기존 변수 재사용. 초록 띠(실적 공개 중)만 시안 v0.5 색 그대로(#e3f3ea / #1d6b43) */
+.pf-wrap { max-width: 1040px; }
+.pf-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pf-basis { color: var(--text-muted); font-size: 13px; margin: 4px 0 10px; }
+.pf-lock { color: var(--accent); }
+.pf-mut { color: var(--text-muted); }
+.pf-band { font-size: 13px; border-radius: 8px; padding: 8px 12px; margin: 8px 0 10px; line-height: 1.5; }
+.pf-green { background: #e3f3ea; color: #1d6b43; }
+.pf-link { border: none; background: none; padding: 0; margin-left: 6px; font: inherit; color: var(--blue); text-decoration: underline; cursor: pointer; }
+.pf-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.pf-chip { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; text-align: left; color: var(--text); }
+.pf-chip small { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); }
+.pf-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.pf-tabs { display: flex; gap: 4px; margin: 6px 0 10px; }
+.pf-tabs span { padding: 7px 14px; border-radius: 7px 7px 0 0; background: #e7e3ef; font-size: 13px; }
+.pf-tabs span.on { background: var(--accent); color: #fff; }
+.pf-tabs span.off { color: var(--text-muted); cursor: default; }
+.pf-mycard { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 6px; font-size: 12px; }
+.pf-big { font-size: 20px; font-weight: 700; }
+.pf-big2 { font-size: 30px; font-weight: 700; color: var(--accent); }
+.pf-big2 span { font-size: 14px; color: var(--text-muted); font-weight: 400; }
+.pf-delta { font-size: 12px; }
+.pf-delta.up { color: #1d6b43; }
+.pf-delta.down { color: var(--danger); }
+.pf-bars { flex: 1; min-width: 200px; max-width: 340px; }
+.pf-bar { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 12px; }
+.pf-bar span { width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-bar i { display: block; height: 9px; background: var(--sidebar-lower); border-radius: 5px; }
+.pf-bar.on i { background: var(--accent); }
+.pf-bar b { width: 34px; text-align: right; }
+.pf-h4 { margin: 16px 0 6px; font-size: 14px; }
+.pf-h4 small { font-weight: 400; }
+.pf-teamop { display: flex; gap: 30px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+.pf-tablewrap { overflow-x: auto; }
+.pf-t { border-collapse: collapse; width: 100%; background: var(--card); border: 1px solid var(--border); font-size: 12.5px; white-space: nowrap; }
+.pf-t th { background: var(--accent-soft); color: var(--accent); font-weight: 600; padding: 6px 7px; border: 1px solid var(--border); font-size: 12px; }
+.pf-t td { padding: 6px 7px; border: 1px solid #eeece6; text-align: right; }
+.pf-t td.l { text-align: left; }
+.pf-t td.c { text-align: center; }
+.pf-t tr.me td { background: #f7f2fb; }
+.pf-t td.tot { font-weight: 700; color: var(--accent); }
+.pf-t td.b { font-weight: 600; }
+.pf-t td.g { color: var(--blue); }
+.pf-t small { font-weight: 400; color: #8a7fa8; }
+.pf-rk { display: inline-block; min-width: 22px; text-align: center; border-radius: 11px; background: #efeeea; padding: 1px 6px; font-weight: 700; }
+.pf-rk1 { background: var(--accent); color: #fff; }
+.pf-rk2 { background: var(--header-end); color: #fff; }
+.pf-rk3 { background: var(--sidebar-lower); }
+.pf-chipm { font-size: 10.5px; background: var(--accent); color: #fff; border-radius: 9px; padding: 1px 7px; font-weight: 600; margin-left: 2px; }
+.pf-chipm.gray { background: #bbb; }
+.pf-mob { display: none; }
+.pf-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.pf-card.me { border-color: var(--accent); background: #f7f2fb; }
+.pf-card summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pf-card summary::-webkit-details-marker { display: none; }
+.pf-cname { font-weight: 600; }
+.pf-cs { margin-left: auto; font-weight: 700; color: var(--accent); }
+.pf-cs small { color: var(--text-muted); font-weight: 400; }
+.pf-card .pf-bar { width: 100%; margin: 4px 0 0; }
+.pf-cd { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+@media (max-width: 768px) { .pf-desk { display: none; } .pf-mob { display: block; } .pf-mycard { gap: 12px; padding: 12px; } .pf-bars { display: none; } .pf-big2 { font-size: 24px; } }
 /* 1단계-라-라-다: 건수표 숫자를 누르면 아래 탭·필터·팀원 묶음으로 이동. 누를 수 있는 숫자만 점선 밑줄(0은 그대로 글자) */
 .ct-go { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .ct-go:hover { text-decoration-style: solid; }
@@ -928,6 +989,9 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
           <div class="nav-item" id="nav-comp-mine" data-view="comp-mine" onclick="switchView('comp-mine')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg></span> 내 역량 기록<span class="nav-badge" id="nav-comp-mine-badge" style="display:none;">0</span></div>
           <div class="nav-item" id="nav-comp-team" data-view="comp-team" onclick="switchView('comp-team')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> 팀 역량평가<span class="nav-badge" id="nav-comp-team-badge" style="display:none;">0</span></div>
           <div class="nav-item" id="nav-comp-criteria" data-view="comp-criteria" onclick="switchView('comp-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
+          <div class="nav-group-sub" id="nav-perf-sub" style="display:none;">성과평가 · 60%</div>
+          <div class="nav-item" id="nav-perf" data-view="perf" onclick="switchView('perf')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span> 성과평가</div>
+          <div class="nav-item" id="nav-perf-criteria" data-view="perf-criteria" onclick="switchView('perf-criteria')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg></span> 평가 기준 보기</div>
           <div class="nav-item" id="nav-comp-settings" data-view="comp-settings" onclick="switchView('comp-settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 인사평가 설정</div>
         </div>
       </div>
@@ -980,6 +1044,8 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="comp-settings-view" style="display:none;"></div>
 <div id="comp-mine-view" style="display:none;"></div>
 <div id="comp-team-view" style="display:none;"></div>
+<div id="perf-view" style="display:none;"></div>
+<div id="perf-criteria-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -1116,6 +1182,8 @@ const CLOUD_RUN_SUGGEST_MATERIALS_URL = 'https://asia-northeast3-mro-market-inte
 const CLOUD_RUN_GET_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getCompetencyTest';
 // 역량평가 2-가: 쓰기(saveCompetencyTest). 지금은 관리자 '기존 기록 정리'(action backfill)만.
 const CLOUD_RUN_SAVE_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/saveCompetencyTest';
+// 성과평가 1-다: 읽기(getPerformanceTest view=mine/team/criteria). 쓰기(savePerformanceTest)는 3단계.
+const CLOUD_RUN_GET_PERFORMANCE_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getPerformanceTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -1398,6 +1466,8 @@ document.getElementById('comp-criteria-view').style.display = view === 'comp-cri
 document.getElementById('comp-settings-view').style.display = view === 'comp-settings' ? 'block' : 'none';
 document.getElementById('comp-mine-view').style.display = view === 'comp-mine' ? 'block' : 'none';
 document.getElementById('comp-team-view').style.display = view === 'comp-team' ? 'block' : 'none';
+document.getElementById('perf-view').style.display = view === 'perf' ? 'block' : 'none';
+document.getElementById('perf-criteria-view').style.display = view === 'perf-criteria' ? 'block' : 'none';
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1441,6 +1511,12 @@ loadCompMinePage();
 }
 if (view === 'comp-team') {
 loadCompLeadPage();
+}
+if (view === 'perf') {
+loadPerfPage();
+}
+if (view === 'perf-criteria') {
+loadPerfCriteriaPage();
 }
 toggleDrawer(false);
 }
@@ -1691,6 +1767,10 @@ document.getElementById('nav-group-hr').style.display = '';
 if (['일반', '담당', '팀장', '임원'].indexOf(session.role) >= 0) {
 document.getElementById('nav-group-hr').style.display = '';
 document.getElementById('nav-comp-criteria').style.display = 'flex';
+// 성과평가 1-다 (설계서 3-1): 성과평가·평가 기준 보기 — 일반·담당·팀장·임원 모두(화면 안 내용은 서버가 역할로 거름). 앱 시작 때 서버를 부르지 않음.
+document.getElementById('nav-perf-sub').style.display = '';
+document.getElementById('nav-perf').style.display = 'flex';
+document.getElementById('nav-perf-criteria').style.display = 'flex';
 }
 // 1단계-라-다-가 (설계서 2-1 메뉴표): 내 역량 기록은 팀원(일반·담당)만. 팀장·임원은 팀 역량평가(②, 1단계-라-라 — 앱 시작 때 서버를 부르지 않음).
 if (['팀장', '임원'].indexOf(session.role) >= 0) {
@@ -4542,6 +4622,212 @@ return `<div class="cc-comp"><div class="cc-head"><span class="cc-name">${escape
 const total = p.total ? `<div class="cc-total"><span>합계</span><span>${escapeHtml(p.total)}</span></div>` : '';
 root.innerHTML = `<div class="settings-panel">${head}${body}${total}
 <div class="cc-note">"기록 있음" 항목은 앱에서 근거 기록을 모으는 항목입니다. 기록 수는 참고용이며, 평가는 내용으로 합니다.</div></div>`;
+}
+
+// ==== 인사평가 › 성과평가 · 60% (성과평가 1-다, 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7 3-1·3-2·4장) ====
+// 서버 getPerformanceTest(view=mine/team/criteria)가 권한대로 걸러 보낸 응답만 그린다. 계산·숫자 거르기는 서버(lib/performance.js buildView).
+// - mine : 일반·담당·팀장(관리자 포함) — 자기 팀. 응답에 숫자(P·C·비율·팀 비용)가 없으면 숫자 표를 그리지 않는다(화면에서 가리는 게 아님).
+// - team : 임원 — 팀 칩으로 팀을 고름. 숫자 항상.
+// - criteria : 평가 기준 보기 — 성과평가(60%).
+// 팀장 [실적 입력]·[팀 설정] 탭은 자리만(3단계). 연도 칸은 역량평가와 같은 모양(.cy-sel) — 파일 있는 해가 2개 이상일 때만.
+let perfReq_ = 0, perfYear_ = null, perfTeam_ = '', perfRes_ = null;
+async function perfFetch_(body) {
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+const res = await fetch(CLOUD_RUN_GET_PERFORMANCE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+return compRateLimit_(res); // 역량평가와 같은 '요청이 잠시 많아요' 처리
+} catch (e) { return null; }
+}
+function perfErrorText_(res) {
+if (res && res.error === 'PERF_SETTINGS_MISSING') return (res.year || '올해') + '년 인사평가 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
+if (res && res.error === 'PERF_CRITERIA_INVALID') return '성과평가 기준표에 문제가 있어 점수를 계산하지 않았어요. 관리자에게 알려 주세요.' + (Array.isArray(res.errors) && res.errors.length ? ' (' + res.errors.join(' / ') + ')' : '');
+return compErrorText_(res, '성과평가');
+}
+async function loadPerfPage() {
+const root = document.getElementById('perf-view');
+const reqNo = ++perfReq_;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const body = { view: session && session.role === '임원' ? 'team' : 'mine' };
+if (body.view === 'team' && perfTeam_) body.team = perfTeam_;
+if (perfYear_) body.year = perfYear_;
+const res = await perfFetch_(body);
+if (reqNo !== perfReq_) return; // 그 사이 다시 눌렀으면 늦게 온 응답은 버린다
+if (!res || !res.ok) {
+if (res && (res.error === 'BAD_YEAR' || res.error === 'PERF_SETTINGS_MISSING')) perfYear_ = null; // 다시 열면 올해
+root.innerHTML = `<div class="feed-empty">${escapeHtml(perfErrorText_(res))}</div>`;
+return;
+}
+perfRes_ = res;
+if (res.view === 'team') perfTeam_ = res.team;
+perfRender_(res);
+}
+function perfPickYear_(v) { const y = Number(v); perfYear_ = (!Number.isInteger(y) || y === Number(compSeoulToday_().slice(0, 4))) ? null : y; loadPerfPage(); }
+function perfPickTeam_(t) { perfTeam_ = t; loadPerfPage(); }
+// 숫자 모양: 금액 = 천원 정수(쉼표), 비율 = 소수 첫째 자리 버림(서버 pctFloor1과 같음 — 99.97%를 100.0%로 보이지 않게)
+function perfNum_(n) { return (n === null || n === undefined || !isFinite(n)) ? '—' : Math.round(n).toLocaleString('ko-KR'); }
+function perfPct_(r) { return (r === null || r === undefined || !isFinite(r)) ? '—' : (Math.floor(Math.round(r * 1e10) / 1e10 * 1000) / 10).toFixed(1) + '%'; }
+function perfPts_(n) { return (n === null || n === undefined) ? '—' : String(Math.round(n * 100) / 100); }
+function perfMd_(iso) { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
+function perfRank_(u, n) { return u.rank ? `<span class="pf-rk pf-rk${Math.min(u.rank, 4)}">${u.rank}</span>` : '<span class="pf-mut">제외</span>'; }
+function perfUnitLabel_(res) { return res.mode === '사무소' ? '사무소' : '팀원'; }
+function perfRender_(res) {
+const root = document.getElementById('perf-view');
+const teamView = res.view === 'team';
+const lead = !teamView && !res.preview && res.viewer && res.viewer.role === '팀장';
+const ys = Array.isArray(res.years) ? res.years : [];
+const yearSel = ys.length >= 2 ? `<select class="cy-sel" aria-label="연도" onchange="perfPickYear_(this.value)">${ys.map(function (y) { return `<option value="${escapeHtml(String(y))}" ${Number(y) === Number(res.year) ? 'selected' : ''}>${escapeHtml(String(y))}년</option>`; }).join('')}</select>` : '';
+let h = `<div class="pf-head"><div class="settings-row-title" style="font-size:16px;">성과평가 <span class="pf-mut" style="font-weight:400;">· 60%</span></div>${yearSel}</div>`;
+if (res.preview) h += `<div class="cy-band cy-blue">👀 관리자 미리보기 — 팀원(일반)이 받는 응답 그대로예요.</div>`;
+if (res.previewIgnored) h += `<div class="cy-band cy-yellow">⚠️ 미리보기는 팀 보기에는 적용되지 않아요 — 아래는 임원 화면 그대로(숫자 포함)예요.</div>`;
+if (teamView) {
+h += `<div class="pf-chips">${(res.teams || []).map(function (t) {
+return `<button type="button" class="pf-chip ${t.team === res.team ? 'on' : ''}" onclick="perfPickTeam_('${escapeHtml(t.team).replace(/'/g, '&#39;')}')">${escapeHtml(teamLabel(t.team))}<small>${escapeHtml(t.mode)} · ${t.closeMonth ? t.closeMonth + '월 마감' : '마감 없음'}</small></button>`;
+}).join('')}</div>`;
+}
+const basis = res.closeMonth
+? `${res.year}년 <b>1~${res.closeMonth}월 누계</b> 기준 · ${escapeHtml(teamLabel(res.team))} · <span class="pf-lock">🔒 ${res.closeMonth}월 마감${res.closedAt ? ' (' + escapeHtml(perfMd_(res.closedAt)) + ')' : ''}</span> · 평가 단위: ${escapeHtml(res.mode)}${lead ? ' · <b>팀장</b>' : ''}`
+: `${res.year}년 · ${escapeHtml(teamLabel(res.team))} · 평가 단위: ${escapeHtml(res.mode)}${lead ? ' · <b>팀장</b>' : ''}`;
+h += `<div class="pf-basis">${basis}</div>`;
+if (lead) {
+h += `<div class="pf-tabs"><span class="on">점수 보기</span><span class="off" title="3단계에서 열려요">실적 입력</span>${res.mode === '사무소' ? '<span class="off" title="3단계에서 열려요">팀 설정</span>' : ''}</div>
+<div class="pf-mut" style="font-size:12px; margin:-4px 0 8px;">[실적 입력]${res.mode === '사무소' ? '·[팀 설정]' : ''}은 다음 단계에서 열려요.</div>`;
+}
+if (!res.scored) {
+const prevY = Number(res.year) - 1;
+const link = ys.map(Number).indexOf(prevY) >= 0 ? ` <button type="button" class="pf-link" onclick="perfPickYear_(${prevY})">${prevY}년 점수 보기</button>` : '';
+h += `<div class="cy-band cy-grey">아직 마감된 달이 없어요. 팀장이 월 실적을 마감하면 점수가 보여요.${link}</div>`;
+root.innerHTML = `<div class="pf-wrap">${h}</div>`;
+return;
+}
+if (!teamView && !lead) {
+if (res.showNumbers && res.publish && res.publish.open) h += `<div class="pf-band pf-green">🔓 <b>${res.closeMonth}월 마감 실적 공개 중 — ${escapeHtml(perfMd_(res.publish.until))}까지</b> 매출·이익 숫자를 볼 수 있어요</div>`;
+else if (!res.showNumbers) h += `<div class="cy-band cy-grey">${res.publish && res.publish.days > 0 ? '매출·이익 숫자는 실적 공개 기간(마감한 날부터 ' + res.publish.days + '일)에만 보여요.' : '매출·이익 숫자는 공개하지 않아요.'} 점수와 순위는 항상 볼 수 있어요.</div>`;
+h += perfMyCard_(res);
+}
+if (res.showNumbers && res.teamScore && res.teamScore.curOp !== undefined && (teamView || lead)) {
+const ts = res.teamScore;
+h += `<div class="pf-teamop"><div><div class="pf-mut">팀 경상이익 (이익 − 총비용, 1~${res.closeMonth}월)</div><b>전년 ${perfNum_(ts.prevOp)}</b> → <b>당해 ${perfNum_(ts.curOp)}</b> 천원</div>
+<div><div class="pf-mut">② 점수</div><b>${perfPts_(ts.pts)} / ${perfPts_(perfMax_(res, 'teamOp'))}</b> <small class="pf-mut">${ts.prevOp <= 0 ? '전년이 0 이하 → 당해가 크면 최고 등급' : '성장률 ' + perfPct_(ts.ratio)}</small></div></div>`;
+}
+h += `<h4 class="pf-h4">${teamView || lead ? '팀 점수' : '우리 팀 점수'}</h4>` + perfScoreTable_(res) + perfCards_(res);
+if (res.showNumbers) h += perfNumberTables_(res, teamView || lead);
+h += `<p class="cc-note">점수는 성과평가(60%)만입니다. 최종 평가는 역량평가와 함께 팀장이 합니다. <span class="pf-desk">점수 칸에 마우스를 올리면 등급이 보여요.</span><span class="pf-mob">카드를 누르면 항목별 점수가 보여요.</span></p>`;
+root.innerHTML = `<div class="pf-wrap">${h}</div>`;
+}
+function perfMax_(res, key) { const it = (res.items || []).filter(function (i) { return i.key === key; })[0]; return it ? it.maxPts : null; }
+function perfMyCard_(res) {
+const unitWord = res.mode === '사무소' ? '내 사무소' : '나';
+if (!res.myKey && res.mode === '사무소') return `<div class="pf-mycard"><div class="pf-mut">내 사무소가 아직 지정되지 않았어요. 팀장에게 사무소 지정을 요청하세요.</div></div>`;
+const me = (res.units || []).filter(function (u) { return u.key === String(res.myKey).toLowerCase() || u.key === res.myKey; })[0];
+if (!me) return '';
+const top = Math.max.apply(null, (res.units || []).map(function (u) { return u.total || 0; }).concat([1]));
+const bars = (res.units || []).filter(function (u) { return u.total !== null; }).slice().sort(function (a, b) { return b.total - a.total; }).map(function (u) {
+return `<div class="pf-bar ${u.key === me.key ? 'on' : ''}"><span>${escapeHtml(u.name)}</span><i style="width:${Math.max(4, u.total / top * 100)}%"></i><b>${perfPts_(u.total)}</b></div>`;
+}).join('');
+const delta = (me.total !== null && me.prevTotal !== null && me.prevTotal !== undefined) ? me.total - me.prevTotal : null;
+const deltaTxt = delta === null ? '' : `<div class="pf-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta === 0 ? '변화 없음' : (delta > 0 ? '▲ ' : '▼ ') + perfPts_(Math.abs(delta))} (${res.closeMonth - 1}월 마감 대비)</div>`;
+const sub = res.mode === '사무소' ? `팀원 ${me.members || 0}명 · 같은 점수로 평가돼요` : '';
+const score = me.noPrev
+? `<div><div class="pf-mut">합계</div><div class="pf-big2" style="font-size:16px;">전년 실적 없음</div><div class="pf-mut">순위에서 빠져요</div></div>`
+: `<div><div class="pf-mut">합계</div><div class="pf-big2">${perfPts_(me.total)}<span> / ${perfPts_(res.maxPoints)}</span></div>${deltaTxt}</div>
+<div><div class="pf-mut">순위</div><div class="pf-big2">${me.rank || '—'}<span> / ${res.rankCount}</span></div></div>`;
+return `<div class="pf-mycard"><div><div class="pf-mut">${unitWord}</div><div class="pf-big">${escapeHtml(me.name)}</div>${sub ? `<div class="pf-mut">${sub}</div>` : ''}</div>${score}<div class="pf-bars">${bars}</div></div>`;
+}
+function perfScoreTable_(res) {
+const g = ['sales', 'profit', 'margin', 'perHead'];
+const short = { sales: '매출', profit: '이익', margin: '이익률', perHead: '인당이익' };
+const growthMax = g.reduce(function (a, k) { return a + (perfMax_(res, k) || 0); }, 0);
+let t = `<div class="pf-tablewrap pf-desk"><table class="pf-t"><thead><tr><th rowspan="2">${perfUnitLabel_(res)}</th><th colspan="5">① 전년 대비 성장률 (${perfPts_(growthMax)})</th><th>② 영업이익</th><th rowspan="2">합계<br><small>${perfPts_(res.maxPoints)}</small></th><th rowspan="2">순위</th></tr>
+<tr>${g.map(function (k) { return `<th>${short[k]} <small>${perfPts_(perfMax_(res, k))}</small></th>`; }).join('')}<th>소계</th><th>팀 경상이익 <small>${perfPts_(perfMax_(res, 'teamOp'))}</small></th></tr></thead><tbody>`;
+(res.units || []).forEach(function (u) {
+const mine = res.myKey && (u.key === res.myKey || u.key === String(res.myKey).toLowerCase());
+const chip = (mine ? `<span class="pf-chipm">${res.mode === '사무소' ? '내 사무소' : '나'}</span>` : '') + (u.left ? '<span class="pf-chipm gray">퇴사</span>' : '') + (res.mode === '사무소' && u.members === 0 ? '<span class="pf-chipm gray">현재 팀원 없음</span>' : '');
+const cells = u.noPrev
+? `<td colspan="5" class="pf-mut c">전년 실적 없음</td><td>${perfPts_(u.team)}</td><td class="tot">—</td><td>${perfRank_(u)}</td>`
+: u.items.map(function (it) { return `<td title="등급 ${it.grade}${it.ratio !== undefined ? ' · ' + perfPct_(it.ratio) : ''}">${perfPts_(it.pts)}</td>`; }).join('') + `<td class="b">${perfPts_(u.growth)}</td><td>${perfPts_(u.team)}</td><td class="tot">${perfPts_(u.total)}</td><td>${perfRank_(u)}</td>`;
+t += `<tr class="${mine ? 'me' : ''}"><td class="l">${escapeHtml(u.name)} ${chip}</td>${cells}</tr>`;
+});
+return t + `</tbody></table></div>`;
+}
+// 휴대폰(768px 이하): 점수표 대신 단위별 카드(이름·합계·순위·막대). 누르면 항목별 점수 펼침(설계서 4-1 시안 ⑥)
+function perfCards_(res) {
+const top = Math.max.apply(null, (res.units || []).map(function (u) { return u.total || 0; }).concat([1]));
+return `<div class="pf-cards pf-mob">${(res.units || []).map(function (u) {
+const mine = res.myKey && (u.key === res.myKey || u.key === String(res.myKey).toLowerCase());
+const detail = u.noPrev ? '전년 실적 없음 · 순위 제외' : u.items.map(function (it) {
+const nm = ((res.items || []).filter(function (x) { return x.key === it.key; })[0] || {}).name || it.key;
+return `${escapeHtml(nm)} ${perfPts_(it.pts)}`;
+}).join(' · ') + ` · ② ${perfPts_(u.team)}`;
+return `<details class="pf-card ${mine ? 'me' : ''}"><summary><span class="pf-cname">${escapeHtml(u.name)}${u.left ? ' <span class="pf-chipm gray">퇴사</span>' : ''}</span><span class="pf-cs">${u.total === null ? '—' : perfPts_(u.total)}<small> / ${perfPts_(res.maxPoints)}</small> ${perfRank_(u)}</span>
+<div class="pf-bar ${mine ? 'on' : ''}"><i style="width:${u.total === null ? 0 : Math.max(4, u.total / top * 100)}%"></i></div></summary><div class="pf-cd">${detail}</div></details>`;
+}).join('')}</div>`;
+}
+function perfNumberTables_(res, always) {
+const unitLabel = perfUnitLabel_(res), m = res.closeMonth;
+let t = `<h4 class="pf-h4">실적 숫자 <small class="pf-mut">${always ? '팀장·임원은 항상 보여요' : '공개 기간에만 보여요'} · 1~${m}월 누계 · 성장 = 당해 ÷ 전년</small></h4>
+<div class="pf-tablewrap"><table class="pf-t"><thead><tr><th rowspan="2">${unitLabel}</th><th colspan="3">매출액 누계 (천원)</th><th colspan="3">이익 누계 (천원)</th><th colspan="3">이익률</th><th colspan="3">인당 이익 (천원/인·월)</th></tr>
+<tr><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th></tr></thead><tbody>`;
+(res.units || []).forEach(function (u) {
+if (!u.P || !u.C) return;
+const P = u.P, C = u.C;
+const mP = P.sales ? P.profit / P.sales : null, mC = C.sales ? C.profit / C.sales : null;
+const hP = P.heads ? P.profit / P.heads : null, hC = C.heads ? C.profit / C.heads : null;
+const r = function (a, b) { return (b && a !== null && b !== null) ? a / b : null; };
+const mine = res.myKey && (u.key === res.myKey || u.key === String(res.myKey).toLowerCase());
+t += `<tr class="${mine ? 'me' : ''}"><td class="l">${escapeHtml(u.name)}</td><td>${perfNum_(P.sales)}</td><td>${perfNum_(C.sales)}</td><td class="g">${perfPct_(r(C.sales, P.sales))}</td>
+<td>${perfNum_(P.profit)}</td><td>${perfNum_(C.profit)}</td><td class="g">${perfPct_(r(C.profit, P.profit))}</td>
+<td>${mP === null ? '—' : (mP * 100).toFixed(2) + '%'}</td><td>${mC === null ? '—' : (mC * 100).toFixed(2) + '%'}</td><td class="g">${perfPct_(r(mC, mP))}</td>
+<td>${perfNum_(hP)}</td><td>${perfNum_(hC)}</td><td class="g">${perfPct_(r(hC, hP))}</td></tr>`;
+});
+t += `</tbody></table></div>`;
+const ts = res.teamScore || {};
+if (ts.curOp !== undefined) {
+t += `<div class="pf-tablewrap"><table class="pf-t" style="margin-top:8px;"><thead><tr><th>${escapeHtml(teamLabel(res.team))} (천원)</th><th>팀 이익 합계</th><th>팀 총비용</th><th>팀 경상이익</th></tr></thead><tbody>
+<tr><td class="l">전년 1~${m}월</td><td>${perfNum_(ts.prevProfit)}</td><td>${perfNum_(ts.prevCost)}</td><td>${perfNum_(ts.prevOp)}</td></tr>
+<tr><td class="l">당해 1~${m}월</td><td>${perfNum_(ts.curProfit)}</td><td>${perfNum_(ts.curCost)}</td><td><b>${perfNum_(ts.curOp)}</b></td></tr></tbody></table></div>`;
+}
+return t;
+}
+// ==== 인사평가 › 평가 기준 보기 — 성과평가(60%) (설계서 4-5, 시안 ⑦) ====
+// 서버 getPerformanceTest(view=criteria): 성과-평가기준 탭 그대로(항목·묶음가중치·배점비율·등급표·만점). 보기 전용.
+// 역량 기준 보기와 같은 판(.settings-panel·.cc-*)을 쓰고 내용만 다르다(화면 중복 점검: 메뉴는 따로, 모양은 공용).
+let perfCritReq_ = 0;
+async function loadPerfCriteriaPage() {
+const root = document.getElementById('perf-criteria-view');
+const reqNo = ++perfCritReq_;
+root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const res = await perfFetch_({ view: 'criteria' });
+if (reqNo !== perfCritReq_) return;
+if (!res || !res.ok) { root.innerHTML = `<div class="feed-empty">${escapeHtml(perfErrorText_(res))}</div>`; return; }
+const c = res.criteria || {};
+const head = `<div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">평가 기준 보기 — 성과평가(60%)</div>`;
+if (!c.ok) {
+root.innerHTML = `<div class="settings-panel">${head}<div class="cy-band cy-red">평가 기준 탭을 확인해 주세요. 지금 기준으로는 점수를 계산하지 않아요.${(c.errors || []).length ? '<br>' + c.errors.map(escapeHtml).join('<br>') : ''}</div></div>`;
+return;
+}
+const groups = [];
+(c.items || []).forEach(function (it) {
+let g = groups.filter(function (x) { return x.name === it.group; })[0];
+if (!g) { g = { name: it.group, weight: it.groupWeight, items: [] }; groups.push(g); }
+g.items.push(it);
+});
+const body = groups.map(function (g) {
+const gMax = g.items.reduce(function (a, it) { return a + it.maxPts; }, 0);
+const items = g.items.map(function (it) {
+const grades = String(it.grades || '').split(',').map(function (s) { s = s.trim(); const m = /^(.+?)\s*:\s*(.+)$/.exec(s); return m ? (m[1] === '나머지' ? '그 밖 ' + m[2] + '점' : m[1] + '% 초과 ' + m[2] + '점') : s; }).join(' · ');
+return `<div class="cc-item"><span class="cc-item-name">${escapeHtml(it.name)}</span><span class="cc-ratio">배점 ${escapeHtml(String(it.ratio))} · 만점 ${perfPts_(it.maxPts)}점</span></div><div class="cc-grades">등급: ${escapeHtml(grades)}</div>`;
+}).join('');
+return `<div class="cc-comp"><div class="cc-head"><span class="cc-name">${escapeHtml(g.name)}</span><span class="cc-weight">가중치 ${escapeHtml(String(g.weight))} · ${perfPts_(gMax)}점</span></div>${items}</div>`;
+}).join('');
+root.innerHTML = `<div class="settings-panel">${head}${body}<div class="cc-total"><span>합계</span><span>${perfPts_(c.maxPoints)}점</span></div>
+<div class="cc-note">
+· 점수 = 등급 × 묶음 가중치 × 배점. 예) 매출 성장 112% → 100등급 × 0.5 × 0.3 = 15점, 정확히 110% → 90등급(초과가 아님).<br>
+· 누계 = 1월부터 팀장이 마감한 달까지. 전년 같은 기간과 비교해요. 인당 이익 = 이익 누계 ÷ 인원 누계(사람·월).<br>
+· 팀 경상이익 = 팀 이익 합계 − 팀 총비용. 전년이 0 이하이면 당해가 더 크면 최고 등급, 아니면 최저 등급.<br>
+· 전년 실적이 없으면(신규) ① 점수와 순위가 없어요. 같은 점수는 같은 순위예요(다음 순위는 건너뜀).<br>
+· 성과평가 합계 60점은 회사 규정이에요. 기준은 시트 '성과-평가기준' 탭에서 읽어요.</div></div>`;
 }
 
 // ==== 인사평가 › 내 역량 기록 (1단계-라-다-가, 설계서 3장 화면 ①·⑤) ====
