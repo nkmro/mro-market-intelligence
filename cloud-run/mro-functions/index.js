@@ -4642,3 +4642,101 @@ exports.dispatchBatchTest = async (req, res) => {
     res.status(500).json({ ok: false, totalMs: Date.now() - t0, error: String((err && err.message) || err) });
   }
 };
+
+// =====================================================================
+// 성과평가(60%) — 1-가: getPerformanceTest (지금은 view=ping 만)
+// 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7, 5장·6장·7장(1단계).
+// - 관리자(ADMIN_EMAIL)만 호출 가능. 화면(feed.html)에는 아직 연결하지 않는다.
+// - 읽기만 한다(getSheetsClient = spreadsheets.readonly). 시트에 아무것도 쓰지 않는다.
+// - getCompetencyTest ping과 같은 순서: MRO 본 시트(사용자팀마스터 A2:J + '설정') 1번 →
+//   '설정'의 인사평가파일_{연도}로 그해 인사평가 파일 → 인사평가설정 + 성과 탭 3개를 값 읽기 1번.
+// - 성과 탭 이름은 고정(5-2)이라 시트 정보(탭 목록) 읽기는 하지 않는다. 탭이 없으면 Google이 400을 돌려주므로
+//   그 상태코드·메시지를 그대로 응답에 담는다(SHEET_ACCESS_FAILED).
+// - 인코딩 규약(3946행 주석과 같음): MRO 쪽은 이미 인코딩된 상수 그대로, 인사평가 파일 쪽은 날 문자열을 한 번만 인코딩.
+// =====================================================================
+const performance = require('./lib/performance');
+
+exports.getPerformanceTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, view, year } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    if (view !== 'ping') {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
+      return;
+    }
+    if (String(auth.email || '').trim().toLowerCase() !== ADMIN_EMAIL) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'FORBIDDEN' });
+      return;
+    }
+
+    // 1) MRO 본 시트: 사용자팀마스터 A2:J(J = 사무소) + '설정' A2:C — 역량평가 보기와 같은 범위
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    });
+    const settingRows = (mro[1] && mro[1].values) || [];
+    const targetYear = Number(year) || competency.seoulYear();
+    const fileId = competency.findFileId(settingRows, targetYear);
+    if (!fileId) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'PERF_SETTINGS_MISSING',
+        detail: "'설정' 탭에 " + competency.FILE_KEY_PREFIX + targetYear + ' 키가 없음', year: targetYear });
+      return;
+    }
+    // 5-1절: 전년은 전년도 파일에서 읽는다. 전년도 파일 설정이 없으면(2026 → 2025 파일 없음) 이 파일의 전년 줄을 읽는다.
+    const prevFileId = competency.findFileId(settingRows, targetYear - 1);
+
+    // 2) 그해 인사평가 파일: 인사평가설정 + 성과 탭 3개 (값 읽기 1번, 숫자는 서식 없이)
+    const ranges = [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C',
+      competency.quoteTab(performance.TAB_MONTHLY) + '!1:1',
+      competency.quoteTab(performance.TAB_CLOSE) + '!1:1',
+      competency.quoteTab(performance.TAB_CRITERIA) + '!A1:F30'].map(encodeURIComponent);
+    const c0 = Date.now();
+    let vr;
+    try {
+      vr = await batchGetValues(client, fileId, ranges, { unformatted: true });
+    } catch (e) {
+      const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+      const msg = String((e && e.response && e.response.data && e.response.data.error && e.response.data.error.message) || (e && e.message) || e);
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED',
+        httpStatus: httpStatus, detail: msg.slice(0, 300), year: targetYear, fileId: fileId });
+      return;
+    }
+    timings.perfSheetMs = Date.now() - c0;
+
+    const settingsRows = (vr[0] && vr[0].values) || [];
+    const tabs = [performance.TAB_MONTHLY, performance.TAB_CLOSE, performance.TAB_CRITERIA].map(function (tab, i) {
+      return performance.checkHeaders(tab, ((vr[i + 1] && vr[i + 1].values) || [])[0]);
+    });
+    const criteria = performance.parseCriteria((vr[3] && vr[3].values) || []);
+    const unit = performance.readUnitModes(settingsRows);
+    const publish = performance.readPublishDays(settingsRows);
+    const perfSettings = settingsRows.filter(function (r) {
+      const k = String((r && r[0]) || '').trim();
+      return k.indexOf(performance.UNIT_KEY_PREFIX) === 0 || k === performance.PUBLISH_DAYS_KEY;
+    });
+
+    res.status(200).json({
+      ok: tabs.every(function (t) { return t.ok; }) && criteria.ok && unit.bad.length === 0 && publish.valid,
+      serverMs: Date.now() - t0, timings,
+      year: targetYear, fileId: fileId, prevYearFile: prevFileId ? 'found' : 'none (전년 줄은 이 파일에서 읽음)',
+      tabs: tabs,
+      criteria: { ok: criteria.ok, sum: criteria.sum, maxPoints: criteria.maxPoints, errors: criteria.errors,
+        items: criteria.items.map(function (it) { return { key: it.key, name: it.name, group: it.group, groupWeight: it.groupWeight, ratio: it.ratio, grades: it.gradesText }; }) },
+      settings: { rows: perfSettings, unitModes: unit.modes, badUnitRows: unit.bad, publishDays: publish.days, publishDaysValid: publish.valid },
+      offices: performance.officeSummary(users, unit.modes)
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};
