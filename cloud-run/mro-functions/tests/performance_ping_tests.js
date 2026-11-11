@@ -83,7 +83,13 @@ t('O2 개인 팀은 요약 없음', Object.keys(p.officeSummary(U, { '동부': '
 
 // ── index.js 연결 (코드 확인)
 const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-const blk = src.slice(src.indexOf('exports.getPerformanceTest'));
+const pStart = src.indexOf('exports.getPerformanceTest');
+// 1-다: 보기 함수(performanceView_)가 이 진입점 뒤에 붙으므로 진입점 함수 끝(첫 '\n};\n')까지만 본다
+const pEnd = src.indexOf('\n};\n', pStart);
+if (pStart < 0 || pEnd < 0) throw new Error('getPerformanceTest 시작·끝을 찾지 못함');
+const blk = src.slice(pStart, pEnd + 3);
+// 잘린 끝 바로 뒤가 다음 함수 머리 주석(1-다 performanceView_)이어야 한다 — 함수 중간에서 잘리지 않았는지 확인
+t('I0 진입점 끝 = 첫 "\\n};\\n" 바로 뒤가 1-다 머리 주석', /^\s*\/\/ =+\n\/\/ 성과평가 1-다/.test(src.slice(pEnd + 3)));
 t('I1 getPerformanceTest 진입점 있음 + view=ping 외 NOT_IMPLEMENTED', blk.indexOf("if (view !== 'ping')") > 0 && blk.indexOf("'NOT_IMPLEMENTED'") > 0);
 t('I2 관리자만(FORBIDDEN)', blk.indexOf("!== ADMIN_EMAIL") > 0 && blk.indexOf("error: 'FORBIDDEN'") > 0);
 t('I3 읽기 전용 클라이언트(getSheetsClient)만 — 쓰기 클라이언트·PUT·append 없음', blk.indexOf('getSheetsClient()') > 0 && !/getUserWriteClient_|method: 'PUT'|:append|values:batchUpdate/.test(blk));

@@ -1,6 +1,6 @@
 // cloud-run/mro-functions/lib/performance.js
 // 성과평가(60%) — 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7.
-// 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 모두 시트 접근 없음.
+// 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 1-다: 보기 응답(buildView). 모두 시트 접근 없음.
 
 // 5-2절: 인사평가 연도 파일 안 탭 3개 (이름·머리글 고정)
 const TAB_MONTHLY = '성과-월실적';
@@ -231,8 +231,130 @@ function buildTeamInput(rows, team, curYear, mode) {
 // 화면 표시용 %: 소수 첫째 자리 버림(2-2절 — 99.97%를 100.0%로 보이지 않게)
 function pctFloor1(ratio) { return Math.floor(r10(ratio) * 1000) / 10; }
 
+// =====================================================================
+// 1-다: 보기 화면용 (설계서 3-2 보기 권한·4장 화면·4-3 마감). 순수 함수만 — 시트 읽기는 index.js getPerformanceTest.
+// 서버가 권한대로 걸러 응답을 만든다: 숫자를 볼 수 없는 사람에게는 매출·이익·인원·비율을 응답에 아예 넣지 않는다.
+// =====================================================================
+const MEMBER_ROLES = ['일반', '담당']; // 평가 단위가 되는 역할(팀장은 실적 없음, 결정 ⑥)
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+// 마감일시 칸 → { date: 'YYYY-MM-DD', text: 'YYYY-MM-DD HH:mm' }. 서식 없이 읽으면 날짜가 시리얼 숫자로 올 수 있다(시트 날짜 0 = 1899-12-30).
+function closeStamp(v) {
+  if (typeof v === 'number' && isFinite(v) && v > 0) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v * 86400000));
+    const date = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+    return { date: date, text: date + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) };
+  }
+  const s = cell(v);
+  const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}):(\d{2}))?/.exec(s);
+  if (!m) return { date: '', text: s };
+  const date = m[1] + '-' + pad2(Number(m[2])) + '-' + pad2(Number(m[3]));
+  return { date: date, text: date + (m[4] ? ' ' + pad2(Number(m[4])) + ':' + m[5] : '') };
+}
+// 성과-마감 A2:F 줄 → 그 팀·그해 마감 월. 같은 팀·연도 줄이 여럿이면 아래 줄(나중 기록)을 쓴다. 월이 1~12 정수가 아니면 마감 없음.
+function readClose(closeRows, team, year) {
+  let hit = null;
+  (closeRows || []).forEach(function (r) { if (r && Number(r[0]) === Number(year) && cell(r[1]) === team) hit = r; });
+  const m = hit ? Number(hit[2]) : NaN;
+  if (!hit || !Number.isInteger(m) || m < 1 || m > 12) return { month: null, date: '', closedAt: '' };
+  const st = closeStamp(hit[4]);
+  return { month: m, date: st.date, closedAt: st.text };
+}
+function addDays(iso, n) {
+  const d = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + n));
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+}
+// 3-2절 실적 공개 기간 = 마감한 날 ~ 마감한 날 + N일(23:59, 서울). N이 0이거나 마감일을 모르면 공개 안 함.
+function publishWindow(closeDate, days, today) {
+  if (!closeDate || !(Number(days) >= 1)) return { open: false, until: null };
+  const until = addDays(closeDate, Number(days));
+  return { open: today >= closeDate && today <= until, until: until };
+}
+// 5-1절: 그해 줄 + 전년 줄. 전년도 파일 줄(prevRows)이 있으면 전년은 거기서만, 없으면(2026 → 2025 파일 없음) 이 파일의 전년 줄.
+function pickRows(curRows, prevRows, year) {
+  const y = Number(year);
+  const cur = (curRows || []).filter(function (r) { return r && Number(r[0]) === y; });
+  const prev = (prevRows || curRows || []).filter(function (r) { return r && Number(r[0]) === y - 1; });
+  return cur.concat(prev);
+}
+// 임원 팀 칩: 활성 일반·담당·팀장이 있는 팀(가나다순)
+function teamsOf(users) {
+  const s = {};
+  (users || []).forEach(function (u) {
+    if (cell(u.status) === '활성' && ['일반', '담당', '팀장'].indexOf(cell(u.role)) >= 0 && cell(u.team)) s[cell(u.team)] = true;
+  });
+  return Object.keys(s).sort(function (a, b) { return a.localeCompare(b, 'ko'); });
+}
+function emptyMonths() { return { sales: new Array(12).fill(0), profit: new Array(12).fill(0), heads: new Array(12).fill(0) }; }
+
+// 한 팀 보기 응답 본문. p = { criteria, mode, team, year, users, closeRows, rows(그해 파일 성과-월실적 A2:K), prevRows(전년도 파일, 없으면 null),
+//   publishDays, today('YYYY-MM-DD' 서울), showAll(팀장 자기 팀·임원·관리자 = 숫자 항상), myKey(내 사무소 또는 내 이메일, 없으면 '') }
+function buildView(p) {
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인';
+  const close = readClose(p.closeRows, team, p.year);
+  const pub = publishWindow(close.date, p.publishDays, p.today);
+  const showNumbers = p.showAll === true || pub.open;
+  const members = (p.users || []).filter(function (u) { return cell(u.team) === team && MEMBER_ROLES.indexOf(cell(u.role)) >= 0; });
+  const active = members.filter(function (u) { return cell(u.status) === '활성'; });
+  const out = { team: team, mode: mode, closeMonth: close.month, closedAt: close.closedAt,
+    publish: { days: Number(p.publishDays) || 0, open: pub.open, until: pub.until }, showNumbers: showNumbers, myKey: p.myKey || '',
+    unassigned: mode === '사무소' ? active.filter(function (u) { return !cell(u.office); }).length : 0 };
+  if (!p.criteria || !p.criteria.ok) return Object.assign(out, { ok: false, error: 'PERF_CRITERIA_INVALID' });
+  out.maxPoints = p.criteria.maxPoints;
+  out.items = p.criteria.items.map(function (it) { return { key: it.key, name: it.name, group: it.group, maxPts: Math.round(it.groupWeight * it.ratio * 1000) / 10 }; });
+  if (!close.month) return Object.assign(out, { ok: true, scored: false, units: [] });
+
+  const input = buildTeamInput(pickRows(p.rows, p.prevRows, p.year), team, Number(p.year), mode);
+  const byKey = {};
+  input.units.forEach(function (u) { if (mode === '개인') u.key = u.key.toLowerCase(); byKey[u.key] = u; });
+  // 4-1절: 점수표 행 = 사무소(J열) 또는 활성 팀원 전원 — 실적 줄이 없어도 행을 만든다(→ 전년 실적 없음)
+  active.forEach(function (u) {
+    const k = mode === '사무소' ? cell(u.office) : cell(u.email).toLowerCase();
+    if (k && !byKey[k]) byKey[k] = { key: k, name: mode === '사무소' ? k : cell(u.name), cur: emptyMonths(), prev: emptyMonths() };
+  });
+  const userByEmail = {};
+  members.forEach(function (u) { userByEmail[cell(u.email).toLowerCase()] = u; });
+  const units = Object.keys(byKey).map(function (k) {
+    const u = byKey[k];
+    if (mode === '개인') {
+      const usr = userByEmail[k];
+      if (usr) u.name = cell(usr.name);
+      u.left = !usr || cell(usr.status) !== '활성'; // 퇴사(비활성)·명단에 없는 사람: 팀 합계에는 들어가고 순위에서는 빠짐(4-2)
+      u.rank = !u.left;
+    } else {
+      u.members = active.filter(function (x) { return cell(x.office) === k; }).length;
+    }
+    return u;
+  });
+  units.sort(function (a, b) { return (mode === '사무소' ? a.key : a.name).localeCompare(mode === '사무소' ? b.key : b.name, 'ko'); });
+  const sc = scoreTeam({ criteria: p.criteria, closeMonth: close.month, units: units, teamCost: input.teamCost });
+  if (!sc.ok) return Object.assign(out, { ok: false, error: sc.error });
+  // 4-1절 ②: 지난 마감(한 달 전 누계) 대비 합계 변화 — 점수만
+  const before = close.month > 1 ? scoreTeam({ criteria: p.criteria, closeMonth: close.month - 1, units: units, teamCost: input.teamCost }) : null;
+  const beforeTotal = {};
+  if (before && before.ok) before.units.forEach(function (u) { beforeTotal[u.key] = u.total; });
+  out.ok = true; out.scored = true; out.rankCount = sc.rankCount;
+  out.teamScore = { grade: sc.team.grade, pts: sc.team.pts };
+  if (showNumbers) Object.assign(out.teamScore, { prevProfit: sc.team.prevProfit, curProfit: sc.team.curProfit, prevCost: sc.team.prevCost,
+    curCost: sc.team.curCost, prevOp: sc.team.prevOp, curOp: sc.team.curOp, ratio: sc.team.ratio });
+  // 표시용 members·left는 키로 찾는다(scoreTeam 출력 순서에 기대지 않음 — 1-다 커밋 전 확인 1)
+  const srcByKey = {};
+  units.forEach(function (u) { srcByKey[u.key] = u; });
+  out.units = sc.units.map(function (u) {
+    const src = srcByKey[u.key];
+    const o = { key: u.key, name: u.name, noPrev: u.noPrev, growth: u.growth, team: u.team, total: u.total, rank: u.rank,
+      prevTotal: (before && beforeTotal[u.key] !== undefined) ? beforeTotal[u.key] : null,
+      items: u.items ? u.items.map(function (it) { return showNumbers ? { key: it.key, grade: it.grade, pts: it.pts, ratio: it.ratio } : { key: it.key, grade: it.grade, pts: it.pts }; }) : null };
+    if (mode === '개인') o.left = src.left === true; else o.members = src.members;
+    if (showNumbers) { o.P = u.P; o.C = u.C; o.prevMonths = u.prevMonths; }
+    return o;
+  });
+  return out;
+}
+
 module.exports = {
   TAB_MONTHLY, TAB_CLOSE, TAB_CRITERIA, HEADERS, UNIT_KEY_PREFIX, PUBLISH_DAYS_KEY, ITEM_KEYS, TOTAL_WEIGHT,
   checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary,
-  gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1
+  gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1,
+  closeStamp, readClose, publishWindow, pickRows, teamsOf, buildView
 };
