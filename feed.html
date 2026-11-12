@@ -698,6 +698,26 @@ font-size: 13px; padding: 2px 4px; display: none;
 .pf-tabs span { padding: 7px 14px; border-radius: 7px 7px 0 0; background: #e7e3ef; font-size: 13px; }
 .pf-tabs span.on { background: var(--accent); color: #fff; }
 .pf-tabs span.off { color: var(--text-muted); cursor: default; }
+/* 성과평가 3-나: 팀장 [실적 입력]·[팀 설정] 탭(시안 ④·⑩·⑪). 색은 기존 변수(노랑 = .cy-yellow와 같은 #fff6c8 계열) */
+.pf-tabs button { padding: 7px 14px; border-radius: 7px 7px 0 0; background: #e7e3ef; font: inherit; font-size: 13px; border: none; cursor: pointer; color: var(--text); }
+.pf-tabs button.on { background: var(--accent); color: #fff; }
+.pf-inrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.pf-months { display: flex; gap: 4px; flex-wrap: wrap; }
+.pf-mon { padding: 5px 8px; border-radius: 6px; background: var(--card); border: 1px solid var(--border); font: inherit; font-size: 12px; cursor: pointer; color: var(--text); }
+.pf-mon.cl { color: #8a7fa8; background: #f4f2f8; }
+.pf-mon.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pf-mon:disabled { color: #bbb; cursor: default; background: var(--bg); }
+.pf-hint { background: #fff6e0; color: #8a5a00; padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-size: 12.5px; }
+.pf-in { width: 100%; min-width: 90px; border: 1px solid #d6d0e6; border-radius: 5px; padding: 5px 7px; text-align: right; font-size: 13px; font-family: inherit; }
+.pf-in.pasted { background: #fff6c8; }
+.pf-in:disabled { background: var(--bg); color: var(--text-muted); }
+.pf-int tr.pf-off td { color: #9a978f; }
+.pf-int tr.pf-costrow td { background: #faf9f6; }
+.pf-newoff { width: 140px; min-width: 0; text-align: left; margin-left: 4px; }
+.pf-btns { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.pf-btn { border: 1px solid var(--border); background: var(--card); border-radius: 7px; padding: 8px 16px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
+.pf-btn.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pf-btn:disabled { background: #e2e0da; color: #9a978f; border-color: #e2e0da; cursor: default; }
 .pf-mycard { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 6px; font-size: 12px; }
 .pf-big { font-size: 20px; font-weight: 700; }
 .pf-big2 { font-size: 30px; font-weight: 700; color: var(--accent); }
@@ -1187,6 +1207,8 @@ const CLOUD_RUN_GET_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelli
 const CLOUD_RUN_SAVE_COMPETENCY_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/saveCompetencyTest';
 // 성과평가 1-다: 읽기(getPerformanceTest view=mine/team/criteria). 쓰기(savePerformanceTest)는 3단계.
 const CLOUD_RUN_GET_PERFORMANCE_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getPerformanceTest';
+// 성과평가 3-나: 쓰기(savePerformanceTest action saveMonth·close·reopen·saveOffices, 3-가 24dd753)
+const CLOUD_RUN_SAVE_PERFORMANCE_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/savePerformanceTest';
 // [주의 — 실제 배포 전 필수 확인] 아래 firebaseConfig/VAPID 값은 전부 자리표시자다. sw.js에
 // 넣어둔 것과 동일한 이유(설계 문서 1-1/1-3절) — Firebase 콘솔에서 이 GCP 프로젝트에 Firebase를
 // 연동한 뒤 실제 값으로 교체해야 하고, 전부 공개값이라 실제 값을 커밋해도 안전하다.
@@ -4694,8 +4716,10 @@ const basis = res.closeMonth
 : `${res.year}년 · ${escapeHtml(teamLabel(res.team))} · 평가 단위: ${escapeHtml(res.mode)}${lead ? ' · <b>팀장</b>' : ''}`;
 h += `<div class="pf-basis">${basis}</div>`;
 if (lead) {
-h += `<div class="pf-tabs"><span class="on">점수 보기</span><span class="off" title="3단계에서 열려요">실적 입력</span>${res.mode === '사무소' ? '<span class="off" title="3단계에서 열려요">팀 설정</span>' : ''}</div>
-<div class="pf-mut" style="font-size:12px; margin:-4px 0 8px;">[실적 입력]${res.mode === '사무소' ? '·[팀 설정]' : ''}은 다음 단계에서 열려요.</div>`;
+// 3-나: 팀장 탭(점수 보기 · 실적 입력 · 팀 설정[사무소 단위만]). 점수 보기가 아니면 머리만 그리고 본문은 그 탭이 불러온다
+if (perfLeadTab_ === 'team' && res.mode !== '사무소') perfLeadTab_ = 'score';
+h += perfLeadTabsHtml_(res.mode);
+if (perfLeadTab_ !== 'score') { perfLeadBodyStart_(root, h); return; }
 }
 if (!res.scored) {
 const prevY = Number(res.year) - 1;
@@ -4718,6 +4742,306 @@ h += `<h4 class="pf-h4">${teamView || lead ? '팀 점수' : '우리 팀 점수'}
 if (res.showNumbers) h += perfNumberTables_(res, teamView || lead);
 h += `<p class="cc-note">점수는 성과평가(60%)만입니다. 최종 평가는 역량평가와 함께 팀장이 합니다. <span class="pf-desk">점수 칸에 마우스를 올리면 등급이 보여요.</span><span class="pf-mob">카드를 누르면 항목별 점수가 보여요.</span></p>`;
 root.innerHTML = `<div class="pf-wrap">${h}</div>`;
+}
+// ==== 성과평가 3-나: 팀장 [실적 입력]·[팀 설정] 탭 (설계서 v0.7 4-2·4-3, 시안 ④·⑩·⑪) ====
+// 서버: getPerformanceTest view=input(표·입력한 달·마감 상태·다음 마감 빈칸) / savePerformanceTest(saveMonth·close·reopen·saveOffices, 3-가 24dd753).
+// 2026-11-12 재홍님 결정: ① 마감·풀기는 한 달씩 ② 근무 해제 = 칸 비우기 ③ 2025 = 전년 기준 실적(마감 없음) ④ 이번 달까지만 입력
+//   + C안: 이미 저장한 달은 줄이 있는 팀원만 체크(서버 monthSaved).
+// 저장은 '바뀐 칸이 있는 줄만' 보낸다 — 엑셀에서 옮긴 소수 값(예: 672424.8073)은 앱 입력 규칙(정수)에 안 맞아 그대로 보내면 BAD_NUMBER가 나기 때문.
+// 팀 설정의 팀원 목록은 기존 getCompetencyTest view=team 응답의 members(이름·이메일·사무소·재직)를 그대로 쓴다(서버 추가 없음).
+let perfLeadTab_ = 'score';          // 'score' | 'input' | 'team'
+let perfIn_ = null;                  // { res, year, month, vals:{key:{sales,profit,heads,work}}, orig, cost, costOrig, pasted:{}, msg, busy, confirmReopen }
+let perfInReq_ = 0, perfTeamReq_ = 0;
+let perfTeamSet_ = null;             // { members, offices, sel:{email:office}, orig, newName:{email:text}, msg, busy }
+const PERF_SAVE_ERR_ = {
+  FORBIDDEN: '팀장만 할 수 있어요.', FORBIDDEN_TEAM: '우리 팀 것만 고칠 수 있어요.', MONTH_CLOSED: '마감된 달이라 저장하지 않았어요. 고치려면 먼저 [마감 풀기]를 해 주세요.',
+  MONTH_FUTURE: '아직 오지 않은 달은 입력·마감할 수 없어요.', CLOSE_ORDER: '마감은 앞 달부터 한 달씩만 할 수 있어요.', REOPEN_ORDER: '마감 풀기는 마지막으로 마감한 달부터 한 달씩만 할 수 있어요.',
+  NO_CLOSE_FOR_BASELINE: '전년 기준 실적은 마감이 없어요.', UNKNOWN_UNIT: '목록에 없는 사무소·팀원이 있어요. 화면을 새로 열어 주세요.', DUPLICATE_UNIT: '같은 줄이 두 번 들어갔어요. 화면을 새로 열어 주세요.',
+  NOTHING_TO_SAVE: '바뀐 값이 없어요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '같은 요청을 처리하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
+  PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 값을 확인해 주세요.', BAD_OFFICE_NAME: '사무소 이름은 1~10자, 쉼표 없이 적어 주세요.', NOT_OFFICE_TEAM: '사무소 단위 팀만 팀 설정이 있어요.',
+  YEAR_CLOSED: '이 해는 입력 기간이 끝나 저장할 수 없어요.', BAD_YEAR: '고른 연도를 열 수 없어요. 화면을 새로 열어 주세요.', BAD_MONTH: '달을 다시 골라 주세요.'
+};
+function perfSaveErrText_(res) {
+  if (!res) return '응답을 받지 못했어요. 저장됐을 수도 있으니 화면을 새로 열어 확인해 주세요.';
+  if (res.error === 'MONTH_INCOMPLETE') return '빈칸이 있어 마감하지 않았어요: ' + (res.missing || []).join(', ');
+  if (res.error === 'BAD_NUMBER') return '숫자를 확인해 주세요(매출·비용은 0 이상 정수, 이익은 정수, 인원은 0~999).' + (res.field ? ' (' + res.field + ')' : '');
+  if (PERF_SAVE_ERR_[res.error]) return PERF_SAVE_ERR_[res.error];
+  return perfErrorText_(res);
+}
+async function perfSaveFetch_(body) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, 45000);
+    const res = await fetch(CLOUD_RUN_SAVE_PERFORMANCE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null, idempotencyKey: generateIdempotencyKey_() }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
+    clearTimeout(timeoutId);
+    return compRateLimit_(res);
+  } catch (e) { return null; }
+}
+// 팀장 탭 줄(점수 보기 · 실적 입력 · 팀 설정[사무소 단위만])
+function perfLeadTabsHtml_(mode) {
+  const tabs = [['score', '점수 보기'], ['input', '실적 입력']].concat(mode === '사무소' ? [['team', '팀 설정']] : []);
+  return `<div class="pf-tabs">${tabs.map(function (t) { return `<button type="button" class="${perfLeadTab_ === t[0] ? 'on' : ''}" onclick="perfPickLeadTab_('${t[0]}')">${t[1]}</button>`; }).join('')}</div>`;
+}
+function perfPickLeadTab_(k) {
+  if (perfLeadTab_ === k) return;
+  if (perfLeadTab_ === 'input' && perfInDirty_() && perfIn_ && !perfIn_.leaveOk) { perfIn_.leaveOk = true; perfIn_.msg = { warn: true, text: '저장하지 않은 값이 있어요. 그래도 옮기려면 탭을 한 번 더 눌러 주세요.' }; perfInRender_(); return; }
+  perfLeadTab_ = k;
+  if (k === 'score' || !perfRes_) { loadPerfPage(); return; } // 저장 뒤(perfRes_ 비움)에는 머리부터 새로 불러옴
+  perfRender_(perfRes_);
+}
+// perfRender_에서 팀장이고 점수 보기가 아닐 때: 위 머리(제목·기준 띠·탭)만 그리고 본문 자리를 만든 뒤 불러온다
+function perfLeadBodyStart_(root, headHtml) {
+  root.innerHTML = `<div class="pf-wrap">${headHtml}<div id="pf-lead-body"><div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div></div></div>`;
+  if (perfLeadTab_ === 'input') loadPerfInput_(perfIn_ ? perfIn_.year : null, perfIn_ ? perfIn_.month : null);
+  else loadPerfTeamSet_();
+}
+
+// ── [실적 입력]
+async function loadPerfInput_(year, month) {
+  const reqNo = ++perfInReq_;
+  const body = { view: 'input' };
+  if (year) body.year = year;
+  if (month) body.month = month;
+  const res = await perfFetch_(body);
+  if (reqNo !== perfInReq_) return;
+  const el = document.getElementById('pf-lead-body');
+  if (!el) return;
+  if (!res || !res.ok) { el.innerHTML = `<div class="feed-empty">${escapeHtml(perfErrorText_(res))}</div>`; return; }
+  const vals = {}, orig = {};
+  (res.rows || []).forEach(function (r) {
+    vals[r.key] = { sales: r.sales === null ? '' : String(r.sales), profit: r.profit === null ? '' : String(r.profit),
+      heads: res.mode === '사무소' ? (r.heads === null ? (r.saved ? '' : String(r.defaultHeads || 0)) : String(r.heads)) : '', work: res.mode === '개인' ? !!r.work : true };
+    // 처음 값 = 화면에 처음 보이는 값(사무소 인원 기본값 포함) — 아무것도 안 고치면 '저장할 것 없음'. 매출·이익을 적으면 그 줄에 인원 기본값도 함께 저장된다
+    orig[r.key] = { sales: vals[r.key].sales, profit: vals[r.key].profit, heads: vals[r.key].heads, work: vals[r.key].work }; // 개인 근무도 처음 보이는 체크 기준 — 숫자를 적거나 체크를 바꾼 줄만 저장
+  });
+  const keepMsg = perfIn_ && perfIn_.keepMsg ? perfIn_.msg : null;
+  perfIn_ = { res: res, year: res.year, month: res.month, vals: vals, orig: orig, cost: res.teamCost === null ? '' : String(res.teamCost), costOrig: res.teamCost === null ? '' : String(res.teamCost), pasted: {}, msg: keepMsg, busy: false, confirmReopen: false };
+  perfInRender_();
+}
+function perfInClosed_() { const r = perfIn_.res; return r.kind !== 'baseline' && r.month <= r.closeMonth; }
+// 저장할 줄: 값·근무 체크가 처음과 달라진 줄만(사무소 인원 기본값은 '처음 저장'이면 보낸다 — 줄이 없던 단위)
+function perfInChanged_() {
+  const r = perfIn_.res, out = [];
+  (r.rows || []).forEach(function (row) {
+    const v = perfIn_.vals[row.key], o = perfIn_.orig[row.key];
+    const changed = v.sales !== o.sales || v.profit !== o.profit || (r.mode === '사무소' && v.heads !== o.heads) || (r.mode === '개인' && v.work !== o.work);
+    if (changed) out.push(row);
+  });
+  return out;
+}
+function perfInDirty_() { return !!perfIn_ && (perfInChanged_().length > 0 || perfIn_.cost !== perfIn_.costOrig); }
+function perfInRender_() {
+  const el = document.getElementById('pf-lead-body');
+  if (!el || !perfIn_) return;
+  const r = perfIn_.res, closed = perfInClosed_(), base = r.kind === 'baseline';
+  const ys = r.years || [];
+  const yearSel = ys.length >= 2 ? `<select class="cy-sel" aria-label="입력 연도" onchange="perfInPickYear_(this.value)">${ys.map(function (y) { return `<option value="${y.year}" ${Number(y.year) === Number(r.year) ? 'selected' : ''}>${y.year}년${y.kind === 'baseline' ? ' (전년 기준 실적)' : y.kind === 'grace' ? ' (1월 입력 기간)' : ''}</option>`; }).join('')}</select>` : '';
+  const ent = r.entered || [];
+  const months = [];
+  for (let m = 1; m <= 12; m++) {
+    const isClosed = !base && m <= r.closeMonth, future = m > r.maxMonth, on = m === r.month;
+    months.push(`<button type="button" class="pf-mon ${on ? 'on' : ''} ${isClosed ? 'cl' : ''}" ${future ? 'disabled' : ''} onclick="perfInPickMonth_(${m})">${m}월${isClosed ? ' 🔒' : ent.indexOf(m) >= 0 ? ' ●' : ''}</button>`);
+  }
+  const off = r.mode === '사무소';
+  const dis = closed || perfIn_.busy ? 'disabled' : '';
+  const inp = function (key, f, v, ok) {
+    const pasted = perfIn_.pasted[key + '|' + f] ? ' pasted' : '';
+    return `<input class="pf-in${pasted}" inputmode="numeric" data-k="${escapeHtml(key)}" data-f="${f}" value="${escapeHtml(v)}" ${dis} ${ok === false ? 'disabled' : ''} oninput="perfInEdit_(this)" onpaste="perfInPaste_(event, this)">`;
+  };
+  const rowsHtml = (r.rows || []).map(function (row) {
+    const v = perfIn_.vals[row.key];
+    const sub = off ? `<small class="pf-mut">${row.members ? '팀원 ' + row.members + '명' : '현재 팀원 없음'}</small>` : (row.active ? '' : '<span class="pf-chipm gray">퇴사</span>');
+    const work = off ? '' : `<td class="c"><input type="checkbox" ${v.work ? 'checked' : ''} ${dis} onchange="perfInWork_('${escapeHtml(row.key).replace(/'/g, '&#39;')}', this.checked)"></td>`;
+    const ok = off || v.work;
+    return `<tr${!ok ? ' class="pf-off"' : ''}><td class="l">${escapeHtml(row.name)} ${sub}</td>${work}<td>${inp(row.key, 'sales', v.sales, ok)}</td><td>${inp(row.key, 'profit', v.profit, ok)}</td>${off ? `<td>${inp(row.key, 'heads', v.heads)}</td>` : ''}</tr>`;
+  }).join('');
+  const costRow = `<tr class="pf-costrow"><td class="l"><b>팀 총비용</b></td>${off ? '' : '<td></td>'}<td>${inp('__cost', 'cost', perfIn_.cost)}</td><td class="c pf-mut">—</td>${off ? '<td class="c pf-mut">—</td>' : ''}</tr>`;
+  const head = `<tr><th>${off ? '사무소' : '팀원'}</th>${off ? '' : '<th>근무</th>'}<th>매출액 (천원)</th><th>이익 (천원)</th>${off ? '<th>인원 (명)</th>' : ''}</tr>`;
+  const nc = r.nextClose;
+  const dirty = perfInDirty_();
+  let closeBtn = '';
+  if (!base && nc && r.month === nc.month) {
+    const can = !dirty && !(nc.missing || []).length && !perfIn_.busy;
+    closeBtn = `<button type="button" class="pf-btn pri" ${can ? '' : 'disabled'} onclick="perfInClose_()">${nc.month}월 마감</button>`;
+  }
+  let reopenBtn = '';
+  if (!base && r.closeMonth > 0 && r.month === r.closeMonth) {
+    reopenBtn = `<button type="button" class="pf-btn" ${perfIn_.busy ? 'disabled' : ''} onclick="perfInReopen_()">${perfIn_.confirmReopen ? '한 번 더 누르면 ' + r.closeMonth + '월 마감이 풀려요' : r.closeMonth + '월 마감 풀기'}</button>`;
+  }
+  const status = [];
+  if (r.lastSaved) status.push('마지막 저장: ' + escapeHtml(r.lastSaved.by) + ' · ' + escapeHtml(r.lastSaved.at));
+  if (!base && nc && r.month === nc.month) status.push((nc.missing || []).length ? '마감 전 빈칸 ' + nc.missing.length + '개(' + escapeHtml(nc.missing.slice(0, 4).join(', ')) + (nc.missing.length > 4 ? ' 외' : '') + ')' : '모든 칸 입력됨 · 마감하면 팀원에게 1~' + nc.month + '월 누계 점수가 공개돼요');
+  if (dirty) status.push('<b>저장하지 않은 값이 있어요</b>');
+  const band = base ? `<div class="cy-band cy-blue">📌 ${r.year}년은 <b>전년 기준 실적</b>이에요(올해와 비교하는 값). 마감 없이 저장만 해요.</div>`
+    : closed ? `<div class="cy-band cy-grey">🔒 ${r.month}월은 마감됐어요. 고치려면 마지막 마감 달부터 한 달씩 [마감 풀기] → 고치기 → 다시 마감 (기록이 남아요).</div>` : '';
+  const msg = perfIn_.msg ? `<div class="cy-band ${perfIn_.msg.ok ? 'pf-green' : perfIn_.msg.warn ? 'cy-yellow' : 'cy-red'}">${escapeHtml(perfIn_.msg.text)}</div>` : '';
+  el.innerHTML = `<div class="pf-inrow">${yearSel}<div class="pf-months">${months.join('')}</div></div>
+${band}${msg}
+<div class="pf-hint">💡 SRM 실적을 엑셀에서 정리해 복사 → 표의 첫 칸(${escapeHtml(((r.rows || [])[0] || {}).name || '')} 매출액)을 누르고 붙여넣기 하면 한 번에 채워져요. 붙여넣은 칸은 노란색 — 확인 후 저장하세요.</div>
+<div class="pf-tablewrap"><table class="pf-t pf-int"><thead>${head}</thead><tbody>${rowsHtml}${costRow}</tbody></table></div>
+<div class="pf-btns"><button type="button" class="pf-btn pri" ${closed || perfIn_.busy || !dirty ? 'disabled' : ''} onclick="perfInSave_()">${perfIn_.busy ? '처리 중...' : '저장'}</button>${closeBtn}${reopenBtn}<span class="pf-mut" style="font-size:12px;">${status.join(' · ')}</span></div>
+<p class="cc-note">${off ? '인원 칸 기본값 = 그 사무소 활성 팀원 수(팀 설정의 사무소 기준). 그 달에 이동이 있었으면 고쳐 주세요.' : '근무 = 그 달 우리 팀에서 일했는지. 체크를 끄고 저장하면 그 사람 그 달 줄이 비워져요. 이미 저장한 달은 줄이 있는 팀원만 체크돼요.'}
+ 금액은 천원 단위 정수예요. 엑셀에서 옮긴 소수 값은 고치지 않으면 그대로 둬요.</p>`;
+}
+function perfInPickYear_(v) { if (perfInDirty_()) { perfIn_.msg = { warn: true, text: '저장하지 않은 값이 있어요. 먼저 저장해 주세요.' }; perfInRender_(); return; } loadPerfInput_(Number(v), null); }
+function perfInPickMonth_(m) {
+  if (perfInDirty_() && !perfIn_.leaveMonthOk) { perfIn_.leaveMonthOk = true; perfIn_.msg = { warn: true, text: '저장하지 않은 값이 있어요. 그래도 다른 달로 가려면 한 번 더 눌러 주세요.' }; perfInRender_(); return; }
+  loadPerfInput_(perfIn_.year, m);
+}
+function perfInSet_(key, f, v) { if (key === '__cost') perfIn_.cost = v; else perfIn_.vals[key][f] = v; }
+function perfInEdit_(el) {
+  perfInSet_(el.dataset.k, el.dataset.f, el.value.trim());
+  delete perfIn_.pasted[el.dataset.k + '|' + el.dataset.f];
+  el.classList.remove('pasted');
+  perfIn_.msg = null; perfIn_.leaveOk = false; perfIn_.leaveMonthOk = false;
+  perfInRefreshButtons_();
+}
+// 상태줄·버튼(저장하지 않은 값·마감 가능 여부)을 맞추려고 다시 그린다 — 다시 그리면 커서가 사라지므로 같은 칸·같은 위치로 돌려놓는다
+function perfInRefreshButtons_() {
+  const keepFocus = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('pf-in') ? [document.activeElement.dataset.k, document.activeElement.dataset.f, document.activeElement.selectionStart] : null;
+  perfInRender_();
+  if (keepFocus) {
+    const el = document.querySelector('.pf-in[data-k="' + CSS.escape(keepFocus[0]) + '"][data-f="' + keepFocus[1] + '"]');
+    if (el) { el.focus(); try { el.setSelectionRange(keepFocus[2], keepFocus[2]); } catch (e) {} }
+  }
+}
+function perfInWork_(key, on) { perfIn_.vals[key].work = on; perfIn_.msg = null; perfInRender_(); }
+// 엑셀 붙여넣기: 누른 칸부터 오른쪽(매출·이익·인원)·아래(다음 줄 … 팀 총비용)로 채운다. 쉼표·공백은 지움
+function perfInPaste_(ev, el) {
+  const text = (ev.clipboardData || window.clipboardData).getData('text');
+  if (!text || (text.indexOf('\t') < 0 && text.indexOf('\n') < 0)) return; // 한 칸 붙여넣기는 브라우저 기본 동작
+  ev.preventDefault();
+  const r = perfIn_.res, off = r.mode === '사무소';
+  const cols = off ? ['sales', 'profit', 'heads'] : ['sales', 'profit'];
+  const keys = (r.rows || []).map(function (x) { return x.key; }).concat(['__cost']);
+  let ri = keys.indexOf(el.dataset.k), ci = el.dataset.f === 'cost' ? 0 : cols.indexOf(el.dataset.f);
+  const lines = text.replace(/\r/g, '').split('\n').filter(function (l, i, a) { return l !== '' || i < a.length - 1; });
+  lines.forEach(function (line, li) {
+    const k = keys[ri + li]; if (!k) return;
+    line.split('\t').forEach(function (cell, cj) {
+      const c = ci + cj;
+      const v = cell.replace(/[,\s]/g, '');
+      if (k === '__cost') { if (c === 0) { perfIn_.cost = v; perfIn_.pasted['__cost|cost'] = true; } return; }
+      if (c >= cols.length) return;
+      if (!off && !perfIn_.vals[k].work) return;
+      perfIn_.vals[k][cols[c]] = v; perfIn_.pasted[k + '|' + cols[c]] = true;
+    });
+  });
+  perfIn_.msg = { warn: true, text: '붙여넣은 칸(노란색)을 확인한 뒤 [저장]을 눌러 주세요.' };
+  perfInRender_();
+}
+function perfInNum_(s) { const t = String(s || '').replace(/,/g, '').trim(); return t === '' ? null : Number(t); }
+async function perfInSave_() {
+  const r = perfIn_.res, off = r.mode === '사무소';
+  const rows = perfInChanged_();
+  const entries = rows.map(function (row) {
+    const v = perfIn_.vals[row.key];
+    const e = { key: row.key, sales: perfInNum_(v.sales), profit: perfInNum_(v.profit) };
+    if (off) e.heads = perfInNum_(v.heads); else e.work = v.work;
+    return e;
+  });
+  const body = { action: 'saveMonth', year: r.year, month: r.month, entries: entries };
+  if (perfIn_.cost !== perfIn_.costOrig) body.teamCost = perfInNum_(perfIn_.cost);
+  const bad = entries.filter(function (e) { return [e.sales, e.profit, e.heads].some(function (n) { return n !== null && n !== undefined && !Number.isInteger(n); }) || (e.sales !== null && e.sales < 0); });
+  if (bad.length || (body.teamCost !== undefined && body.teamCost !== null && !(Number.isInteger(body.teamCost) && body.teamCost >= 0))) {
+    perfIn_.msg = { text: '정수만 저장할 수 있어요(매출·비용은 0 이상). 확인할 줄: ' + bad.map(function (e) { return ((r.rows || []).filter(function (x) { return x.key === e.key; })[0] || {}).name || e.key; }).concat(body.teamCost !== undefined && body.teamCost !== null && !(Number.isInteger(body.teamCost) && body.teamCost >= 0) ? ['팀 총비용'] : []).join(', ') };
+    perfInRender_(); return;
+  }
+  perfIn_.busy = true; perfIn_.msg = null; perfInRender_();
+  const res = await perfSaveFetch_(body);
+  perfIn_.busy = false;
+  if (!res || !res.ok) { perfIn_.msg = { text: perfSaveErrText_(res) }; perfInRender_(); return; }
+  perfRes_ = null; // 점수 보기로 돌아가면 새로 불러옴
+  perfIn_.keepMsg = true; perfIn_.msg = { ok: true, text: r.month + '월 ' + (res.rows || 0) + '줄 저장했어요.' };
+  loadPerfInput_(r.year, r.month);
+}
+async function perfInClose_() {
+  const r = perfIn_.res;
+  perfIn_.busy = true; perfIn_.msg = null; perfInRender_();
+  const res = await perfSaveFetch_({ action: 'close', year: r.year, month: r.nextClose.month });
+  perfIn_.busy = false;
+  if (!res || !res.ok) { perfIn_.msg = { text: perfSaveErrText_(res) }; perfInRender_(); return; }
+  perfRes_ = null;
+  perfIn_.keepMsg = true; perfIn_.msg = { ok: true, text: res.closeMonth + '월 마감했어요. 팀원에게 1~' + res.closeMonth + '월 누계 점수가 공개돼요.' };
+  loadPerfInput_(r.year, Math.min(res.closeMonth + 1, r.maxMonth));
+}
+async function perfInReopen_() {
+  const r = perfIn_.res;
+  if (!perfIn_.confirmReopen) { perfIn_.confirmReopen = true; perfInRender_(); return; }  // 두 번 눌러야 풀림(브라우저 확인 창 대신)
+  perfIn_.busy = true; perfIn_.msg = null; perfInRender_();
+  const res = await perfSaveFetch_({ action: 'reopen', year: r.year, month: r.closeMonth });
+  perfIn_.busy = false;
+  if (!res || !res.ok) { perfIn_.msg = { text: perfSaveErrText_(res) }; perfIn_.confirmReopen = false; perfInRender_(); return; }
+  perfRes_ = null;
+  perfIn_.keepMsg = true; perfIn_.msg = { ok: true, text: r.closeMonth + '월 마감을 풀었어요. 고친 뒤 다시 마감해 주세요.' };
+  loadPerfInput_(r.year, r.closeMonth);
+}
+
+// ── [팀 설정] (사무소 단위 팀만) — 팀원별 사무소 = MRO 본 시트 사용자팀마스터 J열
+async function loadPerfTeamSet_() {
+  const reqNo = ++perfTeamReq_;
+  const res = await compFetch_({ view: 'team' });
+  if (reqNo !== perfTeamReq_) return;
+  const el = document.getElementById('pf-lead-body');
+  if (!el) return;
+  if (!res || !res.ok) { el.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '팀원 목록'))}</div>`; return; }
+  const members = (Array.isArray(res.members) ? res.members : []).filter(function (m) { return m.status === 'active'; })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ko'); });
+  const sel = {}, orig = {};
+  members.forEach(function (m) { sel[m.email] = m.office || ''; orig[m.email] = m.office || ''; });
+  const keepMsg = perfTeamSet_ && perfTeamSet_.keepMsg ? perfTeamSet_.msg : null;
+  perfTeamSet_ = { members: members, sel: sel, orig: orig, newName: {}, msg: keepMsg, busy: false };
+  perfTeamRender_();
+}
+function perfTeamOffices_() {
+  const s = {};
+  perfTeamSet_.members.forEach(function (m) { if (perfTeamSet_.orig[m.email]) s[perfTeamSet_.orig[m.email]] = true; });
+  ((perfRes_ && perfRes_.units) || []).forEach(function (u) { if (u.key) s[u.key] = true; }); // 실적이 있는 사무소(현재 팀원 없음 포함)
+  return Object.keys(s).sort(function (a, b) { return a.localeCompare(b, 'ko'); });
+}
+function perfTeamRender_() {
+  const el = document.getElementById('pf-lead-body');
+  if (!el || !perfTeamSet_) return;
+  const t = perfTeamSet_, offices = perfTeamOffices_();
+  const count = {}; t.members.forEach(function (m) { const o = t.sel[m.email]; if (o && o !== '__new') count[o] = (count[o] || 0) + 1; });
+  const unassigned = t.members.filter(function (m) { return !t.orig[m.email]; }).length;
+  const dis = t.busy ? 'disabled' : '';
+  const rows = t.members.map(function (m) {
+    const cur = t.sel[m.email], e = escapeHtml(m.email).replace(/'/g, '&#39;');
+    const opts = (cur ? '' : '<option value="" selected>(미지정)</option>') + offices.map(function (o) { return `<option value="${escapeHtml(o)}" ${o === cur ? 'selected' : ''}>${escapeHtml(o)}</option>`; }).join('') + `<option value="__new" ${cur === '__new' ? 'selected' : ''}>＋ 새 사무소…</option>`;
+    const nw = cur === '__new' ? `<input class="pf-in pf-newoff" maxlength="10" placeholder="새 사무소 이름" value="${escapeHtml(t.newName[m.email] || '')}" ${dis} oninput="perfTeamNewName_('${e}', this.value)">` : '';
+    const changed = (cur === '__new' ? (t.newName[m.email] || '').trim() : cur) !== t.orig[m.email];
+    return `<tr${changed ? ' class="me"' : ''}><td class="l">${escapeHtml(m.name)}</td><td class="l"><select class="cy-sel" ${dis} onchange="perfTeamPick_('${e}', this.value)">${opts}</select> ${nw}</td></tr>`;
+  }).join('');
+  const changes = perfTeamChanges_();
+  const msg = t.msg ? `<div class="cy-band ${t.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(t.msg.text)}</div>` : '';
+  el.innerHTML = `<div class="pf-chips">${offices.map(function (o) { return `<span class="pf-chip">${escapeHtml(o)}<small>팀원 ${count[o] || 0}명</small></span>`; }).join('')}</div>
+${unassigned ? `<div class="cy-band cy-yellow">사무소 미지정 ${unassigned}명 — 아래에서 골라 저장해 주세요(지정 전에는 그 팀원 화면에 내 사무소 카드가 안 보여요).</div>` : ''}${msg}
+<div class="pf-tablewrap"><table class="pf-t" style="max-width:520px;"><thead><tr><th>팀원</th><th>사무소</th></tr></thead><tbody>${rows}</tbody></table></div>
+<div class="pf-btns"><button type="button" class="pf-btn pri" ${t.busy || !changes.length ? 'disabled' : ''} onclick="perfTeamSave_()">${t.busy ? '처리 중...' : '저장' + (changes.length ? ' (' + changes.length + '명)' : '')}</button></div>
+<p class="cc-note">사무소 = MRO 본 시트 사용자팀마스터 J열이에요. 저장하면 바꾼 사람의 J칸만 바뀌고 다른 칸(이름·역할·팀)은 그대로예요. 사무소를 바꿔도 지난 실적 숫자는 그대로이고, 다음 달 인원 기본값과 내 사무소 표시가 바뀌어요.</p>`;
+}
+function perfTeamPick_(email, v) { perfTeamSet_.sel[email] = v; perfTeamSet_.msg = null; perfTeamRender_(); }
+function perfTeamNewName_(email, v) { perfTeamSet_.newName[email] = v; perfTeamSet_.msg = null; const btn = document.querySelector('#pf-lead-body .pf-btn.pri'); const n = perfTeamChanges_().length; if (btn) { btn.disabled = !n; btn.textContent = '저장' + (n ? ' (' + n + '명)' : ''); } }
+function perfTeamChanges_() {
+  const t = perfTeamSet_, out = [];
+  t.members.forEach(function (m) {
+    const v = t.sel[m.email] === '__new' ? (t.newName[m.email] || '').trim() : t.sel[m.email];
+    if (v && v !== t.orig[m.email]) out.push({ email: m.email, office: v });
+  });
+  return out;
+}
+async function perfTeamSave_() {
+  const changes = perfTeamChanges_();
+  const bad = changes.filter(function (c) { return c.office.length > 10 || c.office.indexOf(',') >= 0; });
+  if (bad.length) { perfTeamSet_.msg = { text: PERF_SAVE_ERR_.BAD_OFFICE_NAME }; perfTeamRender_(); return; }
+  perfTeamSet_.busy = true; perfTeamSet_.msg = null; perfTeamRender_();
+  const res = await perfSaveFetch_({ action: 'saveOffices', changes: changes });
+  perfTeamSet_.busy = false;
+  if (!res || !res.ok) { perfTeamSet_.msg = { text: perfSaveErrText_(res) }; perfTeamRender_(); return; }
+  perfRes_ = null;
+  perfTeamSet_.keepMsg = true; perfTeamSet_.msg = { ok: true, text: (res.changed || []).length + '명 사무소를 저장했어요.' };
+  loadPerfTeamSet_();
 }
 function perfMax_(res, key) { const it = (res.items || []).filter(function (i) { return i.key === key; })[0]; return it ? it.maxPts : null; }
 function perfMyCard_(res) {
