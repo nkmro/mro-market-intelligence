@@ -4877,7 +4877,7 @@ function perfInRender_() {
   const msg = perfIn_.msg ? `<div class="cy-band ${perfIn_.msg.ok ? 'pf-green' : perfIn_.msg.warn ? 'cy-yellow' : 'cy-red'}">${escapeHtml(perfIn_.msg.text)}</div>` : '';
   el.innerHTML = `<div class="pf-inrow">${yearSel}<div class="pf-months">${months.join('')}</div></div>
 ${band}${msg}
-<div class="pf-hint">💡 SRM 실적을 엑셀에서 정리해 복사 → 표의 첫 칸(${escapeHtml(((r.rows || [])[0] || {}).name || '')} 매출액)을 누르고 붙여넣기 하면 한 번에 채워져요. 붙여넣은 칸은 노란색 — 확인 후 저장하세요.</div>
+<div class="pf-hint">💡 칸을 눌러 직접 입력하거나, 엑셀에 정리한 실적을 복사해 표의 첫 칸(${escapeHtml(((r.rows || [])[0] || {}).name || '')} 매출액)에 붙여넣으면 한 번에 채워져요. 붙여넣은 칸은 노란색 — 확인 후 저장하세요.</div>
 <div class="pf-tablewrap"><table class="pf-t pf-int"><thead>${head}</thead><tbody>${rowsHtml}${costRow}</tbody></table></div>
 <div class="pf-btns"><button type="button" class="pf-btn pri" ${closed || perfIn_.busy || !dirty ? 'disabled' : ''} onclick="perfInSave_()">${perfIn_.busy ? '처리 중...' : '저장'}</button>${closeBtn}${reopenBtn}<span class="pf-mut" style="font-size:12px;">${status.join(' · ')}</span></div>
 <p class="cc-note">${off ? '인원 칸 기본값 = 그 사무소 활성 팀원 수(팀 설정의 사무소 기준). 그 달에 이동이 있었으면 고쳐 주세요.' : '근무 = 그 달 우리 팀에서 일했는지. 체크를 끄고 저장하면 그 사람 그 달 줄이 비워져요. 이미 저장한 달은 줄이 있는 팀원만 체크돼요.'}
