@@ -527,7 +527,9 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cm-tab.active .cm-tab-count { background: var(--accent); color: #fff; }
 .cm-tab-emoji { font-size: 15px; }
 .cm-tab-short { display: none; }
-.cm-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: #e24b4a; border: 2px solid #fff; position: absolute; top: 4px; right: 4px; }
+/* 2026-11-12 재홍님: 할 일 표시를 작은 점 → 숫자 배지로(사이드바 .nav-badge와 같은 빨강·글자 크기). 탭 오른쪽 위 모서리에 걸침 */
+.cm-tab-dot { position: absolute; top: -8px; right: -6px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #e24b4a; color: #fff; border: 2px solid #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.cm-filter-alert { display: inline-block; margin-left: 4px; min-width: 18px; padding: 0 6px; border-radius: 9px; background: #e24b4a; color: #fff; font-size: 11px; line-height: 16px; }
 .cm-tab-body { border: 1px solid var(--border); border-radius: 0 0 12px 12px; padding: 10px 12px 12px; background: var(--card); }
 .cm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
 .cm-filter { border: 1px solid var(--border); background: var(--card); color: var(--text-muted); border-radius: 16px; padding: 4px 12px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
@@ -5056,7 +5058,7 @@ const all = compMineList_(res, t.key);
 // 1단계-라-다-나 (설계서 부록 B): 회신 칸이 있는 탭(hasReply, 지금은 추가매출)에만 상태 필터 4칸(전체·회신 대기·확인 대기·완료, 개수). 서버를 다시 부르지 않음.
 const isAdd = t.hasReply;
 const list = (isAdd && compMineFilter_ !== 'all') ? all.filter(function (r) { return r.reviewState === compMineFilter_; }) : all;
-const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILTERS_, compMineFilter_, 'switchCompMineFilter_') : '';
+const filters = (isAdd && all.length) ? compFilterChipsHtml_(all, COMP_MINE_FILTERS_, compMineFilter_, 'switchCompMineFilter_', 'awaitingReply') : '';
 const empty = all.length ? '이 상태의 줄이 없어요.' : '아직 기록이 없어요.';
 // 2-나: 결과 적기는 본인 기록을 쓰는 일반·담당만(㉓, 서버도 같은 판정)
 // diff ②-2: 마감된 해(yearMode 'closed')는 보기만 — 추가·입력·수정·삭제·수정 요청 버튼 모두 숨김(서버도 YEAR_CLOSED로 거절)
@@ -5074,7 +5076,7 @@ function compMineTabsHtml_(res) {
 const n = Number(res.awaitingReply) || 0;
 return compTabs_.map(function (t) {
 const c = compMineList_(res, t.key).length;
-const dot = (t.hasReply && n > 0) ? `<span class="cm-tab-dot" title="결과를 적을 계획 ${n}건"></span>` : '';
+const dot = (t.hasReply && n > 0) ? `<span class="cm-tab-dot" title="결과를 적을 계획 ${n}건">${n}</span>` : '';
 return compTabBtnHtml_(t, c, t.key === compMineTab_, dot, 'switchCompMineTab_');
 }).join('');
 }
@@ -5087,10 +5089,12 @@ return `<button class="cm-tab ${active ? 'active' : ''}" title="${lb}" aria-labe
 const COMP_MINE_FILTERS_ = [{ key: 'all', text: '전체' }, { key: 'awaitingReply', text: '계획' }, { key: 'pendingReview', text: '미평가' }, { key: 'done', text: '평가 완료' }];
 let compMineFilter_ = 'all';
 // 상태 필터 칸 — ①·② 같은 모양(1단계-라-라에서 ① 코드를 그대로 꺼냄). 칸마다 개수 = rows 중 그 상태 줄 수(전체 = 줄 수).
-function compFilterChipsHtml_(rows, filters, cur, onclick) {
+// alertKey(선택): 할 일 칸(팀장 = 미평가, 팀원 = 계획) — 개수가 1 이상이면 숫자를 빨간 배지로(2026-11-12 재홍님)
+function compFilterChipsHtml_(rows, filters, cur, onclick, alertKey) {
 return `<div class="cm-filters">${filters.map(function (f) {
 let c = 0; rows.forEach(function (r) { if (f.key === 'all' || r.reviewState === f.key) c++; });
-return `<button class="cm-filter ${f.key === cur ? 'active' : ''}" onclick="${onclick}('${f.key}')">${f.text} ${c}</button>`;
+const num = (alertKey && f.key === alertKey && c > 0) ? `<span class="cm-filter-alert">${c}</span>` : ' ' + c;
+return `<button class="cm-filter ${f.key === cur ? 'active' : ''}" onclick="${onclick}('${f.key}')">${f.text}${num}</button>`;
 }).join('')}</div>`;
 }
 function switchCompMineFilter_(key) {
@@ -6365,7 +6369,7 @@ function compLeadTabsHtml_(res) {
 return compLeadTabs_.map(function (t) {
 const rows = compLeadRows_(res, t.key);
 const pr = compLeadCount_(rows.filter(function (r) { return r.authorStatus === 'active'; }), 'pendingReview');
-const dot = pr > 0 ? `<span class="cm-tab-dot" title="${compLeadPr_(res)} ${pr}건"></span>` : '';
+const dot = pr > 0 ? `<span class="cm-tab-dot" title="${compLeadPr_(res)} ${pr}건">${pr}</span>` : '';
 return compTabBtnHtml_(t, rows.length, t.key === compLeadTab_, dot, 'switchCompLeadTab_');
 }).join('');
 }
@@ -6376,7 +6380,7 @@ const fl = compLeadFilters_(t, res);
 const prText = compLeadPr_(res);
 if (!fl.some(function (f) { return f.key === compLeadFilter_; })) compLeadFilter_ = 'all';
 const shown = compLeadFilter_ === 'all' ? all : all.filter(function (r) { return r.reviewState === compLeadFilter_; });
-const filters = all.length ? compFilterChipsHtml_(all, fl, compLeadFilter_, 'switchCompLeadFilter_') : '';
+const filters = all.length ? compFilterChipsHtml_(all, fl, compLeadFilter_, 'switchCompLeadFilter_', 'pendingReview') : '';
 const members = Array.isArray(res.members) ? res.members : [];
 const isLeadRole = (res.viewer || {}).role === '팀장' && res.yearMode !== 'closed'; // diff ②-2: 마감된 해는 평가·승인·거절 숨김 / 2-마-1: 승인·거절은 팀장만(임원은 보기만, 서버도 같은 판정)
 // 팀원별 묶음(부록 B): 순서 = 서버 members 순서, 짝 = record.authorEmail = member.email. 머리 숫자는 필터와 무관하게 그 팀원의 이 탭 전체 줄 기준.
