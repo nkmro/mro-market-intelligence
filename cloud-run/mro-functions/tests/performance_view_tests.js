@@ -115,5 +115,24 @@ t('C_order3 개인 팀: left는 비활성 박세찌에게만(키로 맞춤)', v.
 // T: 임원 팀 칩
 t('T1 팀 칩 = 활성 일반·담당·팀장이 있는 팀 가나다순', p.teamsOf(users.concat(iu, [U('e@x', '임원', '임원', '본사', '활성'), U('z@x', '퇴', '일반', '하팀', '비활성')])).join() === '가팀,나팀,마팀');
 
+// V: 3-다 비고(성과-월실적 L열) — 마감한 달·내용 있는 줄만, 숫자 공개 기간과 상관없이(예시 문장은 시험용)
+const nrows = rows.concat([
+  [2026, 1, '가팀', '사무소', '다사무소', '다사무소', '', '', '', '', '', '1월 다사무소 비고'], [2026, 2, '가팀', '사무소', '나사무소', '나사무소', '', '', '', '', '', '2월 나사무소 비고'],
+  [2026, 2, '가팀', '사무소', '다사무소', '다사무소', '', '', '', '', '', '   '], [2026, 3, '가팀', '사무소', '나사무소', '나사무소', '', '', '', '', '', '마감 전 3월 비고'],
+  [2025, 1, '가팀', '사무소', '나사무소', '나사무소', '', '', '', '', '', '2025 기준 실적 비고'], [2026, 1, '나팀', '사무소', '나사무소', '나사무소', '', '', '', '', '', '다른 팀 비고'],
+  [2026, 2, '가팀', '팀비용', '', '', '', '', '', '', '', '팀비용 줄 비고'], [2026, 1, '가팀', '사무소', '나사무소', '나사무소', '', '', '', '', '', new Array(231).join('가')]]);
+v = p.buildView(Object.assign({}, base, { rows: nrows, today: '2026-03-12', showAll: false }));
+t('V1 공개 기간 밖 팀원(숫자 없음)에도 비고는 있음', v.showNumbers === false && Array.isArray(v.notes) && v.notes.length === 3, v.notes);
+t('V2 순서 = 최신 달 먼저, 같은 달은 가나다(2월 나 → 1월 나 → 1월 다)', v.notes.map(function (n) { return n.month + n.key; }).join() === '2나사무소,1나사무소,1다사무소', v.notes);
+const nt = JSON.stringify(v.notes);
+t('V3 빈 비고(공백뿐)·마감 전 3월·2025 기준 실적·다른 팀·팀비용 줄 비고는 없음', ['마감 전 3월', '2025 기준', '다른 팀', '팀비용 줄'].every(function (x) { return nt.indexOf(x) < 0; }) && v.notes.every(function (n) { return n.text.trim() !== ''; }));
+t('V4 시트에서 직접 230자로 적은 비고도 200자까지만', v.notes[1].text.length === 200);
+t('V5 비고 응답에도 매출·이익 숫자 없음', leaks(v).length === 0, leaks(v));
+v = p.buildView(Object.assign({}, base, { rows: nrows, team: '다팀', today: '2026-03-12', showAll: false }));
+t('V6 마감 없는 팀 → 비고 없음', v.notes === undefined || v.notes.length === 0);
+t('V7 notesView 직접: 마감월 0 → 빈 목록', p.notesView({ rows: nrows, users: users, team: '가팀', mode: '사무소', year: 2026, closeMonth: 0 }).length === 0);
+const pn = p.notesView({ rows: [[2026, 1, '마팀', '개인', 'Lee@X', '옛이름', '', '', '', '', '', '1월 연차 1주']], users: [U('lee@x', '이두리', '일반', '마팀', '활성')], team: '마팀', mode: '개인', year: 2026, closeMonth: 1 });
+t('V8 개인 팀 비고 이름 = 사용자팀마스터 이름(이메일 대소문자 무시)', pn.length === 1 && pn[0].name === '이두리' && pn[0].key === 'lee@x', pn);
+
 console.log('pass ' + pass + ' / fail ' + fail);
 process.exit(fail ? 1 : 0);

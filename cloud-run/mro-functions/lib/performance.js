@@ -2,13 +2,14 @@
 // 성과평가(60%) — 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7.
 // 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 1-다: 보기 응답(buildView).
 // 3-가: 입력 화면(inputView)·쓰기 계획(planMonthWrite·closeMissing·planClose·planOffices). 모두 시트 접근 없음.
+// 3-다(비고): 성과-월실적 L열 비고 — checkNote·planNoteWrite·notesView (2026-11-12 재홍님 시안 승인).
 
 // 5-2절: 인사평가 연도 파일 안 탭 3개 (이름·머리글 고정)
 const TAB_MONTHLY = '성과-월실적';
 const TAB_CLOSE = '성과-마감';
 const TAB_CRITERIA = '성과-평가기준';
 const HEADERS = {};
-HEADERS[TAB_MONTHLY] = ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시'];
+HEADERS[TAB_MONTHLY] = ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시', '비고'];
 HEADERS[TAB_CLOSE] = ['연도', '팀', '마감월', '마감자', '마감일시', '기록'];
 HEADERS[TAB_CRITERIA] = ['묶음', '묶음가중치', '항목키', '항목 이름', '배점비율', '등급표'];
 
@@ -288,7 +289,7 @@ function teamsOf(users) {
 }
 function emptyMonths() { return { sales: new Array(12).fill(0), profit: new Array(12).fill(0), heads: new Array(12).fill(0) }; }
 
-// 한 팀 보기 응답 본문. p = { criteria, mode, team, year, users, closeRows, rows(그해 파일 성과-월실적 A2:K), prevRows(전년도 파일, 없으면 null),
+// 한 팀 보기 응답 본문. p = { criteria, mode, team, year, users, closeRows, rows(그해 파일 성과-월실적 A2:L), prevRows(전년도 파일, 없으면 null),
 //   publishDays, today('YYYY-MM-DD' 서울), showAll(팀장 자기 팀·임원·관리자 = 숫자 항상), myKey(내 사무소 또는 내 이메일, 없으면 '') }
 function buildView(p) {
   const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인';
@@ -335,6 +336,8 @@ function buildView(p) {
   const beforeTotal = {};
   if (before && before.ok) before.units.forEach(function (u) { beforeTotal[u.key] = u.total; });
   out.ok = true; out.scored = true; out.rankCount = sc.rankCount;
+  // 3-다: 마감한 달(1~마감월)의 비고 중 내용 있는 줄만 — 숫자 공개 기간과 상관없이 늘 보냄(결정: 팀원·임원 모두 공개)
+  out.notes = notesView({ rows: p.rows, users: p.users, team: team, mode: mode, year: p.year, closeMonth: close.month });
   out.teamScore = { grade: sc.team.grade, pts: sc.team.pts };
   if (showNumbers) Object.assign(out.teamScore, { prevProfit: sc.team.prevProfit, curProfit: sc.team.curProfit, prevCost: sc.team.prevCost,
     curCost: sc.team.curCost, prevOp: sc.team.prevOp, curOp: sc.team.curOp, ratio: sc.team.ratio });
@@ -359,7 +362,9 @@ function buildView(p) {
 // 2026-11-12 재홍님 결정: ① 마감·풀기는 한 달씩(다음 달만 마감, 마지막 마감 달만 풀기) ② 개인 '근무' 해제 = 그 줄 칸 비우기(행 삭제 없음)
 //   ③ 전년도 파일이 없으면(2026 → 2025) 그해 파일에 전년 실적 입력 허용(마감 없음) ④ 올해는 이번 달까지만 입력.
 // =====================================================================
-const MONTHLY_COLS = 11;   // 성과-월실적 A~K
+const MONTHLY_COLS = 12;   // 성과-월실적 A~L (L = 비고, 3-다)
+const NOTE_COLS = 3;       // 비고만 저장할 때 J~L(수정자·수정일시·비고)
+const NOTE_MAX = 200;      // 비고 최대 글자 수
 const CLOSE_COLS = 6;      // 성과-마감 A~F
 const OFFICE_NAME_MAX = 10;
 const INPUT_MAX = 1e12;    // 천원 단위 숫자 상한(오타 방지)
@@ -373,7 +378,7 @@ function lc(v) { return cell(v).toLowerCase(); }
 // 칸 값 → 숫자. 빈칸은 null, 숫자가 아니면 NaN
 function numOrNull(v) { const s = cell(v).replace(/,/g, ''); if (s === '') return null; const n = Number(s); return Number.isFinite(n) ? n : NaN; }
 
-// 성과-월실적 A2:K 값 배열 → 줄 번호(시트 행 번호, 2부터)와 함께. 완전히 빈 줄도 번호를 세어 둔다(다음 빈 줄 계산용)
+// 성과-월실적 A2:L 값 배열 → 줄 번호(시트 행 번호, 2부터)와 함께. 완전히 빈 줄도 번호를 세어 둔다(다음 빈 줄 계산용)
 function indexRows(values) {
   return (values || []).map(function (r, i) { return { row: i + 2, v: r || [] }; });
 }
@@ -404,7 +409,7 @@ function teamUnits(users, rows, team, mode) {
 }
 
 // 입력 화면용: 한 달 표(값이 있으면 시트 값, 없으면 기본값) + 달마다 입력 여부
-function inputView(p) { // p = { users, rows(A2:K), team, mode, year, month }
+function inputView(p) { // p = { users, rows(A2:L), team, mode, year, month }
   const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
   const units = teamUnits(p.users, p.rows, team, mode);
   const byKey = {}; let last = null;
@@ -419,7 +424,7 @@ function inputView(p) { // p = { users, rows(A2:K), team, mode, year, month }
   const monthSaved = !!byKey[rowKey(y, m, team, '팀비용', '')] || units.some(function (u) { return byKey[rowKey(y, m, team, mode, u.key)]; });
   const rowsOut = units.map(function (u) {
     const r = byKey[rowKey(y, m, team, mode, u.key)];
-    const o = { key: u.key, name: u.name, saved: !!r, sales: r ? val(r[6]) : null, profit: r ? val(r[7]) : null };
+    const o = { key: u.key, name: u.name, saved: !!r, sales: r ? val(r[6]) : null, profit: r ? val(r[7]) : null, note: r ? cell(r[11]) : '' };
     if (mode === '사무소') { o.heads = r ? val(r[8]) : null; o.defaultHeads = u.members; o.members = u.members; }
     else { o.work = r ? true : (monthSaved ? false : u.active); o.active = u.active; }
     return o;
@@ -428,6 +433,35 @@ function inputView(p) { // p = { users, rows(A2:K), team, mode, year, month }
   const entered = [];
   for (let mm = 1; mm <= 12; mm++) if (byKey[rowKey(y, mm, team, '팀비용', '')] || units.some(function (u) { return byKey[rowKey(y, mm, team, mode, u.key)]; })) entered.push(mm);
   return { team: team, mode: mode, year: y, month: m, rows: rowsOut, teamCost: cost ? val(cost[7]) : null, entered: entered, lastSaved: last, monthSaved: monthSaved };
+}
+
+// 3-다: 비고 검사. 글자만, 줄바꿈·제어문자는 공백으로, 앞뒤 공백 제거, 200자(글자 수) 이하. 빈 글자 = 지움
+function checkNote(v) {
+  if (v === null || v === '') return { ok: true, text: '' };
+  if (typeof v !== 'string') return { ok: false, error: 'BAD_NOTE' };
+  const text = v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  if (Array.from(text).length > NOTE_MAX) return { ok: false, error: 'NOTE_TOO_LONG' };
+  return { ok: true, text: text };
+}
+// 3-다: 점수 보기용 비고 목록. 그해·그 팀·평가 단위 줄 중 1~마감월, L열이 빈칸이 아닌 줄만. 최신 달 먼저, 같은 달은 이름 가나다.
+// 개인 팀 이름 = 사용자팀마스터 이름(없으면 시트 단위이름). 시트에서 직접 길게 적은 값도 200자까지만 보낸다.
+// 화면은 이 중 앞 3개만 펼쳐 보이고 나머지는 [더보기] — 전부 보내야 다시 부르지 않고 펼칠 수 있다.
+function notesView(p) { // p = { rows, users, team, mode, year, closeMonth }
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), cm = Number(p.closeMonth) || 0;
+  if (!cm) return [];
+  const nameByEmail = {};
+  (p.users || []).forEach(function (u) { if (lc(u.email)) nameByEmail[lc(u.email)] = cell(u.name); });
+  const out = [];
+  (p.rows || []).forEach(function (r) {
+    if (!r || Number(r[0]) !== y || cell(r[2]) !== team || cell(r[3]) !== mode) return;
+    const m = Number(r[1]), text = cell(r[11]);
+    if (!Number.isInteger(m) || m < 1 || m > cm || !text) return;
+    const key = mode === '사무소' ? cell(r[4]) : lc(r[4]);
+    if (!key) return;
+    out.push({ month: m, key: key, name: mode === '사무소' ? key : (nameByEmail[key] || cell(r[5]) || cell(r[4])), text: Array.from(text).slice(0, NOTE_MAX).join('') });
+  });
+  out.sort(function (a, b) { return b.month - a.month || a.name.localeCompare(b.name, 'ko'); });
+  return out;
 }
 
 // 저장할 값 검사. 사무소: { key, sales, profit, heads } / 개인: { key, work, sales, profit }. 빈칸(null) 허용 — 마감 때 다시 검사
@@ -441,9 +475,10 @@ function checkEntry(e, mode) {
   return { sales: s, profit: pr, heads: h, bad: bad };
 }
 
-// 한 달 저장 계획. p = { rows(A2:K), users, team, mode, year, month, entries, teamCost, who(email), nowMs }
-// 반환 { ok, writes:[{ row, values[11] }], error?, field? }. 같은 (연도·월·팀·단위구분·단위) 줄이 있으면 그 줄을 고치고, 없으면 마지막 줄 다음에 새로 쓴다.
-// 개인 work:false = 줄이 있으면 11칸을 비움(줄 삭제 없음, 결정 ②), 없으면 아무것도 안 함.
+// 한 달 저장 계획. p = { rows(A2:L), users, team, mode, year, month, entries, teamCost, who(email), nowMs, noNote(전년 기준 실적 = 비고 없음) }
+// 반환 { ok, writes:[{ row, values[12] }], error?, field? }. 같은 (연도·월·팀·단위구분·단위) 줄이 있으면 그 줄을 고치고, 없으면 마지막 줄 다음에 새로 쓴다.
+// 개인 work:false = 줄이 있으면 12칸(비고 포함)을 비움(줄 삭제 없음, 결정 ②), 없으면 아무것도 안 함.
+// 3-다 비고: entry.note가 있으면 그 값(빈 글자 = 지움), 없으면(undefined) 시트에 있던 비고를 그대로 다시 쓴다.
 function planMonthWrite(p) {
   const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
   if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'BAD_MONTH' };
@@ -457,30 +492,66 @@ function planMonthWrite(p) {
     seen[k] = true;
     const c = checkEntry(e, mode);
     if (c.bad.length) return { ok: false, error: 'BAD_NUMBER', field: k + ':' + c.bad.join(',') };
+    if (e.note !== undefined) {
+      if (p.noNote) return { ok: false, error: 'NO_NOTE_FOR_BASELINE', field: k };
+      const nt = checkNote(e.note);
+      if (!nt.ok) return { ok: false, error: nt.error, field: k };
+    }
   }
   const cost = p.teamCost === null || p.teamCost === undefined || p.teamCost === '' ? null : Number(p.teamCost);
   if (cost !== null && !(Number.isInteger(cost) && cost >= 0 && cost < INPUT_MAX)) return { ok: false, error: 'BAD_NUMBER', field: '팀비용' };
 
   const indexed = indexRows(p.rows);
-  const found = {};
-  indexed.forEach(function (x) { if (Number(x.v[0]) === y && Number(x.v[1]) === m && cell(x.v[2]) === team) found[keyOfRow(x.v)] = x.row; });
+  const found = {}, foundVals = {};
+  indexed.forEach(function (x) { if (Number(x.v[0]) === y && Number(x.v[1]) === m && cell(x.v[2]) === team) { found[keyOfRow(x.v)] = x.row; foundVals[keyOfRow(x.v)] = x.v; } });
+  const oldNote = function (rk) { return foundVals[rk] ? cell(foundVals[rk][11]) : ''; };
   let next = nextFreeRow(indexed);
   const stamp = seoulStamp(p.nowMs), who = cell(p.who);
   const blank = function (v) { return v === null || v === undefined ? '' : v; };
   const writes = [];
   (p.entries || []).forEach(function (e) {
     const k = mode === '사무소' ? cell(e.key) : lc(e.key), u = unitByKey[k];
-    const at = found[rowKey(y, m, team, mode, k)];
+    const rk = rowKey(y, m, team, mode, k), at = found[rk];
     if (mode === '개인' && e.work === false) { if (at) writes.push({ row: at, values: new Array(MONTHLY_COLS).fill('') }); return; }
     const c = checkEntry(e, mode);
-    const vals = [y, m, team, mode, mode === '사무소' ? k : (u.email || k), u.name, blank(c.sales), blank(c.profit), mode === '사무소' ? blank(c.heads) : 1, who, stamp];
+    const note = e.note !== undefined ? checkNote(e.note).text : oldNote(rk);
+    const vals = [y, m, team, mode, mode === '사무소' ? k : (u.email || k), u.name, blank(c.sales), blank(c.profit), mode === '사무소' ? blank(c.heads) : 1, who, stamp, note];
     writes.push({ row: at || next++, values: vals });
   });
   // 팀비용: 요청에 teamCost가 없으면(undefined) 그 줄을 건드리지 않는다 — 일부 단위만 저장할 때 비용이 지워지지 않게.
   // null·빈칸을 보내면 '지움'(줄이 있으면 이익 칸을 비움).
   if (p.teamCost !== undefined && (cost !== null || found[rowKey(y, m, team, '팀비용', '')])) {
     const at = found[rowKey(y, m, team, '팀비용', '')];
-    writes.push({ row: at || next++, values: [y, m, team, '팀비용', '', '', '', blank(cost), '', who, stamp] });
+    writes.push({ row: at || next++, values: [y, m, team, '팀비용', '', '', '', blank(cost), '', who, stamp, oldNote(rowKey(y, m, team, '팀비용', ''))] });
+  }
+  if (!writes.length) return { ok: false, error: 'NOTHING_TO_SAVE' };
+  return { ok: true, writes: writes };
+}
+
+// 3-다: 마감한 달의 비고만 저장(숫자는 그대로 — 결정: 마감 후에도 비고만 바로 수정). entries = [{ key, note }]
+// 줄이 있어야 한다(마감한 달은 단위 줄이 이미 있음. 개인 팀에서 근무하지 않은 사람 = 줄 없음 → NOTE_NO_ROW).
+// 쓰기 = 그 줄 J~L(수정자·수정일시·비고) 3칸. 바뀌지 않은 비고는 쓰지 않는다.
+function planNoteWrite(p) { // p = { rows, users, team, mode, year, month, entries, who, nowMs }
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
+  if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'BAD_MONTH' };
+  const unitByKey = {};
+  teamUnits(p.users, p.rows, team, mode).forEach(function (u) { unitByKey[u.key] = u; });
+  const found = {};
+  indexRows(p.rows).forEach(function (x) { if (Number(x.v[0]) === y && Number(x.v[1]) === m && cell(x.v[2]) === team) found[keyOfRow(x.v)] = x; });
+  const stamp = seoulStamp(p.nowMs), who = cell(p.who);
+  const writes = [], seen = {};
+  for (let i = 0; i < (p.entries || []).length; i++) {
+    const e = p.entries[i] || {}, k = mode === '사무소' ? cell(e.key) : lc(e.key);
+    if (!k || !unitByKey[k]) return { ok: false, error: 'UNKNOWN_UNIT', field: cell(e.key) };
+    if (seen[k]) return { ok: false, error: 'DUPLICATE_UNIT', field: k };
+    seen[k] = true;
+    if (e.note === undefined) return { ok: false, error: 'BAD_NOTE', field: k };
+    const nt = checkNote(e.note);
+    if (!nt.ok) return { ok: false, error: nt.error, field: k };
+    const x = found[rowKey(y, m, team, mode, k)];
+    if (!x) return { ok: false, error: 'NOTE_NO_ROW', field: k };
+    if (cell(x.v[11]) === nt.text) continue;
+    writes.push({ row: x.row, values: [who, stamp, nt.text] });
   }
   if (!writes.length) return { ok: false, error: 'NOTHING_TO_SAVE' };
   return { ok: true, writes: writes };
@@ -564,5 +635,6 @@ module.exports = {
   checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary,
   gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1,
   closeStamp, readClose, publishWindow, pickRows, teamsOf, buildView,
-  MONTHLY_COLS, CLOSE_COLS, seoulStamp, indexRows, nextFreeRow, teamUnits, inputView, planMonthWrite, closeMissing, planClose, planOffices
+  MONTHLY_COLS, CLOSE_COLS, seoulStamp, indexRows, nextFreeRow, teamUnits, inputView, planMonthWrite, closeMissing, planClose, planOffices,
+  NOTE_COLS, NOTE_MAX, checkNote, notesView, planNoteWrite
 };

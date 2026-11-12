@@ -6,11 +6,14 @@ let pass = 0, fail = 0;
 function t(name, cond, extra) { if (cond) pass++; else { fail++; console.log('FAIL: ' + name + (extra === undefined ? '' : ' -> ' + JSON.stringify(extra))); } }
 
 // ── 머리글 (0-준비 실제 값)
-t('H1 월실적 11칸 정상', p.checkHeaders(p.TAB_MONTHLY, ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시']).ok);
+let h;
+t('H1 월실적 12칸 정상(L = 비고, 3-다)', p.checkHeaders(p.TAB_MONTHLY, ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시', '비고']).ok);
+h = p.checkHeaders(p.TAB_MONTHLY, ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시']);
+t('H1b 비고 머리글(L1) 없으면 → 실패 + 빠진 칸 비고', !h.ok && h.missing.join() === '비고', h);
 t('H2 마감 6칸 정상', p.checkHeaders(p.TAB_CLOSE, ['연도', '팀', '마감월', '마감자', '마감일시', '기록']).ok);
 t('H3 평가기준 6칸 정상', p.checkHeaders(p.TAB_CRITERIA, ['묶음', '묶음가중치', '항목키', '항목 이름', '배점비율', '등급표']).ok);
 t('H4 앞뒤 공백·끝 빈칸은 허용', p.checkHeaders(p.TAB_CLOSE, [' 연도 ', '팀', '마감월', '마감자', '마감일시', '기록', '', '']).ok);
-let h = p.checkHeaders(p.TAB_CLOSE, ['연도', '팀', '마감월', '마감자', '마감일시']);
+h = p.checkHeaders(p.TAB_CLOSE, ['연도', '팀', '마감월', '마감자', '마감일시']);
 t('H5 칸 빠짐 → 실패 + 빠진 칸 이름', !h.ok && h.missing.join() === '기록', h);
 t('H6 순서 바뀜 → 실패', !p.checkHeaders(p.TAB_CLOSE, ['팀', '연도', '마감월', '마감자', '마감일시', '기록']).ok);
 t('H7 뒤에 다른 칸 → 실패', !p.checkHeaders(p.TAB_CLOSE, ['연도', '팀', '마감월', '마감자', '마감일시', '기록', '메모']).ok);

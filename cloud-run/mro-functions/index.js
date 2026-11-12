@@ -4794,14 +4794,14 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
   const prevFileId = view === 'criteria' ? null : competency.findFileId(settingRows, y - 1); // 5-1절: 전년은 전년도 파일(있을 때만)
 
   const ranges = [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C',
-    competency.quoteTab(performance.TAB_MONTHLY) + '!A2:K',
+    competency.quoteTab(performance.TAB_MONTHLY) + '!A2:L',
     competency.quoteTab(performance.TAB_CLOSE) + '!A2:F',
     competency.quoteTab(performance.TAB_CRITERIA) + '!A1:F30'].map(encodeURIComponent);
   const c0 = Date.now();
   let vr, prevVr = null;
   try {
     vr = await batchGetValues(client, fileId, ranges, { unformatted: true });
-    if (prevFileId) prevVr = await batchGetValues(client, prevFileId, [encodeURIComponent(competency.quoteTab(performance.TAB_MONTHLY) + '!A2:K')], { unformatted: true });
+    if (prevFileId) prevVr = await batchGetValues(client, prevFileId, [encodeURIComponent(competency.quoteTab(performance.TAB_MONTHLY) + '!A2:L')], { unformatted: true });
   } catch (e) {
     const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
     fail('SHEET_ACCESS_FAILED', { httpStatus: httpStatus, year: y }); return;
@@ -4841,6 +4841,7 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
 // 성과평가 3-가: 실적 입력·월 마감·팀 설정. 설계서 v0.7 3-3(쓰기 권한)·4-2·4-3·6-3(쓰기 흐름).
 // 2026-11-12 재홍님 결정: ① 마감·풀기는 한 달씩 ② 개인 '근무' 해제 = 칸 비우기 ③ 전년도 파일이 없으면 그해 파일에 전년 실적 입력(마감 없음)
 //   ④ 올해는 이번 달까지만 입력. 계산·검사는 lib/performance.js(planMonthWrite·closeMissing·planClose·planOffices).
+// 3-다(비고, 2026-11-12 시안 승인): 성과-월실적 L열. 열린 달은 saveMonth에 함께, 마감한 달은 saveNote(J~L 3칸)만. 전년 기준 실적은 비고 없음.
 // 쓰기 API: values:batchUpdate(RAW) — 역량평가 2-가부터 쓰는 것과 같음(4051행 주석에 공식 문서 확인). 새 API 없음.
 // 잠금 writeLocks/performanceEval(설계서 5-4) + 중복 방지 writeIdempotency. 줄 번호는 화면에서 받지 않고 잠금 안에서 탭을 다시 읽어 찾는다.
 // =====================================================================
@@ -4895,10 +4896,10 @@ function perfUsers_(values) {
     return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
   });
 }
-// 인사평가 파일: 인사평가설정 + 성과-월실적 A2:K + 성과-마감 A2:F (서식 없이, 1번)
+// 인사평가 파일: 인사평가설정 + 성과-월실적 A2:L(L = 비고, 3-다) + 성과-마감 A2:F (서식 없이, 1번)
 async function perfReadFile_(client, fileId) {
   const vr = await batchGetValues(client, fileId, [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C',
-    competency.quoteTab(performance.TAB_MONTHLY) + '!A2:K',
+    competency.quoteTab(performance.TAB_MONTHLY) + '!A2:L',
     competency.quoteTab(performance.TAB_CLOSE) + '!A2:F'].map(encodeURIComponent), { unformatted: true });
   return { settings: (vr[0] && vr[0].values) || [], monthly: (vr[1] && vr[1].values) || [], close: (vr[2] && vr[2].values) || [] };
 }
@@ -4958,7 +4959,7 @@ exports.savePerformanceTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['saveMonth', 'close', 'reopen', 'saveOffices'].indexOf(b.action) < 0) {
+    if (['saveMonth', 'saveNote', 'close', 'reopen', 'saveOffices'].indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -5007,13 +5008,28 @@ exports.savePerformanceTest = async (req, res) => {
           if (!Number.isInteger(month) || month < 1 || month > target.maxMonth) return { ok: false, error: month > target.maxMonth ? 'MONTH_FUTURE' : 'BAD_MONTH' };
           if (month <= closeMonth) return { ok: false, error: 'MONTH_CLOSED', closeMonth: closeMonth };
           const plan = performance.planMonthWrite({ rows: f.monthly, users: users, team: lead.team, mode: mode, year: target.year, month: month,
-            entries: b.entries, teamCost: b.teamCost, who: me, nowMs: nowMs });
+            entries: b.entries, teamCost: b.teamCost, who: me, nowMs: nowMs, noNote: target.kind === 'baseline' });
           if (!plan.ok) return plan;
           const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {
-            return { range: competency.quoteTab(performance.TAB_MONTHLY) + '!A' + w.row + ':K' + w.row, values: [w.values] };
+            return { range: competency.quoteTab(performance.TAB_MONTHLY) + '!A' + w.row + ':L' + w.row, values: [w.values] };
           }));
           timings.writeMs = Date.now() - w0;
           if (n !== plan.writes.length * performance.MONTHLY_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, rows: plan.writes.length };
+        }
+        // 3-다: 마감한 달 비고만 저장 — 숫자·마감 상태는 건드리지 않고 그 줄 J~L(수정자·수정일시·비고)만 쓴다
+        if (b.action === 'saveNote') {
+          if (target.kind === 'baseline') return { ok: false, error: 'NO_NOTE_FOR_BASELINE' };
+          if (!Number.isInteger(month) || month < 1 || month > target.maxMonth) return { ok: false, error: 'BAD_MONTH' };
+          if (month > closeMonth) return { ok: false, error: 'MONTH_NOT_CLOSED', closeMonth: closeMonth };
+          const plan = performance.planNoteWrite({ rows: f.monthly, users: users, team: lead.team, mode: mode, year: target.year, month: month,
+            entries: b.entries, who: me, nowMs: nowMs });
+          if (!plan.ok) return plan;
+          const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {
+            return { range: competency.quoteTab(performance.TAB_MONTHLY) + '!J' + w.row + ':L' + w.row, values: [w.values] };
+          }));
+          timings.writeMs = Date.now() - w0;
+          if (n !== plan.writes.length * performance.NOTE_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
           return { ok: true, updatedCells: n, rows: plan.writes.length };
         }
         // close / reopen (결정 ①: 한 달씩. baseline(전년 기준 실적)은 마감 없음)

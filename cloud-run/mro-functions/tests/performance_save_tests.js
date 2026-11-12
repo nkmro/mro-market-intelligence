@@ -24,7 +24,7 @@ t('A4 입력 화면 10월: 나사무소 저장값, 다사무소 빈칸·기본 �
 let pl = p.planMonthWrite({ rows: rows, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, who: 'lead@x', nowMs: NOW,
   entries: [{ key: '나사무소', sales: 120, profit: 12, heads: 2 }, { key: '다사무소', sales: 50, profit: -3, heads: 1 }], teamCost: 7 });
 t('A5 있는 줄(5행)은 고치고 새 줄은 7·8행에 — 줄 번호를 서버가 계산', pl.ok && pl.writes.map(function (w) { return w.row; }).join() === '5,7,8', pl);
-t('A6 쓰는 값 11칸: 연도·월·팀·단위구분·단위·이름·매출·이익·인원·수정자·수정일시', JSON.stringify(pl.writes[1].values) === JSON.stringify([2026, 10, '가팀', '사무소', '다사무소', '다사무소', 50, -3, 1, 'lead@x', '2026-11-12 10:30']));
+t('A6 쓰는 값 12칸: 연도·월·팀·단위구분·단위·이름·매출·이익·인원·수정자·수정일시·비고(새 줄 = 빈칸)', JSON.stringify(pl.writes[1].values) === JSON.stringify([2026, 10, '가팀', '사무소', '다사무소', '다사무소', 50, -3, 1, 'lead@x', '2026-11-12 10:30', '']));
 t('A7 팀비용 줄: 이익 칸에 총비용', JSON.stringify(pl.writes[2].values.slice(0, 9)) === JSON.stringify([2026, 10, '가팀', '팀비용', '', '', '', 7, '']));
 t('A8 모르는 사무소 → UNKNOWN_UNIT (새 사무소는 팀 설정에서)', p.planMonthWrite({ rows: rows, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, entries: [{ key: '새사무소', sales: 1 }] }).error === 'UNKNOWN_UNIT');
 t('A9 같은 단위 두 번 → DUPLICATE_UNIT', p.planMonthWrite({ rows: rows, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, entries: [{ key: '나사무소' }, { key: '나사무소' }] }).error === 'DUPLICATE_UNIT');
@@ -42,7 +42,7 @@ const iv2 = p.inputView({ users: iu, rows: ir, team: '마팀', mode: '개인', y
 t('A13 개인 입력 화면: 팀원 가나다(김하나·박세찌·이두리), 이메일 대소문자 무시(Lee@X ↔ lee@x), 이미 저장된 달이라 줄 있는 이두리만 체크', iv2.rows.map(function (r) { return r.name + (r.work ? 'Y' : 'N'); }).join() === '김하나N,박세찌N,이두리Y' && iv2.rows[2].saved && iv2.monthSaved, iv2.rows);
 pl = p.planMonthWrite({ rows: ir, users: iu, team: '마팀', mode: '개인', year: 2026, month: 10, who: 'lead2@x', nowMs: NOW,
   entries: [{ key: 'kim@x', work: true, sales: 10, profit: 1 }, { key: 'lee@x', work: false }, { key: 'old@x', work: false }], teamCost: 2 });
-t('A14 근무 해제한 이두리 줄(2행)은 11칸 비우기, 줄이 없던 박세찌는 아무것도 안 함, 인원 칸 = 1', pl.ok && pl.writes.length === 3 && pl.writes[1].row === 2 && pl.writes[1].values.every(function (v) { return v === ''; }) && pl.writes[0].values[8] === 1 && pl.writes[0].values[4] === 'kim@x', pl.writes);
+t('A14 근무 해제한 이두리 줄(2행)은 12칸(비고 포함) 비우기, 줄이 없던 박세찌는 아무것도 안 함, 인원 칸 = 1', pl.ok && pl.writes.length === 3 && pl.writes[1].row === 2 && pl.writes[1].values.length === 12 && pl.writes[1].values.every(function (v) { return v === ''; }) && pl.writes[0].values[8] === 1 && pl.writes[0].values[4] === 'kim@x', pl.writes);
 
 // A13b: 근무 해제 → 칸 비움 → 다시 열기: 그 달을 이미 저장했으므로 줄이 없는 사람은 체크 해제로 보임(확인 1). 한 번도 저장 안 한 달은 활성 = 체크
 (function () {
@@ -53,6 +53,33 @@ t('A14 근무 해제한 이두리 줄(2행)은 11칸 비우기, 줄이 없던 �
   const fresh = p.inputView({ users: iu, rows: rr, team: '마팀', mode: '개인', year: 2026, month: 11 });
   t('A13b 근무 해제 후 다시 열기: 이두리 체크 해제 유지, 김하나 체크 / 저장 안 한 11월은 활성 팀원 기본 체크', back.monthSaved && back.rows.map(function (r) { return r.name + (r.work ? 'Y' : 'N'); }).join() === '김하나Y,박세찌N,이두리N'
     && !fresh.monthSaved && fresh.rows.map(function (r) { return r.name + (r.work ? 'Y' : 'N'); }).join() === '김하나Y,박세찌N,이두리Y', [back.rows, fresh.rows]);
+})();
+
+// ── N: 3-다 비고(성과-월실적 L열). 예시 문장은 시험용
+(function () {
+  const s200 = new Array(201).join('가'), s201 = s200 + '나';
+  t('N1 200자 허용·201자 → NOTE_TOO_LONG, 이모지 1개 = 1자로 셈', p.checkNote(s200).ok && p.checkNote(s201).error === 'NOTE_TOO_LONG' && p.checkNote(new Array(200).join('가') + '😀').ok);
+  t('N2 줄바꿈·제어문자 → 공백, 앞뒤 공백 제거, null·빈 글자 = 지움(빈칸), 글자 아님 → BAD_NOTE', p.checkNote('  거래처\n계약\t종료 ').text === '거래처 계약 종료' && p.checkNote(null).text === '' && p.checkNote('').text === '' && p.checkNote(12).error === 'BAD_NOTE' && p.checkNote({}).error === 'BAD_NOTE');
+  const nr = [[2026, 10, '가팀', '사무소', '나사무소', '나사무소', 110, 11, 2, 'lead@x', '2026-11-03 09:00', '기존 비고'], [2026, 10, '가팀', '팀비용', '', '', '', 5, '', 'x', 's', '']];
+  let w = p.planMonthWrite({ rows: nr, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, who: 'lead@x', nowMs: NOW, entries: [{ key: '나사무소', sales: 120, profit: 12, heads: 2 }] });
+  t('N3 숫자만 저장(note 없음) → 시트에 있던 비고 그대로 다시 씀', w.ok && w.writes[0].row === 2 && w.writes[0].values[11] === '기존 비고', w);
+  w = p.planMonthWrite({ rows: nr, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, who: 'lead@x', nowMs: NOW, entries: [{ key: '나사무소', sales: 120, profit: 12, heads: 2, note: ' 새 비고 ' }, { key: '다사무소', sales: 1, profit: 1, heads: 1, note: '' }], teamCost: 6 });
+  t('N4 note 보내면 L열 = 정리한 값, 빈 글자 = 빈칸, 팀비용 줄은 L열 그대로', w.ok && w.writes[0].values[11] === '새 비고' && w.writes[1].values[11] === '' && w.writes[2].values.length === 12 && w.writes[2].values[11] === '', w);
+  t('N5 비고 201자 → NOTE_TOO_LONG(줄 이름 함께), 전년 기준 실적(noNote)에 비고 → NO_NOTE_FOR_BASELINE', (function () { const a = p.planMonthWrite({ rows: nr, users: users, team: '가팀', mode: '사무소', year: 2026, month: 10, entries: [{ key: '나사무소', note: s201 }] }); const b = p.planMonthWrite({ rows: [], users: users, team: '가팀', mode: '사무소', year: 2025, month: 3, noNote: true, entries: [{ key: '나사무소', sales: 1, note: '' }] }); const c = p.planMonthWrite({ rows: [], users: users, team: '가팀', mode: '사무소', year: 2025, month: 3, noNote: true, entries: [{ key: '나사무소', sales: 1 }] }); return a.error === 'NOTE_TOO_LONG' && a.field === '나사무소' && b.error === 'NO_NOTE_FOR_BASELINE' && c.ok; })());
+  const iv3 = p.inputView({ users: users, rows: nr, team: '가팀', mode: '사무소', year: 2026, month: 10 });
+  t('N6 입력 화면에 비고(줄 없는 사무소 = 빈 글자)', iv3.rows[0].note === '기존 비고' && iv3.rows[1].note === '', iv3.rows);
+  const ir2 = [[2026, 10, '마팀', '개인', 'lee@x', '이두리', 30, 3, 1, '', '', '휴가 1주']];
+  w = p.planMonthWrite({ rows: ir2, users: iu, team: '마팀', mode: '개인', year: 2026, month: 10, who: 'x', nowMs: NOW, entries: [{ key: 'lee@x', work: false }] });
+  t('N7 개인 근무 해제 = 비고까지 12칸 비우기', w.ok && w.writes[0].values.length === 12 && w.writes[0].values.every(function (v) { return v === ''; }));
+  // 마감한 달 비고만 저장
+  const cl = [[2026, 9, '가팀', '사무소', '나사무소', '나사무소', 100, 10, 2, 'x', 's', ''], [2026, 9, '가팀', '사무소', '다사무소', '다사무소', 50, 5, 1, 'x', 's', '그대로'], [2026, 9, '가팀', '팀비용', '', '', '', 5, '', 'x', 's']];
+  w = p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, who: 'lead@x', nowMs: NOW, entries: [{ key: '나사무소', note: '9월 설비 교체 건 일회성 매출 포함' }, { key: '다사무소', note: '그대로' }] });
+  t('N8 마감 달 비고 저장: 바뀐 줄만(2행), 쓰는 값 = 수정자·수정일시·비고 3칸, 숫자 칸은 안 씀', w.ok && w.writes.length === 1 && w.writes[0].row === 2 && JSON.stringify(w.writes[0].values) === JSON.stringify(['lead@x', '2026-11-12 10:30', '9월 설비 교체 건 일회성 매출 포함']), w);
+  t('N9 비고 지우기(빈 글자) 허용, 안 바뀌면 NOTHING_TO_SAVE', p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '다사무소', note: '' }] }).writes[0].values[2] === '' && p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '다사무소', note: ' 그대로 ' }] }).error === 'NOTHING_TO_SAVE');
+  t('N10 줄 없는 단위 → NOTE_NO_ROW, 모르는 단위 → UNKNOWN_UNIT, note 없음 → BAD_NOTE, 201자 → NOTE_TOO_LONG', p.planNoteWrite({ rows: [], users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '나사무소', note: 'a' }] }).error === 'NOTE_NO_ROW'
+    && p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '없는곳', note: 'a' }] }).error === 'UNKNOWN_UNIT'
+    && p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '나사무소' }] }).error === 'BAD_NOTE'
+    && p.planNoteWrite({ rows: cl, users: users, team: '가팀', mode: '사무소', year: 2026, month: 9, entries: [{ key: '나사무소', note: s201 }] }).error === 'NOTE_TOO_LONG');
 })();
 
 // 마감 빈칸 검사
@@ -156,12 +183,12 @@ const realNow = Date.now; Date.now = function () { return NOW; }; // 서울 2026
   r = await save('lead@x', { action: 'close', year: 2026, month: 10 });
   t('B9 빈칸 있는 10월 마감 → MONTH_INCOMPLETE + 빈칸 목록, 시트 안 바뀜', r.error === 'MONTH_INCOMPLETE' && r.missing.indexOf('팀 총비용') >= 0 && writes.length === 0, r);
   r = await save('lead@x', { action: 'saveMonth', year: 2026, month: 10, entries: [{ key: '나사무소', sales: 1200, profit: 120, heads: 2 }, { key: '다사무소', sales: 800, profit: 64, heads: 1 }], teamCost: 90 });
-  t('B10 10월 저장: 3줄 × 11칸 = 33칸, 성과-월실적 2·3·4행', r.ok && r.updatedCells === 33 && writes.map(function (w) { return w.range; }).join() === "'성과-월실적'!A2:K2,'성과-월실적'!A3:K3,'성과-월실적'!A4:K4", writes.map(function (w) { return w.range; }));
+  t('B10 10월 저장: 3줄 × 12칸 = 36칸, 성과-월실적 2·3·4행 A~L', r.ok && r.updatedCells === 36 && writes.map(function (w) { return w.range; }).join() === "'성과-월실적'!A2:L2,'성과-월실적'!A3:L3,'성과-월실적'!A4:L4", writes.map(function (w) { return w.range; }));
   r = await call('getPerformanceTest', 'lead@x', { view: 'input', month: 10 });
   t('B11 다시 읽으면 저장값·마지막 저장 표시·마감 빈칸 없음', r.rows[0].sales === 1200 && r.teamCost === 90 && r.lastSaved.by === 'lead@x' && r.nextClose.missing.length === 0, r);
   writes = [];
   r = await save('lead@x', { action: 'saveMonth', year: 2026, month: 10, entries: [{ key: '나사무소', sales: 1300, profit: 130, heads: 2 }] });
-  t('B12 같은 달 다시 저장(팀비용 안 보냄): 새 줄이 아니라 2행만 고침, 팀비용 줄은 그대로(90)', r.ok && writes.length === 1 && writes[0].range === "'성과-월실적'!A2:K2" && SHEET.F26['성과-월실적'].length === 4 && SHEET.F26['성과-월실적'][3][7] === 90);
+  t('B12 같은 달 다시 저장(팀비용 안 보냄): 새 줄이 아니라 2행만 고침, 팀비용 줄은 그대로(90)', r.ok && writes.length === 1 && writes[0].range === "'성과-월실적'!A2:L2" && SHEET.F26['성과-월실적'].length === 4 && SHEET.F26['성과-월실적'][3][7] === 90);
   writes = [];
   const key = 'same-key';
   r = await call('savePerformanceTest', 'lead@x', { idempotencyKey: key, action: 'close', year: 2026, month: 10 });
@@ -191,6 +218,35 @@ const realNow = Date.now; Date.now = function () { return NOW; }; // 서울 2026
   t('B23 관리자는 다른 팀(마팀, 개인 단위) 저장 가능', r.ok && r.rows === 2);
   r = await save('lead@x', { action: 'deleteAll' });
   t('B24 모르는 action → NOT_IMPLEMENTED, 키 없으면 MISSING_FIELDS', r.error === 'NOT_IMPLEMENTED' && (await call('savePerformanceTest', 'lead@x', { action: 'close' })).error === 'MISSING_FIELDS');
+  // ── 3-다 비고 경로 (이 시점 가팀: 9월 마감, 10월 3줄 저장됨)
+  writes = [];
+  r = await save('lead@x', { action: 'saveNote', year: 2026, month: 10, entries: [{ key: '나사무소', note: 'a' }] });
+  t('B25 마감 안 된 10월에 saveNote → MONTH_NOT_CLOSED(열린 달은 [저장]에 함께)', r.error === 'MONTH_NOT_CLOSED' && writes.length === 0);
+  r = await save('lead@x', { action: 'saveNote', year: 2026, month: 9, entries: [{ key: '나사무소', note: 'a' }] });
+  t('B26 마감한 9월인데 그 사무소 줄이 없음 → NOTE_NO_ROW', r.error === 'NOTE_NO_ROW' && writes.length === 0);
+  r = await save('lead@x', { action: 'saveMonth', year: 2026, month: 10, entries: [{ key: '다사무소', sales: 800, profit: 64, heads: 1, note: '10월 15일부 거래처 1곳 계약 종료' }] });
+  t('B27 열린 10월 [저장]에 비고 함께: 다사무소 줄(3행) L열', r.ok && writes[0].range === "'성과-월실적'!A3:L3" && SHEET.F26['성과-월실적'][2][11] === '10월 15일부 거래처 1곳 계약 종료', writes);
+  r = await save('lead@x', { action: 'close', year: 2026, month: 10 });
+  t('B28 10월 마감', r.ok && r.closeMonth === 10);
+  writes = [];
+  const before = JSON.stringify(SHEET.F26['성과-월실적'][1].slice(0, 9));
+  r = await save('lead@x', { action: 'saveNote', year: 2026, month: 10, entries: [{ key: '나사무소', note: '신규 거래처 2곳 계약' }] });
+  t('B29 마감한 10월 비고만 저장: 2행 J~L 3칸만, 숫자 칸 그대로, 마감 상태 그대로', r.ok && r.updatedCells === 3 && writes.length === 1 && writes[0].range === "'성과-월실적'!J2:L2" && JSON.stringify(SHEET.F26['성과-월실적'][1].slice(0, 9)) === before && SHEET.F26['성과-월실적'][1][6] === 1300 && SHEET.F26['성과-월실적'][1][11] === '신규 거래처 2곳 계약' && SHEET.F26['성과-마감'][1][2] === 10, writes);
+  r = await save('lead@x', { action: 'saveMonth', year: 2026, month: 10, entries: [{ key: '나사무소', sales: 1, profit: 1, heads: 1 }] });
+  t('B30 마감한 달 숫자 저장은 여전히 MONTH_CLOSED', r.error === 'MONTH_CLOSED');
+  r = await save('lead@x', { action: 'saveNote', year: 2026, month: 10, entries: [{ key: '나사무소', note: new Array(202).join('가') }] });
+  t('B31 비고 201자 → NOTE_TOO_LONG, 시트 안 바뀜', r.error === 'NOTE_TOO_LONG' && writes.length === 1);
+  r = await save('a@x', { action: 'saveNote', year: 2026, month: 10, entries: [{ key: '나사무소', note: 'x' }] });
+  t('B32 팀원 saveNote → FORBIDDEN', r.error === 'FORBIDDEN' && writes.length === 1);
+  r = await save('lead@x', { action: 'saveNote', year: 2025, month: 12, entries: [{ key: '나사무소', note: 'x' }] });
+  const r3 = await save('lead@x', { action: 'saveMonth', year: 2025, month: 12, entries: [{ key: '나사무소', sales: 900, profit: 90, heads: 2, note: 'x' }] });
+  t('B33 2025(전년 기준 실적): saveNote·saveMonth 비고 → NO_NOTE_FOR_BASELINE', r.error === 'NO_NOTE_FOR_BASELINE' && r3.error === 'NO_NOTE_FOR_BASELINE' && writes.length === 1);
+  r = await call('getPerformanceTest', 'a@x', { view: 'mine' });
+  t('B34 팀원 점수 보기: 마감한 10월 비고 2개(최신 달 먼저·가나다), 빈 비고 없음', r.ok && JSON.stringify(r.notes) === JSON.stringify([{ month: 10, key: '나사무소', name: '나사무소', text: '신규 거래처 2곳 계약' }, { month: 10, key: '다사무소', name: '다사무소', text: '10월 15일부 거래처 1곳 계약 종료' }]), r.notes);
+  r = await call('getPerformanceTest', 'lead@x', { view: 'input', month: 10 });
+  t('B35 입력 화면 다시 읽기: 비고 보임', r.rows[0].note === '신규 거래처 2곳 계약' && r.rows[1].note === '10월 15일부 거래처 1곳 계약 종료');
+  r = await call('getPerformanceTest', 'ex@x', { view: 'team', team: '가팀' });
+  t('B36 임원 팀 보기에도 비고', r.ok && (r.notes || []).length === 2);
   Date.now = realNow;
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);

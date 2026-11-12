@@ -710,6 +710,15 @@ font-size: 13px; padding: 2px 4px; display: none;
 .pf-hint { background: #fff6e0; color: #8a5a00; padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-size: 12.5px; }
 .pf-in { width: 100%; min-width: 90px; border: 1px solid #d6d0e6; border-radius: 5px; padding: 5px 7px; text-align: right; font-size: 13px; font-family: inherit; }
 .pf-in.pasted { background: #fff6c8; }
+.pf-in.pf-note { min-width: 200px; text-align: left; }
+.pf-notes { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 14px; margin: 0; list-style: none; font-size: 13px; }
+.pf-notes li { padding: 7px 0; border-bottom: 1px solid #eeece6; display: flex; gap: 10px; }
+.pf-notes li[hidden] { display: none; }
+.pf-notes li:nth-child(3):not(:last-child):has(+ li[hidden]) { border-bottom: 0; }
+.pf-notes li:last-child { border-bottom: 0; }
+.pf-notes .pf-nm { flex: 0 0 auto; min-width: 92px; color: var(--accent); font-weight: 600; }
+.pf-notes .pf-nt { white-space: pre-wrap; word-break: break-all; }
+.pf-notes-more { display: block; width: 100%; margin-top: 6px; padding: 7px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--accent); font-size: 12.5px; font-family: inherit; cursor: pointer; }
 .pf-in:disabled { background: var(--bg); color: var(--text-muted); }
 .pf-int tr.pf-off td { color: #9a978f; }
 .pf-int tr.pf-costrow td { background: #faf9f6; }
@@ -4739,6 +4748,7 @@ h += `<div class="pf-teamop"><div><div class="pf-mut">팀 경상이익 (이익 �
 <div><div class="pf-mut">② 점수</div><b>${perfPts_(ts.pts)} / ${perfPts_(perfMax_(res, 'teamOp'))}</b> <small class="pf-mut">${ts.prevOp <= 0 ? '전년이 0 이하 → 당해가 크면 최고 등급' : '성장률 ' + perfPct_(ts.ratio)}</small></div></div>`;
 }
 h += `<h4 class="pf-h4">${teamView || lead ? '팀 점수' : '우리 팀 점수'}</h4>` + perfScoreTable_(res) + perfCards_(res);
+h += perfNotesHtml_(res); // 3-다: 마감한 달 비고(최근 3개 + 더보기)
 if (res.showNumbers) h += perfNumberTables_(res, teamView || lead);
 h += `<p class="cc-note">점수는 성과평가(60%)만입니다. 최종 평가는 역량평가와 함께 팀장이 합니다. <span class="pf-desk">점수 칸에 마우스를 올리면 등급이 보여요.</span><span class="pf-mob">카드를 누르면 항목별 점수가 보여요.</span></p>`;
 root.innerHTML = `<div class="pf-wrap">${h}</div>`;
@@ -4759,7 +4769,9 @@ const PERF_SAVE_ERR_ = {
   NO_CLOSE_FOR_BASELINE: '전년 기준 실적은 마감이 없어요.', UNKNOWN_UNIT: '목록에 없는 사무소·팀원이 있어요. 화면을 새로 열어 주세요.', DUPLICATE_UNIT: '같은 줄이 두 번 들어갔어요. 화면을 새로 열어 주세요.',
   NOTHING_TO_SAVE: '바뀐 값이 없어요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '같은 요청을 처리하는 중이에요. 잠시 후 화면을 새로 열어 확인해 주세요.',
   PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 값을 확인해 주세요.', BAD_OFFICE_NAME: '사무소 이름은 1~10자, 쉼표 없이 적어 주세요.', NOT_OFFICE_TEAM: '사무소 단위 팀만 팀 설정이 있어요.',
-  YEAR_CLOSED: '이 해는 입력 기간이 끝나 저장할 수 없어요.', BAD_YEAR: '고른 연도를 열 수 없어요. 화면을 새로 열어 주세요.', BAD_MONTH: '달을 다시 골라 주세요.'
+  YEAR_CLOSED: '이 해는 입력 기간이 끝나 저장할 수 없어요.', BAD_YEAR: '고른 연도를 열 수 없어요. 화면을 새로 열어 주세요.', BAD_MONTH: '달을 다시 골라 주세요.',
+  NOTE_TOO_LONG: '비고는 200자까지 적을 수 있어요.', BAD_NOTE: '비고를 다시 적어 주세요.', NOTE_NO_ROW: '실적 줄이 없는 칸에는 비고를 적을 수 없어요. 화면을 새로 열어 주세요.',
+  MONTH_NOT_CLOSED: '마감 전인 달이에요. 화면을 새로 열어 [저장]으로 저장해 주세요.', NO_NOTE_FOR_BASELINE: '전년 기준 실적에는 비고를 적지 않아요.'
 };
 function perfSaveErrText_(res) {
   if (!res) return '응답을 받지 못했어요. 저장됐을 수도 있으니 화면을 새로 열어 확인해 주세요.';
@@ -4810,9 +4822,9 @@ async function loadPerfInput_(year, month) {
   const vals = {}, orig = {};
   (res.rows || []).forEach(function (r) {
     vals[r.key] = { sales: r.sales === null ? '' : String(r.sales), profit: r.profit === null ? '' : String(r.profit),
-      heads: res.mode === '사무소' ? (r.heads === null ? (r.saved ? '' : String(r.defaultHeads || 0)) : String(r.heads)) : '', work: res.mode === '개인' ? !!r.work : true };
+      heads: res.mode === '사무소' ? (r.heads === null ? (r.saved ? '' : String(r.defaultHeads || 0)) : String(r.heads)) : '', work: res.mode === '개인' ? !!r.work : true, note: r.note || '' };
     // 처음 값 = 화면에 처음 보이는 값(사무소 인원 기본값 포함) — 아무것도 안 고치면 '저장할 것 없음'. 매출·이익을 적으면 그 줄에 인원 기본값도 함께 저장된다
-    orig[r.key] = { sales: vals[r.key].sales, profit: vals[r.key].profit, heads: vals[r.key].heads, work: vals[r.key].work }; // 개인 근무도 처음 보이는 체크 기준 — 숫자를 적거나 체크를 바꾼 줄만 저장
+    orig[r.key] = { sales: vals[r.key].sales, profit: vals[r.key].profit, heads: vals[r.key].heads, work: vals[r.key].work, note: vals[r.key].note }; // 개인 근무도 처음 보이는 체크 기준 — 숫자를 적거나 체크를 바꾼 줄만 저장
   });
   const keepMsg = perfIn_ && perfIn_.keepMsg ? perfIn_.msg : null;
   perfIn_ = { res: res, year: res.year, month: res.month, vals: vals, orig: orig, cost: res.teamCost === null ? '' : String(res.teamCost), costOrig: res.teamCost === null ? '' : String(res.teamCost), pasted: {}, msg: keepMsg, busy: false, confirmReopen: false };
@@ -4824,7 +4836,7 @@ function perfInChanged_() {
   const r = perfIn_.res, out = [];
   (r.rows || []).forEach(function (row) {
     const v = perfIn_.vals[row.key], o = perfIn_.orig[row.key];
-    const changed = v.sales !== o.sales || v.profit !== o.profit || (r.mode === '사무소' && v.heads !== o.heads) || (r.mode === '개인' && v.work !== o.work);
+    const changed = v.sales !== o.sales || v.profit !== o.profit || (r.mode === '사무소' && v.heads !== o.heads) || (r.mode === '개인' && v.work !== o.work) || v.note !== o.note;
     if (changed) out.push(row);
   });
   return out;
@@ -4848,15 +4860,19 @@ function perfInRender_() {
     const pasted = perfIn_.pasted[key + '|' + f] ? ' pasted' : '';
     return `<input class="pf-in${pasted}" inputmode="numeric" data-k="${escapeHtml(key)}" data-f="${f}" value="${escapeHtml(v)}" ${dis} ${ok === false ? 'disabled' : ''} oninput="perfInEdit_(this)" onpaste="perfInPaste_(event, this)">`;
   };
+  // 비고: 마감한 달에도 고칠 수 있다(숫자만 잠김). 개인 팀에서 근무를 끈 줄은 비고도 끔
+  const noteInp = function (key, v, ok) {
+    return `<input class="pf-in pf-note" maxlength="200" placeholder="(선택)" aria-label="비고" data-k="${escapeHtml(key)}" data-f="note" value="${escapeHtml(v)}" ${perfIn_.busy || ok === false ? 'disabled' : ''} oninput="perfInEdit_(this)">`;
+  };
   const rowsHtml = (r.rows || []).map(function (row) {
     const v = perfIn_.vals[row.key];
     const sub = off ? `<small class="pf-mut">${row.members ? '팀원 ' + row.members + '명' : '현재 팀원 없음'}</small>` : (row.active ? '' : '<span class="pf-chipm gray">퇴사</span>');
     const work = off ? '' : `<td class="c"><input type="checkbox" ${v.work ? 'checked' : ''} ${dis} onchange="perfInWork_('${escapeHtml(row.key).replace(/'/g, '&#39;')}', this.checked)"></td>`;
     const ok = off || v.work;
-    return `<tr${!ok ? ' class="pf-off"' : ''}><td class="l">${escapeHtml(row.name)} ${sub}</td>${work}<td>${inp(row.key, 'sales', v.sales, ok)}</td><td>${inp(row.key, 'profit', v.profit, ok)}</td>${off ? `<td>${inp(row.key, 'heads', v.heads)}</td>` : ''}</tr>`;
+    return `<tr${!ok ? ' class="pf-off"' : ''}><td class="l">${escapeHtml(row.name)} ${sub}</td>${work}<td>${inp(row.key, 'sales', v.sales, ok)}</td><td>${inp(row.key, 'profit', v.profit, ok)}</td>${off ? `<td>${inp(row.key, 'heads', v.heads)}</td>` : ''}${base ? '' : `<td class="l">${noteInp(row.key, v.note, ok)}</td>`}</tr>`;
   }).join('');
-  const costRow = `<tr class="pf-costrow"><td class="l"><b>팀 총비용</b></td>${off ? '' : '<td></td>'}<td>${inp('__cost', 'cost', perfIn_.cost)}</td><td class="c pf-mut">—</td>${off ? '<td class="c pf-mut">—</td>' : ''}</tr>`;
-  const head = `<tr><th>${off ? '사무소' : '팀원'}</th>${off ? '' : '<th>근무</th>'}<th>매출액 (천원)</th><th>이익 (천원)</th>${off ? '<th>인원 (명)</th>' : ''}</tr>`;
+  const costRow = `<tr class="pf-costrow"><td class="l"><b>팀 총비용</b></td>${off ? '' : '<td></td>'}<td>${inp('__cost', 'cost', perfIn_.cost)}</td><td class="c pf-mut">—</td>${off ? '<td class="c pf-mut">—</td>' : ''}${base ? '' : '<td></td>'}</tr>`;
+  const head = `<tr><th>${off ? '사무소' : '팀원'}</th>${off ? '' : '<th>근무</th>'}<th>매출액 (천원)</th><th>이익 (천원)</th>${off ? '<th>인원 (명)</th>' : ''}${base ? '' : '<th>비고 <small>(마감 후 팀 전체 공개)</small></th>'}</tr>`;
   const nc = r.nextClose;
   const dirty = perfInDirty_();
   let closeBtn = '';
@@ -4873,13 +4889,13 @@ function perfInRender_() {
   if (!base && nc && r.month === nc.month) status.push((nc.missing || []).length ? '마감 전 빈칸 ' + nc.missing.length + '개(' + escapeHtml(nc.missing.slice(0, 4).join(', ')) + (nc.missing.length > 4 ? ' 외' : '') + ')' : '모든 칸 입력됨 · 마감하면 팀원에게 1~' + nc.month + '월 누계 점수가 공개돼요');
   if (dirty) status.push('<b>저장하지 않은 값이 있어요</b>');
   const band = base ? `<div class="cy-band cy-blue">📌 ${r.year}년은 <b>전년 기준 실적</b>이에요(올해와 비교하는 값). 마감 없이 저장만 해요.</div>`
-    : closed ? `<div class="cy-band cy-grey">🔒 ${r.month}월은 마감됐어요. 고치려면 마지막 마감 달부터 한 달씩 [마감 풀기] → 고치기 → 다시 마감 (기록이 남아요).</div>` : '';
+    : closed ? `<div class="cy-band cy-grey">🔒 ${r.month}월은 마감됐어요. 숫자를 고치려면 마지막 마감 달부터 한 달씩 [마감 풀기] → 고치기 → 다시 마감 (기록이 남아요). <b>비고는 마감 후에도 바로 고칠 수 있어요.</b></div>` : '';
   const msg = perfIn_.msg ? `<div class="cy-band ${perfIn_.msg.ok ? 'pf-green' : perfIn_.msg.warn ? 'cy-yellow' : 'cy-red'}">${escapeHtml(perfIn_.msg.text)}</div>` : '';
   el.innerHTML = `<div class="pf-inrow">${yearSel}<div class="pf-months">${months.join('')}</div></div>
 ${band}${msg}
 <div class="pf-hint">💡 칸을 눌러 직접 입력하거나, 엑셀에 정리한 실적을 복사해 표의 첫 칸(${escapeHtml(((r.rows || [])[0] || {}).name || '')} 매출액)에 붙여넣으면 한 번에 채워져요. 붙여넣은 칸은 노란색 — 확인 후 저장하세요.</div>
 <div class="pf-tablewrap"><table class="pf-t pf-int"><thead>${head}</thead><tbody>${rowsHtml}${costRow}</tbody></table></div>
-<div class="pf-btns"><button type="button" class="pf-btn pri" ${closed || perfIn_.busy || !dirty ? 'disabled' : ''} onclick="perfInSave_()">${perfIn_.busy ? '처리 중...' : '저장'}</button>${closeBtn}${reopenBtn}<span class="pf-mut" style="font-size:12px;">${status.join(' · ')}</span></div>
+<div class="pf-btns"><button type="button" class="pf-btn pri" ${perfIn_.busy || !dirty ? 'disabled' : ''} onclick="perfInSave_()">${perfIn_.busy ? '처리 중...' : closed ? '비고 저장' : '저장'}</button>${closeBtn}${reopenBtn}<span class="pf-mut" style="font-size:12px;">${status.join(' · ')}</span></div>
 <p class="cc-note">${off ? '인원 칸 기본값 = 그 사무소 활성 팀원 수(팀 설정의 사무소 기준). 그 달에 이동이 있었으면 고쳐 주세요.' : '근무 = 그 달 우리 팀에서 일했는지. 체크를 끄고 저장하면 그 사람 그 달 줄이 비워져요. 이미 저장한 달은 줄이 있는 팀원만 체크돼요.'}
  금액은 천원 단위 정수예요. 엑셀에서 옮긴 소수 값은 고치지 않으면 그대로 둬요.</p>`;
 }
@@ -4890,7 +4906,7 @@ function perfInPickMonth_(m) {
 }
 function perfInSet_(key, f, v) { if (key === '__cost') perfIn_.cost = v; else perfIn_.vals[key][f] = v; }
 function perfInEdit_(el) {
-  perfInSet_(el.dataset.k, el.dataset.f, el.value.trim());
+  perfInSet_(el.dataset.k, el.dataset.f, el.dataset.f === 'note' ? el.value : el.value.trim()); // 비고는 입력 중 띄어쓰기가 지워지지 않게 그대로(저장할 때 앞뒤 공백 정리)
   delete perfIn_.pasted[el.dataset.k + '|' + el.dataset.f];
   el.classList.remove('pasted');
   perfIn_.msg = null; perfIn_.leaveOk = false; perfIn_.leaveMonthOk = false;
@@ -4934,10 +4950,23 @@ function perfInNum_(s) { const t = String(s || '').replace(/,/g, '').trim(); ret
 async function perfInSave_() {
   const r = perfIn_.res, off = r.mode === '사무소';
   const rows = perfInChanged_();
+  // 3-다: 마감한 달 = 비고만 저장(숫자 칸은 잠겨 있어 바뀐 것은 비고뿐) → saveNote
+  if (perfInClosed_()) {
+    const notes = rows.map(function (row) { return { key: row.key, note: perfIn_.vals[row.key].note.trim() }; });
+    perfIn_.busy = true; perfIn_.msg = null; perfInRender_();
+    const nres = await perfSaveFetch_({ action: 'saveNote', year: r.year, month: r.month, entries: notes });
+    perfIn_.busy = false;
+    if (!nres || !nres.ok) { perfIn_.msg = { text: perfSaveErrText_(nres) }; perfInRender_(); return; }
+    perfRes_ = null;
+    perfIn_.keepMsg = true; perfIn_.msg = { ok: true, text: r.month + '월 비고 ' + (nres.rows || 0) + '줄 저장했어요.' };
+    loadPerfInput_(r.year, r.month);
+    return;
+  }
   const entries = rows.map(function (row) {
     const v = perfIn_.vals[row.key];
     const e = { key: row.key, sales: perfInNum_(v.sales), profit: perfInNum_(v.profit) };
     if (off) e.heads = perfInNum_(v.heads); else e.work = v.work;
+    if (r.kind !== 'baseline' && v.note !== perfIn_.orig[row.key].note) e.note = v.note.trim(); // 비고는 바뀐 줄만 보냄(안 보내면 서버가 있던 비고를 그대로 둠)
     return e;
   });
   const body = { action: 'saveMonth', year: r.year, month: r.month, entries: entries };
@@ -5061,6 +5090,25 @@ const score = me.noPrev
 : `<div><div class="pf-mut">합계</div><div class="pf-big2">${perfPts_(me.total)}<span> / ${perfPts_(res.maxPoints)}</span></div>${deltaTxt}</div>
 <div><div class="pf-mut">순위</div><div class="pf-big2">${me.rank || '—'}<span> / ${res.rankCount}</span></div></div>`;
 return `<div class="pf-mycard"><div><div class="pf-mut">${unitWord}</div><div class="pf-big">${escapeHtml(me.name)}</div>${sub ? `<div class="pf-mut">${sub}</div>` : ''}</div>${score}<div class="pf-bars">${bars}</div></div>`;
+}
+// 비고(마감한 달만, 비고가 있는 줄만, 최신 달 먼저 — 서버가 걸러서 보냄). 없으면 구역 자체를 그리지 않는다
+// 처음엔 최근 3개만, 나머지는 [더보기]로 펼친다
+const PERF_NOTES_SHOW = 3;
+function perfNotesHtml_(res) {
+  const ns = res.notes || [];
+  if (!ns.length) return '';
+  const li = function (n, i) {
+    return `<li${i >= PERF_NOTES_SHOW ? ' class="pf-more" hidden' : ''}><span class="pf-nm">${n.month}월 · ${escapeHtml(n.name)}</span><span class="pf-nt">${escapeHtml(n.text)}</span></li>`;
+  };
+  const rest = ns.length - PERF_NOTES_SHOW;
+  const more = rest > 0 ? `<button type="button" class="pf-notes-more" data-n="${rest}" onclick="perfNotesToggle_(this)">더보기 (${rest}개) ▾</button>` : '';
+  return `<h4 class="pf-h4">비고 <small class="pf-mut">(1~${res.closeMonth}월 · ${ns.length}개)</small></h4><ul class="pf-notes">${ns.map(li).join('')}</ul>${more}`;
+}
+function perfNotesToggle_(btn) {
+  const open = btn.dataset.open !== '1';
+  btn.dataset.open = open ? '1' : '';
+  btn.previousElementSibling.querySelectorAll('li.pf-more').forEach(function (el) { el.hidden = !open; });
+  btn.textContent = open ? '접기 ▴' : '더보기 (' + btn.dataset.n + '개) ▾';
 }
 function perfScoreTable_(res) {
 const g = ['sales', 'profit', 'margin', 'perHead'];
