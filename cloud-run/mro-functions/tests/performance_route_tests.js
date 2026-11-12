@@ -103,8 +103,10 @@ const has = function (o, list) { const s = JSON.stringify(o); return list.filter
   t('R20 criteria 응답에 실적 숫자 없음', has(r, GA.concat(NA)).length === 0);
   r = await call('m1@x', { view: 'ping' });
   t('R21 ping은 그대로 관리자 전용', r.error === 'FORBIDDEN');
+  r = await call('m1@x', { view: 'nope' });
+  t('R22 모르는 view → NOT_IMPLEMENTED', r.error === 'NOT_IMPLEMENTED');
   r = await call('m1@x', { view: 'input' });
-  t('R22 아직 없는 view → NOT_IMPLEMENTED', r.error === 'NOT_IMPLEMENTED');
+  t('R23 3-가 view=input: 팀원 → FORBIDDEN', r.ok === false && r.error === 'FORBIDDEN');
   console.log('pass ' + pass + ' / fail ' + fail);
   process.exit(fail ? 1 : 0);
 })().catch(function (e) { console.log('ERROR ' + (e && e.stack)); process.exit(1); });

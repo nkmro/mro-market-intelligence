@@ -4673,6 +4673,11 @@ exports.getPerformanceTest = async (req, res) => {
       await performanceView_(req, res, auth, t0, timings, view, year);
       return;
     }
+    // 3-가: 팀장 [실적 입력] 탭 — 아래 performanceInput_ (팀장·관리자만)
+    if (view === 'input') {
+      await performanceInput_(req, res, auth, t0, timings, year);
+      return;
+    }
     if (view !== 'ping') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
@@ -4831,3 +4836,204 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
   const extra = view === 'team' ? { teams: teams.map(function (t) { return { team: t, mode: performance.unitModeOf(modes, t), closeMonth: performance.readClose(closeRows, t, y).month }; }) } : {};
   res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings }, out, extra, { ok: out.ok !== false }));
 }
+
+// =====================================================================
+// 성과평가 3-가: 실적 입력·월 마감·팀 설정. 설계서 v0.7 3-3(쓰기 권한)·4-2·4-3·6-3(쓰기 흐름).
+// 2026-11-12 재홍님 결정: ① 마감·풀기는 한 달씩 ② 개인 '근무' 해제 = 칸 비우기 ③ 전년도 파일이 없으면 그해 파일에 전년 실적 입력(마감 없음)
+//   ④ 올해는 이번 달까지만 입력. 계산·검사는 lib/performance.js(planMonthWrite·closeMissing·planClose·planOffices).
+// 쓰기 API: values:batchUpdate(RAW) — 역량평가 2-가부터 쓰는 것과 같음(4051행 주석에 공식 문서 확인). 새 API 없음.
+// 잠금 writeLocks/performanceEval(설계서 5-4) + 중복 방지 writeIdempotency. 줄 번호는 화면에서 받지 않고 잠금 안에서 탭을 다시 읽어 찾는다.
+// =====================================================================
+const PERF_LOCK_NAME = 'performanceEval';
+const PERF_LOCK_WAIT_MS = 10000;
+const PERF_LOCK_STALE_MS = 60000;
+const PERF_LOCK_POLL_MS = 200;
+
+// 쓸 해와 파일. 올해 = 그해 파일(이번 달까지). 작년 = 작년 파일이 있으면 1월 유예 기간만(competencyYear_, 12월까지),
+// 작년 파일이 없으면(2026 → 2025) 올해 파일에 연도 작년으로(baseline — 마감 없음, 결정 ③). 그 밖은 YEAR_CLOSED·BAD_YEAR.
+async function perfWriteYear_(client, settingRows, reqYear, nowMs) {
+  const thisYear = competency.seoulYear(nowMs);
+  const y = (reqYear === undefined || reqYear === null || reqYear === '') ? thisYear : Number(reqYear);
+  if (!Number.isInteger(y) || y > thisYear) return { ok: false, error: 'BAD_YEAR', year: y };
+  if (y === thisYear) {
+    const fileId = competency.findFileId(settingRows, y);
+    if (!fileId) return { ok: false, error: 'PERF_SETTINGS_MISSING', year: y };
+    return { ok: true, year: y, fileId: fileId, kind: 'current', maxMonth: Number(competency.seoulIsoDate(nowMs).slice(5, 7)) };
+  }
+  if (y === thisYear - 1) {
+    if (!competency.findFileId(settingRows, y)) {
+      const fileId = competency.findFileId(settingRows, thisYear);
+      if (!fileId) return { ok: false, error: 'PERF_SETTINGS_MISSING', year: thisYear };
+      return { ok: true, year: y, fileId: fileId, kind: 'baseline', maxMonth: 12 };
+    }
+    const yr = await competencyYear_(client, settingRows, y, nowMs, true);
+    if (!yr.ok) return { ok: false, error: yr.error === 'COMPETENCY_SETTINGS_MISSING' ? 'PERF_SETTINGS_MISSING' : yr.error, year: y };
+    return { ok: true, year: y, fileId: yr.fileId, kind: 'grace', maxMonth: 12 };
+  }
+  return { ok: false, error: 'YEAR_CLOSED', year: y };
+}
+// 입력 화면 연도 칸: 올해 + (작년 파일이 없으면 작년 baseline, 있으면 1월 유예 중일 때만 작년)
+async function perfInputYears_(client, settingRows, nowMs) {
+  const thisYear = competency.seoulYear(nowMs);
+  const out = [{ year: thisYear, kind: 'current' }];
+  const prev = await perfWriteYear_(client, settingRows, thisYear - 1, nowMs);
+  if (prev.ok) out.push({ year: thisYear - 1, kind: prev.kind });
+  return out;
+}
+// 팀장 = 자기 팀, 관리자 = body.team(아는 팀이면) 아니면 자기 팀. 그 밖 FORBIDDEN. 팀장이 다른 팀을 보내면 FORBIDDEN_TEAM
+function perfLeadTeam_(viewer, users, isAdmin, reqTeam) {
+  if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
+  if (viewer.status !== '활성') return { ok: false, error: 'FORBIDDEN' };
+  const own = String(viewer.team || '').trim(), want = String(reqTeam || '').trim();
+  if (isAdmin) return { ok: true, team: want && performance.teamsOf(users).indexOf(want) >= 0 ? want : own };
+  if (viewer.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
+  if (want && want !== own) return { ok: false, error: 'FORBIDDEN_TEAM' };
+  return { ok: true, team: own };
+}
+function perfUsers_(values) {
+  return (values || []).filter(function (r) { return r && r[0]; }).map(function (r) {
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+  });
+}
+// 인사평가 파일: 인사평가설정 + 성과-월실적 A2:K + 성과-마감 A2:F (서식 없이, 1번)
+async function perfReadFile_(client, fileId) {
+  const vr = await batchGetValues(client, fileId, [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C',
+    competency.quoteTab(performance.TAB_MONTHLY) + '!A2:K',
+    competency.quoteTab(performance.TAB_CLOSE) + '!A2:F'].map(encodeURIComponent), { unformatted: true });
+  return { settings: (vr[0] && vr[0].values) || [], monthly: (vr[1] && vr[1].values) || [], close: (vr[2] && vr[2].values) || [] };
+}
+async function perfBatchWrite_(spreadsheetId, data) {
+  const wauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  const wclient = await wauth.getClient();
+  const resp = await wclient.request({
+    url: 'https://sheets.googleapis.com/v4/spreadsheets/' + spreadsheetId + '/values:batchUpdate',
+    method: 'POST',
+    data: { valueInputOption: 'RAW', data: data }
+  });
+  return Number(resp && resp.data && resp.data.totalUpdatedCells) || 0;
+}
+
+// getPerformanceTest view=input — 팀장 [실적 입력] 탭: 고른 해·달의 표 + 달마다 입력·마감 상태 + 마감 전 빈칸 목록
+async function performanceInput_(req, res, auth, t0, timings, year) {
+  const body = req.body || {};
+  const fail = function (error, extra) { res.status(200).json(Object.assign({ ok: false, serverMs: Date.now() - t0, timings, error: error }, extra || {})); };
+  const client = await getSheetsClient();
+  const m0 = Date.now();
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  timings.mroSheetMs = Date.now() - m0;
+  const users = perfUsers_(mro[0] && mro[0].values);
+  const me = String(auth.email || '').trim().toLowerCase();
+  const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === me; });
+  const lead = perfLeadTeam_(viewer, users, me === ADMIN_EMAIL, body.team);
+  if (!lead.ok) { fail(lead.error); return; }
+  const settingRows = (mro[1] && mro[1].values) || [];
+  const nowMs = Date.now();
+  const target = await perfWriteYear_(client, settingRows, year, nowMs);
+  if (!target.ok) { fail(target.error, { year: target.year }); return; }
+  let f;
+  const c0 = Date.now();
+  try { f = await perfReadFile_(client, target.fileId); } catch (e) {
+    fail('SHEET_ACCESS_FAILED', { httpStatus: (e && e.response && e.response.status) || (e && e.code) || null }); return;
+  }
+  timings.perfSheetMs = Date.now() - c0;
+  const mode = performance.unitModeOf(performance.readUnitModes(f.settings).modes, lead.team);
+  const close = target.kind === 'baseline' ? { month: null, closedAt: '' } : performance.readClose(f.close, lead.team, target.year);
+  const closeMonth = close.month || 0;
+  let month = Number(body.month);
+  if (!Number.isInteger(month) || month < 1 || month > target.maxMonth) month = target.kind === 'baseline' ? 1 : Math.min(target.maxMonth, closeMonth + 1);
+  const view = performance.inputView({ users: users, rows: f.monthly, team: lead.team, mode: mode, year: target.year, month: month });
+  const p = { rows: f.monthly, users: users, team: lead.team, mode: mode, year: target.year, month: closeMonth + 1 };
+  res.status(200).json(Object.assign({ ok: true, view: 'input', serverMs: Date.now() - t0, timings,
+    years: await perfInputYears_(client, settingRows, nowMs), kind: target.kind, maxMonth: target.maxMonth,
+    closeMonth: closeMonth, closedAt: close.closedAt,
+    nextClose: target.kind === 'baseline' || closeMonth >= target.maxMonth ? null : { month: closeMonth + 1, missing: performance.closeMissing(p) } }, view));
+}
+
+exports.savePerformanceTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const b = req.body || {};
+    const auth = await authenticateSession(firestore, b.sessionToken);
+    if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
+    const timings = Object.assign({}, auth.timings);
+    if (['saveMonth', 'close', 'reopen', 'saveOffices'].indexOf(b.action) < 0) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
+    }
+    if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
+    const result = await withIdempotency(firestore, b.idempotencyKey, 'performance_' + b.action, async function () {
+      const client = await getSheetsClient();
+      const m0 = Date.now();
+      const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+      timings.mroSheetMs = Date.now() - m0;
+      const users = perfUsers_(mro[0] && mro[0].values);
+      const me = String(auth.email || '').trim().toLowerCase();
+      const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === me; });
+      const lead = perfLeadTeam_(viewer, users, me === ADMIN_EMAIL, b.team);
+      if (!lead.ok) return lead;
+      const settingRows = (mro[1] && mro[1].values) || [];
+      const nowMs = Date.now();
+      // saveOffices는 그해(올해) 파일의 평가 단위만 확인하면 된다. 나머지는 고른 해의 파일.
+      const target = await perfWriteYear_(client, settingRows, b.action === 'saveOffices' ? undefined : b.year, nowMs);
+      if (!target.ok) return target;
+      const holderId = crypto.randomUUID();
+      const gotLock = await acquireLock(firestore, PERF_LOCK_NAME, holderId, { waitMs: PERF_LOCK_WAIT_MS, staleMs: PERF_LOCK_STALE_MS, pollMs: PERF_LOCK_POLL_MS });
+      if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+      try {
+        let f;
+        const c0 = Date.now();
+        try { f = await perfReadFile_(client, target.fileId); } catch (e) {
+          return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: (e && e.response && e.response.status) || (e && e.code) || null };
+        }
+        timings.perfSheetMs = Date.now() - c0;
+        const mode = performance.unitModeOf(performance.readUnitModes(f.settings).modes, lead.team);
+        const w0 = Date.now();
+        if (b.action === 'saveOffices') {
+          if (mode !== '사무소') return { ok: false, error: 'NOT_OFFICE_TEAM' };
+          // 잠금 안에서 사용자팀마스터를 다시 읽어 이메일로 줄을 찾는다(6-3) — J{줄} 한 칸씩만 쓴다
+          const fresh = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE]);
+          const plan = performance.planOffices({ userRows: (fresh[0] && fresh[0].values) || [], team: lead.team, changes: b.changes });
+          if (!plan.ok) return plan;
+          if (!plan.writes.length) return { ok: true, updatedCells: 0, changed: [] };
+          const n = await perfBatchWrite_(SPREADSHEET_ID, plan.writes.map(function (w) { return { range: competency.quoteTab(SHEET_USER_NAME) + '!J' + w.row, values: [[w.value]] }; }));
+          timings.writeMs = Date.now() - w0;
+          if (n !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, changed: plan.writes.map(function (w) { return { email: w.email, office: w.value }; }) };
+        }
+        const closeMonth = target.kind === 'baseline' ? 0 : (performance.readClose(f.close, lead.team, target.year).month || 0);
+        const month = Number(b.month);
+        if (b.action === 'saveMonth') {
+          if (!Number.isInteger(month) || month < 1 || month > target.maxMonth) return { ok: false, error: month > target.maxMonth ? 'MONTH_FUTURE' : 'BAD_MONTH' };
+          if (month <= closeMonth) return { ok: false, error: 'MONTH_CLOSED', closeMonth: closeMonth };
+          const plan = performance.planMonthWrite({ rows: f.monthly, users: users, team: lead.team, mode: mode, year: target.year, month: month,
+            entries: b.entries, teamCost: b.teamCost, who: me, nowMs: nowMs });
+          if (!plan.ok) return plan;
+          const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {
+            return { range: competency.quoteTab(performance.TAB_MONTHLY) + '!A' + w.row + ':K' + w.row, values: [w.values] };
+          }));
+          timings.writeMs = Date.now() - w0;
+          if (n !== plan.writes.length * performance.MONTHLY_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, rows: plan.writes.length };
+        }
+        // close / reopen (결정 ①: 한 달씩. baseline(전년 기준 실적)은 마감 없음)
+        if (target.kind === 'baseline') return { ok: false, error: 'NO_CLOSE_FOR_BASELINE' };
+        if (b.action === 'close') {
+          const missing = performance.closeMissing({ rows: f.monthly, users: users, team: lead.team, mode: mode, year: target.year, month: month });
+          if (month === closeMonth + 1 && missing.length) return { ok: false, error: 'MONTH_INCOMPLETE', missing: missing };
+        }
+        const plan = performance.planClose({ closeRows: f.close, team: lead.team, year: target.year, action: b.action, month: month, who: me, nowMs: nowMs, maxMonth: target.maxMonth });
+        if (!plan.ok) return plan;
+        const n = await perfBatchWrite_(target.fileId, [{ range: competency.quoteTab(performance.TAB_CLOSE) + '!A' + plan.write.row + ':F' + plan.write.row, values: [plan.write.values] }]);
+        timings.writeMs = Date.now() - w0;
+        if (n !== performance.CLOSE_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+        return { ok: true, updatedCells: n, closeMonth: plan.closeMonth };
+      } finally {
+        await releaseLock(firestore, PERF_LOCK_NAME, holderId);
+      }
+    });
+    res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+  } catch (err) {
+    res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};

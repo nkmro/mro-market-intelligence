@@ -1,6 +1,7 @@
 // cloud-run/mro-functions/lib/performance.js
 // 성과평가(60%) — 설계서 PERFORMANCE_EVAL_DESIGN_v1.md v0.7.
-// 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 1-다: 보기 응답(buildView). 모두 시트 접근 없음.
+// 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 1-다: 보기 응답(buildView).
+// 3-가: 입력 화면(inputView)·쓰기 계획(planMonthWrite·closeMissing·planClose·planOffices). 모두 시트 접근 없음.
 
 // 5-2절: 인사평가 연도 파일 안 탭 3개 (이름·머리글 고정)
 const TAB_MONTHLY = '성과-월실적';
@@ -352,9 +353,216 @@ function buildView(p) {
   return out;
 }
 
+// =====================================================================
+// 3-가: 실적 입력·월 마감·팀 설정 (설계서 v0.7 3-3 쓰기 권한·4-2 팀장 화면·4-3 월 마감·6-3 쓰기 흐름). 순수 함수만.
+// 시트 읽기·잠금·쓰기는 index.js savePerformanceTest. 쓰기 계획은 "몇 번째 줄에 무엇을" 목록으로만 만든다.
+// 2026-11-12 재홍님 결정: ① 마감·풀기는 한 달씩(다음 달만 마감, 마지막 마감 달만 풀기) ② 개인 '근무' 해제 = 그 줄 칸 비우기(행 삭제 없음)
+//   ③ 전년도 파일이 없으면(2026 → 2025) 그해 파일에 전년 실적 입력 허용(마감 없음) ④ 올해는 이번 달까지만 입력.
+// =====================================================================
+const MONTHLY_COLS = 11;   // 성과-월실적 A~K
+const CLOSE_COLS = 6;      // 성과-마감 A~F
+const OFFICE_NAME_MAX = 10;
+const INPUT_MAX = 1e12;    // 천원 단위 숫자 상한(오타 방지)
+
+// 서울 시각 'YYYY-MM-DD HH:mm'
+function seoulStamp(nowMs) {
+  const d = new Date((nowMs === undefined ? Date.now() : nowMs) + 9 * 3600 * 1000);
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes());
+}
+function lc(v) { return cell(v).toLowerCase(); }
+// 칸 값 → 숫자. 빈칸은 null, 숫자가 아니면 NaN
+function numOrNull(v) { const s = cell(v).replace(/,/g, ''); if (s === '') return null; const n = Number(s); return Number.isFinite(n) ? n : NaN; }
+
+// 성과-월실적 A2:K 값 배열 → 줄 번호(시트 행 번호, 2부터)와 함께. 완전히 빈 줄도 번호를 세어 둔다(다음 빈 줄 계산용)
+function indexRows(values) {
+  return (values || []).map(function (r, i) { return { row: i + 2, v: r || [] }; });
+}
+// 다음에 새 줄을 쓸 행 번호 = 값이 있는 마지막 줄 + 1 (중간 빈 줄은 다시 쓰지 않는다 — 비운 줄을 재사용하면 기록이 헷갈림)
+function nextFreeRow(indexed) {
+  let last = 1;
+  indexed.forEach(function (x) { if (x.v.some(function (c) { return cell(c) !== ''; })) last = x.row; });
+  return last + 1;
+}
+function rowKey(year, month, team, kind, unit) { return [Number(year), Number(month), cell(team), cell(kind), lc(unit)].join('|'); }
+function keyOfRow(v) { return rowKey(v[0], v[1], v[2], v[3], v[4]); }
+
+// 팀의 평가 단위 목록(입력 표 행). 사무소: 활성 일반·담당의 J열 사무소 + 그 팀 실적 줄에 있는 사무소(가나다).
+// 개인: 그 팀 일반·담당 전원(퇴사자 포함 — 지난달 입력용) + 실적 줄에만 있는 이메일. active = 지금 활성인지
+function teamUnits(users, rows, team, mode) {
+  const members = (users || []).filter(function (u) { return cell(u.team) === team && MEMBER_ROLES.indexOf(cell(u.role)) >= 0; });
+  const out = {};
+  if (mode === '사무소') {
+    members.filter(function (u) { return cell(u.status) === '활성' && cell(u.office); }).forEach(function (u) {
+      const k = cell(u.office); out[k] = out[k] || { key: k, name: k, members: 0 }; out[k].members++;
+    });
+    (rows || []).forEach(function (r) { if (cell(r[2]) === team && cell(r[3]) === '사무소' && cell(r[4]) && !out[cell(r[4])]) out[cell(r[4])] = { key: cell(r[4]), name: cell(r[4]), members: 0 }; });
+    return Object.keys(out).map(function (k) { return out[k]; }).sort(function (a, b) { return a.key.localeCompare(b.key, 'ko'); });
+  }
+  members.forEach(function (u) { const k = lc(u.email); if (k) out[k] = { key: k, name: cell(u.name), email: cell(u.email), active: cell(u.status) === '활성' }; });
+  (rows || []).forEach(function (r) { if (cell(r[2]) === team && cell(r[3]) === '개인' && lc(r[4]) && !out[lc(r[4])]) out[lc(r[4])] = { key: lc(r[4]), name: cell(r[5]) || cell(r[4]), email: cell(r[4]), active: false }; });
+  return Object.keys(out).map(function (k) { return out[k]; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+}
+
+// 입력 화면용: 한 달 표(값이 있으면 시트 값, 없으면 기본값) + 달마다 입력 여부
+function inputView(p) { // p = { users, rows(A2:K), team, mode, year, month }
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
+  const units = teamUnits(p.users, p.rows, team, mode);
+  const byKey = {}; let last = null;
+  (p.rows || []).forEach(function (r) {
+    if (Number(r[0]) !== y || cell(r[2]) !== team) return;
+    byKey[keyOfRow(r)] = r;
+    if (Number(r[1]) === m && cell(r[10]) && (!last || cell(r[10]) > last.at)) last = { at: cell(r[10]), by: cell(r[9]) };
+  });
+  const val = function (v) { const n = numOrNull(v); return n === null || isNaN(n) ? null : n; };
+  // 개인 '근무' 기본값: 그 달을 한 번도 저장하지 않았으면 활성 팀원 = 체크. 한 번이라도 저장했으면(팀비용이나 누구 줄이든 있음)
+  // 줄이 있는 사람만 체크 — 근무 해제로 줄을 비운 사람이 다시 열었을 때 체크로 돌아가지 않게(3-가 커밋 전 확인 1, 결정 ② 보완)
+  const monthSaved = !!byKey[rowKey(y, m, team, '팀비용', '')] || units.some(function (u) { return byKey[rowKey(y, m, team, mode, u.key)]; });
+  const rowsOut = units.map(function (u) {
+    const r = byKey[rowKey(y, m, team, mode, u.key)];
+    const o = { key: u.key, name: u.name, saved: !!r, sales: r ? val(r[6]) : null, profit: r ? val(r[7]) : null };
+    if (mode === '사무소') { o.heads = r ? val(r[8]) : null; o.defaultHeads = u.members; o.members = u.members; }
+    else { o.work = r ? true : (monthSaved ? false : u.active); o.active = u.active; }
+    return o;
+  });
+  const cost = byKey[rowKey(y, m, team, '팀비용', '')];
+  const entered = [];
+  for (let mm = 1; mm <= 12; mm++) if (byKey[rowKey(y, mm, team, '팀비용', '')] || units.some(function (u) { return byKey[rowKey(y, mm, team, mode, u.key)]; })) entered.push(mm);
+  return { team: team, mode: mode, year: y, month: m, rows: rowsOut, teamCost: cost ? val(cost[7]) : null, entered: entered, lastSaved: last, monthSaved: monthSaved };
+}
+
+// 저장할 값 검사. 사무소: { key, sales, profit, heads } / 개인: { key, work, sales, profit }. 빈칸(null) 허용 — 마감 때 다시 검사
+function checkEntry(e, mode) {
+  const bad = [];
+  const n = function (v) { return v === null || v === undefined || v === '' ? null : Number(v); };
+  const s = n(e.sales), pr = n(e.profit), h = n(e.heads);
+  if (s !== null && !(Number.isInteger(s) && s >= 0 && s < INPUT_MAX)) bad.push('sales');
+  if (pr !== null && !(Number.isInteger(pr) && Math.abs(pr) < INPUT_MAX)) bad.push('profit');
+  if (mode === '사무소' && h !== null && !(Number.isInteger(h) && h >= 0 && h <= 999)) bad.push('heads');
+  return { sales: s, profit: pr, heads: h, bad: bad };
+}
+
+// 한 달 저장 계획. p = { rows(A2:K), users, team, mode, year, month, entries, teamCost, who(email), nowMs }
+// 반환 { ok, writes:[{ row, values[11] }], error?, field? }. 같은 (연도·월·팀·단위구분·단위) 줄이 있으면 그 줄을 고치고, 없으면 마지막 줄 다음에 새로 쓴다.
+// 개인 work:false = 줄이 있으면 11칸을 비움(줄 삭제 없음, 결정 ②), 없으면 아무것도 안 함.
+function planMonthWrite(p) {
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
+  if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'BAD_MONTH' };
+  const units = teamUnits(p.users, p.rows, team, mode);
+  const unitByKey = {}; units.forEach(function (u) { unitByKey[u.key] = u; });
+  const seen = {};
+  for (let i = 0; i < (p.entries || []).length; i++) {
+    const e = p.entries[i], k = mode === '사무소' ? cell(e && e.key) : lc(e && e.key);
+    if (!k || !unitByKey[k]) return { ok: false, error: 'UNKNOWN_UNIT', field: cell(e && e.key) };
+    if (seen[k]) return { ok: false, error: 'DUPLICATE_UNIT', field: k };
+    seen[k] = true;
+    const c = checkEntry(e, mode);
+    if (c.bad.length) return { ok: false, error: 'BAD_NUMBER', field: k + ':' + c.bad.join(',') };
+  }
+  const cost = p.teamCost === null || p.teamCost === undefined || p.teamCost === '' ? null : Number(p.teamCost);
+  if (cost !== null && !(Number.isInteger(cost) && cost >= 0 && cost < INPUT_MAX)) return { ok: false, error: 'BAD_NUMBER', field: '팀비용' };
+
+  const indexed = indexRows(p.rows);
+  const found = {};
+  indexed.forEach(function (x) { if (Number(x.v[0]) === y && Number(x.v[1]) === m && cell(x.v[2]) === team) found[keyOfRow(x.v)] = x.row; });
+  let next = nextFreeRow(indexed);
+  const stamp = seoulStamp(p.nowMs), who = cell(p.who);
+  const blank = function (v) { return v === null || v === undefined ? '' : v; };
+  const writes = [];
+  (p.entries || []).forEach(function (e) {
+    const k = mode === '사무소' ? cell(e.key) : lc(e.key), u = unitByKey[k];
+    const at = found[rowKey(y, m, team, mode, k)];
+    if (mode === '개인' && e.work === false) { if (at) writes.push({ row: at, values: new Array(MONTHLY_COLS).fill('') }); return; }
+    const c = checkEntry(e, mode);
+    const vals = [y, m, team, mode, mode === '사무소' ? k : (u.email || k), u.name, blank(c.sales), blank(c.profit), mode === '사무소' ? blank(c.heads) : 1, who, stamp];
+    writes.push({ row: at || next++, values: vals });
+  });
+  // 팀비용: 요청에 teamCost가 없으면(undefined) 그 줄을 건드리지 않는다 — 일부 단위만 저장할 때 비용이 지워지지 않게.
+  // null·빈칸을 보내면 '지움'(줄이 있으면 이익 칸을 비움).
+  if (p.teamCost !== undefined && (cost !== null || found[rowKey(y, m, team, '팀비용', '')])) {
+    const at = found[rowKey(y, m, team, '팀비용', '')];
+    writes.push({ row: at || next++, values: [y, m, team, '팀비용', '', '', '', blank(cost), '', who, stamp] });
+  }
+  if (!writes.length) return { ok: false, error: 'NOTHING_TO_SAVE' };
+  return { ok: true, writes: writes };
+}
+
+// 마감 전 빈칸 검사(4-2 [N월 마감]). 사무소: 활성 팀원이 있는 사무소마다 매출·이익·인원 + 팀 총비용.
+// 개인: 그 달 저장된 팀원 줄이 1개 이상, 각 줄 매출·이익 + 팀 총비용. 반환 missing = ['포항 매출액', '팀 총비용', ...]
+function closeMissing(p) { // p = { rows, users, team, mode, year, month }
+  const team = cell(p.team), mode = p.mode === '사무소' ? '사무소' : '개인', y = Number(p.year), m = Number(p.month);
+  const got = {};
+  (p.rows || []).forEach(function (r) { if (Number(r[0]) === y && Number(r[1]) === m && cell(r[2]) === team) got[keyOfRow(r)] = r; });
+  const has = function (v) { const n = numOrNull(v); return n !== null && !isNaN(n); };
+  const missing = [];
+  if (mode === '사무소') {
+    teamUnits(p.users, p.rows, team, mode).filter(function (u) { return u.members > 0; }).forEach(function (u) {
+      const r = got[rowKey(y, m, team, mode, u.key)];
+      if (!r || !has(r[6])) missing.push(u.name + ' 매출액');
+      if (!r || !has(r[7])) missing.push(u.name + ' 이익');
+      if (!r || !has(r[8])) missing.push(u.name + ' 인원');
+    });
+  } else {
+    const people = Object.keys(got).filter(function (k) { return cell(got[k][3]) === '개인'; });
+    if (!people.length) missing.push('근무한 팀원 줄(저장 안 됨)');
+    people.forEach(function (k) {
+      const r = got[k];
+      if (!has(r[6])) missing.push((cell(r[5]) || cell(r[4])) + ' 매출액');
+      if (!has(r[7])) missing.push((cell(r[5]) || cell(r[4])) + ' 이익');
+    });
+  }
+  const c = got[rowKey(y, m, team, '팀비용', '')];
+  if (!c || !has(c[7])) missing.push('팀 총비용');
+  return missing;
+}
+
+// 마감·풀기 계획(결정 ①: 한 달씩). closeRows = 성과-마감 A2:F, action 'close' | 'reopen', month = 화면이 보낸 달(맞는지 확인용)
+// 반환 { ok, write:{ row, values[6] }, closeMonth(바뀐 뒤) } 또는 { ok:false, error }
+function planClose(p) { // p = { closeRows, team, year, action, month, who, nowMs, maxMonth }
+  const team = cell(p.team), y = Number(p.year);
+  const indexed = indexRows(p.closeRows);
+  let hit = null;
+  indexed.forEach(function (x) { if (Number(x.v[0]) === y && cell(x.v[1]) === team) hit = x; });
+  const curM = hit ? Number(hit.v[2]) : 0;
+  const cur = Number.isInteger(curM) && curM >= 0 && curM <= 12 ? curM : 0;
+  const m = Number(p.month), stamp = seoulStamp(p.nowMs), who = cell(p.who);
+  const log = hit ? cell(hit.v[5]) : '';
+  let values;
+  if (p.action === 'close') {
+    if (m !== cur + 1) return { ok: false, error: 'CLOSE_ORDER', closeMonth: cur };
+    if (m > Number(p.maxMonth || 12)) return { ok: false, error: 'MONTH_FUTURE', closeMonth: cur };
+    values = [y, team, m, who, stamp, (log ? log + ' / ' : '') + m + '월 마감 ' + stamp + ' ' + who];
+  } else if (p.action === 'reopen') {
+    if (cur < 1 || m !== cur) return { ok: false, error: 'REOPEN_ORDER', closeMonth: cur };
+    // 풀기는 마감자·마감일시(공개 기간 기준)를 그대로 두고 마감월만 한 달 내린다 — 다시 마감하면 그때 새 날짜(3-2)
+    values = [y, team, cur - 1, hit.v[3] === undefined ? '' : hit.v[3], hit.v[4] === undefined ? '' : hit.v[4], (log ? log + ' / ' : '') + cur + '월 풀기 ' + stamp + ' ' + who];
+  } else return { ok: false, error: 'BAD_ACTION' };
+  return { ok: true, write: { row: hit ? hit.row : nextFreeRow(indexed), values: values }, closeMonth: values[2] };
+}
+
+// 팀 설정(사무소 지정 → 사용자팀마스터 J열). userRows = A2:J 값(줄 번호 = i+2). changes = [{ email, office }]
+// 대상: 그 팀 활성 일반·담당만. 사무소 이름: 앞뒤 공백 제거, 1~10자, 쉼표 불가. 바뀌는 칸만 J{줄} 쓰기 목록으로.
+function planOffices(p) { // p = { userRows, team, changes }
+  const team = cell(p.team);
+  const byEmail = {};
+  (p.userRows || []).forEach(function (r, i) { if (r && cell(r[0])) byEmail[lc(r[0])] = { row: i + 2, r: r }; });
+  const writes = [], seen = {};
+  for (let i = 0; i < (p.changes || []).length; i++) {
+    const c = p.changes[i] || {}, k = lc(c.email), name = cell(c.office);
+    if (seen[k]) return { ok: false, error: 'DUPLICATE_UNIT', field: k };
+    seen[k] = true;
+    if (!name || name.length > OFFICE_NAME_MAX || name.indexOf(',') >= 0) return { ok: false, error: 'BAD_OFFICE_NAME', field: name };
+    const u = byEmail[k];
+    if (!u) return { ok: false, error: 'USER_NOT_FOUND', field: k };
+    if (cell(u.r[3]) !== team || cell(u.r[4]) !== '활성' || MEMBER_ROLES.indexOf(cell(u.r[2])) < 0) return { ok: false, error: 'FORBIDDEN_TEAM', field: k };
+    if (cell(u.r[9]) !== name) writes.push({ row: u.row, value: name, email: cell(u.r[0]) });
+  }
+  return { ok: true, writes: writes };
+}
+
 module.exports = {
   TAB_MONTHLY, TAB_CLOSE, TAB_CRITERIA, HEADERS, UNIT_KEY_PREFIX, PUBLISH_DAYS_KEY, ITEM_KEYS, TOTAL_WEIGHT,
   checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary,
   gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1,
-  closeStamp, readClose, publishWindow, pickRows, teamsOf, buildView
+  closeStamp, readClose, publishWindow, pickRows, teamsOf, buildView,
+  MONTHLY_COLS, CLOSE_COLS, seoulStamp, indexRows, nextFreeRow, teamUnits, inputView, planMonthWrite, closeMissing, planClose, planOffices
 };
