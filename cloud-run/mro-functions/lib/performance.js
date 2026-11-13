@@ -3,6 +3,7 @@
 // 1-가: 연결 시험(ping)에 쓰는 순수 함수. 1-나: 점수 계산(scoreTeam)·월실적 줄 묶기(buildTeamInput). 1-다: 보기 응답(buildView).
 // 3-가: 입력 화면(inputView)·쓰기 계획(planMonthWrite·closeMissing·planClose·planOffices). 모두 시트 접근 없음.
 // 3-다(비고): 성과-월실적 L열 비고 — checkNote·planNoteWrite·notesView (2026-11-12 재홍님 시안 승인).
+// 4단계(설정): 인사평가설정 탭 성과 키 — settingsView·planSettingsWrite (2026-11-13 재홍님 결정 ①~⑤).
 
 // 5-2절: 인사평가 연도 파일 안 탭 3개 (이름·머리글 고정)
 const TAB_MONTHLY = '성과-월실적';
@@ -630,11 +631,98 @@ function planOffices(p) { // p = { userRows, team, changes }
   return { ok: true, writes: writes };
 }
 
+// =====================================================================
+// 4단계: 인사평가 설정 › 성과평가 구역 (설계서 4-6절, 2026-11-13 재홍님 결정)
+// ① 성과 키 2종(성과평가단위_팀·성과공개일수)은 이 구역에서만 보여 주고 고친다
+// ② 팀 = 활성 일반·담당·팀장이 있는 팀(teamsOf) + 시트에 성과평가단위_ 줄만 있는 팀
+// ③ 바꾼 값만 쓴다: 줄이 있으면 B열(값)만, 없으면 마지막 줄 다음에 새 줄(A 키·B 값·C 설명). "개인"으로 되돌려도 줄은 지우지 않음
+// ④ 그 파일 성과-월실적에 실적 줄이 있는 팀은 평가 단위를 바꿀 수 없다(MODE_LOCKED)
+// ⑤ 공개 일수 0~31 정수(0 = 숫자 공개 안 함)
+// settingsRows = 인사평가설정 A1:C(1행 머리글 포함 — 줄 번호 = 배열 위치 + 1)
+// =====================================================================
+const UNIT_DESC = '성과평가 단위(개인/사무소). 팀마다 1줄, 줄이 없는 팀은 개인';
+const PUBLISH_DESC = '팀장이 월 마감한 날부터 며칠까지 팀원에게 매출·이익 숫자를 보여줄지(0~31, 0=공개 안 함)';
+const PUBLISH_DAYS_MAX = 31;
+
+// 설정 화면용: 팀마다 평가 단위·시트 줄 여부·실적 여부(잠금) + 공개 일수 + 잘못 적힌 단위 줄
+function settingsView(p) { // p = { settingsRows(A1:C), users, monthlyRows(A2:L) }
+  const rows = p.settingsRows || [];
+  const unit = readUnitModes(rows);
+  const rowTeams = {};
+  rows.forEach(function (r) {
+    const k = cell(r && r[0]);
+    if (k.indexOf(UNIT_KEY_PREFIX) === 0 && k.length > UNIT_KEY_PREFIX.length) rowTeams[k.slice(UNIT_KEY_PREFIX.length)] = true;
+  });
+  const active = teamsOf(p.users);
+  const names = {};
+  active.forEach(function (t) { names[t] = true; });
+  Object.keys(rowTeams).forEach(function (t) { names[t] = true; });
+  const dataTeams = {};
+  (p.monthlyRows || []).forEach(function (r) { if (r && cell(r[2]) && cell(r[3])) dataTeams[cell(r[2])] = true; });
+  const badTeams = {};
+  unit.bad.forEach(function (b) { badTeams[b.key.slice(UNIT_KEY_PREFIX.length)] = true; });
+  const teams = Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'ko'); }).map(function (t) {
+    return { team: t, mode: unitModeOf(unit.modes, t), hasRow: rowTeams[t] === true, badRow: badTeams[t] === true, hasData: dataTeams[t] === true, active: active.indexOf(t) >= 0 };
+  });
+  const pub = readPublishDays(rows);
+  return { teams: teams, publishDays: { value: pub.days, raw: pub.raw, valid: pub.valid }, badUnitRows: unit.bad };
+}
+
+// 저장 계획. p = { settingsRows(A1:C), users, monthlyRows, units:{ 팀: '개인'|'사무소' } 또는 없음, publishDays: 숫자 또는 없음(undefined) }
+// 반환 { ok, writes:[{ row, col:'B'|'A:C', values:[...] }], changed:[{ key, from, to }] } 또는 { ok:false, error, field }
+function planSettingsWrite(p) {
+  const rows = p.settingsRows || [];
+  const view = settingsView(p);
+  const byTeam = {};
+  view.teams.forEach(function (t) { byTeam[t.team] = t; });
+  // 같은 키 줄이 여럿이면 어느 줄을 고칠지 모호 → 멈춤(시트에서 정리)
+  const rowOf = function (key) {
+    const hits = [];
+    rows.forEach(function (r, i) { if (i > 0 && cell(r && r[0]) === key) hits.push(i + 1); });
+    return hits;
+  };
+  let last = 1;
+  rows.forEach(function (r, i) { if ((r || []).some(function (c) { return cell(c) !== ''; })) last = i + 1; });
+  let next = last + 1;
+  const writes = [], changed = [];
+  const units = p.units || {};
+  if (typeof units !== 'object' || Array.isArray(units)) return { ok: false, error: 'BAD_MODE' };
+  const teamNames = Object.keys(units);
+  for (let i = 0; i < teamNames.length; i++) {
+    const team = cell(teamNames[i]), mode = cell(units[teamNames[i]]);
+    const t = byTeam[team];
+    if (!t) return { ok: false, error: 'UNKNOWN_TEAM', field: team };
+    if (UNIT_MODES.indexOf(mode) < 0) return { ok: false, error: 'BAD_MODE', field: team };
+    if (mode === t.mode && t.hasRow && !t.badRow) continue; // 그대로(올바른 줄 있음)
+    if (mode === t.mode && !t.hasRow && mode === '개인') continue; // 줄 없음 = 개인 → 줄을 새로 만들지 않음
+    if (mode !== t.mode && t.hasData) return { ok: false, error: 'MODE_LOCKED', field: team };
+    const key = UNIT_KEY_PREFIX + team, hits = rowOf(key);
+    if (hits.length > 1) return { ok: false, error: 'DUPLICATE_SETTING_KEY', field: key };
+    if (hits.length === 1) writes.push({ row: hits[0], col: 'B', values: [mode] });
+    else writes.push({ row: next++, col: 'A:C', values: [key, mode, UNIT_DESC] });
+    changed.push({ key: key, from: t.mode, to: mode });
+  }
+  if (p.publishDays !== undefined) {
+    const raw = p.publishDays, n = typeof raw === 'number' ? raw : (cell(raw) === '' ? NaN : Number(cell(raw)));
+    if (!Number.isInteger(n) || n < 0 || n > PUBLISH_DAYS_MAX) return { ok: false, error: 'BAD_PUBLISH_DAYS', field: cell(raw) };
+    if (!(view.publishDays.valid && view.publishDays.value === n)) {
+      const hits = rowOf(PUBLISH_DAYS_KEY);
+      if (hits.length > 1) return { ok: false, error: 'DUPLICATE_SETTING_KEY', field: PUBLISH_DAYS_KEY };
+      if (hits.length === 1) writes.push({ row: hits[0], col: 'B', values: [n] });
+      else writes.push({ row: next++, col: 'A:C', values: [PUBLISH_DAYS_KEY, n, PUBLISH_DESC] });
+      changed.push({ key: PUBLISH_DAYS_KEY, from: view.publishDays.valid ? view.publishDays.value : view.publishDays.raw, to: n });
+    }
+  }
+  if (!writes.length) return { ok: false, error: 'NOTHING_TO_SAVE' };
+  return { ok: true, writes: writes, changed: changed };
+}
+
 module.exports = {
   TAB_MONTHLY, TAB_CLOSE, TAB_CRITERIA, HEADERS, UNIT_KEY_PREFIX, PUBLISH_DAYS_KEY, ITEM_KEYS, TOTAL_WEIGHT,
   checkHeaders, readUnitModes, unitModeOf, readPublishDays, parseGrades, parseCriteria, officeSummary,
   gradeOf, sumTo, scoreTeam, buildTeamInput, pctFloor1,
   closeStamp, readClose, publishWindow, pickRows, teamsOf, buildView,
   MONTHLY_COLS, CLOSE_COLS, seoulStamp, indexRows, nextFreeRow, teamUnits, inputView, planMonthWrite, closeMissing, planClose, planOffices,
-  NOTE_COLS, NOTE_MAX, checkNote, notesView, planNoteWrite
+  NOTE_COLS, NOTE_MAX, checkNote, notesView, planNoteWrite,
+  PUBLISH_DAYS_MAX, settingsView, planSettingsWrite
 };

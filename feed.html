@@ -469,6 +469,14 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cs-none { color: var(--text-muted); }
 .cs-none b { display: inline-block; font-size: 11px; font-weight: 700; color: var(--danger); border: 1px solid var(--danger); border-radius: 8px; padding: 0 6px; margin-right: 4px; }
 .cs-file a { color: var(--accent); font-weight: 600; text-decoration: none; }
+/* 4단계: 인사평가 설정 › 성과평가 구역(고칠 수 있음) */
+.csp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.csp-seg button { border: 0; background: var(--card); color: var(--text); font-size: 13px; font-family: inherit; padding: 7px 16px; cursor: pointer; }
+.csp-seg button + button { border-left: 1px solid var(--border); }
+.csp-seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
+.csp-seg button:disabled { cursor: not-allowed; opacity: .55; }
+.csp-days { width: 70px; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; text-align: right; }
+.csp-chg { color: var(--accent); font-weight: 700; }
 .cs-sec { font-size: 13px; font-weight: 700; color: var(--accent); margin: 18px 0 0; padding-top: 4px; }
 /* 2-가 기존 기록 정리(관리자): 팀 칸 점검 · 미리보기 표 · 채우기 */
 .cs-ok { color: var(--text); font-weight: 600; }
@@ -4500,16 +4508,105 @@ return compSettingRowHtml_(t.label + ' 탭', '시트 줄 이름: 탭이모지_' 
 }).join('');
 // 위에 보이지 않은 줄(앞으로 새로 넣을 키, 탭이 없어진 이모지 줄)도 빠뜨리지 않고 그대로 보여준다
 const used = COMP_SETTING_ROWS_.map(function (m) { return m.key; }).concat(tabs.map(function (t) { return '탭이모지_' + t.label; }));
-const extra = order.filter(function (k) { return used.indexOf(k) < 0; }).map(function (k) { return compSettingRowHtml_(k, '', map[k] ? escapeHtml(map[k]) : none('')); }).join('');
+// 성과 키(성과공개일수·성과평가단위_팀)는 아래 [성과평가] 구역에서만 보여 준다(4단계 결정 ①)
+const extra = order.filter(function (k) { return used.indexOf(k) < 0 && !compIsPerfKey_(k); }).map(function (k) { return compSettingRowHtml_(k, '', map[k] ? escapeHtml(map[k]) : none('')); }).join('');
 root.innerHTML = `<div class="settings-panel">
 <div class="settings-row-title" style="font-size:16px; margin:12px 0 2px;">인사평가 설정</div>
-<div class="settings-row-desc" style="margin-bottom:4px;">보기 전용 · 인사평가 파일 안 '인사평가설정' 탭 · 고치기는 시트에서 직접(앱에서 고치기는 2단계)</div>
+<div class="settings-row-desc" style="margin-bottom:4px;">인사평가 파일 안 '인사평가설정' 탭 · [성과평가] 구역만 여기서 고쳐 저장 · 나머지는 보기 전용(고치기는 시트에서 직접)</div>
 <div class="cs-sec">파일</div>${file}
 <div class="cs-sec">기간 규칙</div>${rules}
 <div class="cs-sec">탭 이모지 <span class="settings-row-desc" style="font-weight:400;">· 기록 탭 ${tabs.length}개 자동 인식</span></div>${emojis || '<div class="cm-empty">기록 탭을 찾지 못했어요.</div>'}
+<div id="cs-perf-sec"><div class="cs-sec">성과평가</div><div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div></div>
 ${extra ? `<div class="cs-sec">그 밖의 줄</div>${extra}` : ''}
 ${compBackfillSectionHtml_(tabs)}
 </div>`;
+loadCompPerfSettings_(false);
+}
+// ==== 인사평가 설정 › 성과평가 구역 (4단계, 설계서 4-6절 · 2026-11-13 재홍님 결정 ①~⑤) — 이 화면에서 유일하게 고칠 수 있는 구역 ====
+// 읽기: getPerformanceTest view=settings(관리자만). 저장: savePerformanceTest action=saveSettings — 바꾼 값만 보낸다.
+// 실적이 있는 팀은 평가 단위를 바꿀 수 없다(🔒, 서버도 MODE_LOCKED). 저장한 값은 다른 화면을 새로 열 때 반영(서버가 요청마다 시트를 다시 읽음).
+function compIsPerfKey_(k) { return k === '성과공개일수' || (k.indexOf('성과평가단위_') === 0 && k.length > '성과평가단위_'.length); }
+let compPerf_ = null, compPerfReq_ = 0;
+async function loadCompPerfSettings_(keepMsg) {
+  const reqNo = ++compPerfReq_;
+  const msg = keepMsg && compPerf_ ? compPerf_.msg : null;
+  const res = await perfFetch_({ view: 'settings' });
+  if (reqNo !== compPerfReq_) return;
+  const units = {};
+  ((res && res.teams) || []).forEach(function (t) { units[t.team] = t.mode; });
+  const days = res && res.publishDays ? String(res.publishDays.valid ? res.publishDays.value : (res.publishDays.raw === null ? '' : res.publishDays.raw)) : '';
+  compPerf_ = { res: res, units: units, days: days, msg: msg, busy: false };
+  compPerfRender_();
+}
+function compPerfChanges_() {
+  const r = compPerf_.res, out = { units: {}, list: [] };
+  (r.teams || []).forEach(function (t) {
+    const want = compPerf_.units[t.team];
+    if (want !== t.mode || (t.badRow && want === t.mode)) { out.units[t.team] = want; out.list.push(t.team + ' ' + t.mode + ' → ' + want); }
+  });
+  const cur = r.publishDays.valid ? String(r.publishDays.value) : String(r.publishDays.raw === null ? '' : r.publishDays.raw);
+  if (compPerf_.days.trim() !== cur) { out.publishDays = compPerf_.days.trim(); out.list.push('공개 일수 ' + (cur || '없음') + ' → ' + out.publishDays); }
+  return out;
+}
+function compPerfRender_() {
+  const el = document.getElementById('cs-perf-sec');
+  if (!el || !compPerf_) return;
+  const s = compPerf_, r = s.res;
+  if (!r || !r.ok) { el.innerHTML = `<div class="cs-sec">성과평가</div><div class="cm-empty">${escapeHtml(perfErrorText_(r))}</div>`; return; }
+  const ch = compPerfChanges_();
+  const teams = (r.teams || []).map(function (t) {
+    const want = s.units[t.team], lock = t.hasData;
+    const seg = ['개인', '사무소'].map(function (m) {
+      return `<button type="button" class="${want === m ? 'on' : ''}" ${lock || s.busy ? 'disabled' : ''} onclick="compPerfPick_('${escapeHtml(t.team).replace(/'/g, '&#39;')}', '${m}')">${m}</button>`;
+    }).join('');
+    const desc = lock ? '🔒 실적이 있어 바꿀 수 없어요(바꾸려면 새해 파일에서)'
+      : (t.badRow ? '시트 값이 잘못돼 개인으로 보고 있어요 — 골라서 저장하면 고쳐져요'
+        : (!t.hasRow ? '시트에 줄 없음 → 기본 개인' : '')) + (t.active ? '' : (t.badRow || !t.hasRow ? ' · ' : '') + '지금 활성 팀원 없음');
+    return compPerfRowHtml_(t.team + (want !== t.mode ? ' *' : ''), desc, `<div class="csp-seg">${seg}</div>`);
+  }).join('');
+  const days = `<input class="csp-days" type="number" min="0" max="31" step="1" inputmode="numeric" value="${escapeHtml(s.days)}" ${s.busy ? 'disabled' : ''} oninput="compPerfDays_(this.value)" aria-label="실적 공개 일수"> 일`;
+  const daysRow = compPerfRowHtml_('실적 공개 일수', '팀장이 월 마감한 날부터 N일 동안 팀원에게 매출·이익 숫자를 보여줘요. 0 = 숫자 공개 안 함(점수·순위는 항상 보임), 0~31', `<div>${days}</div>`);
+  const msg = s.msg ? `<div class="cy-band ${s.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(s.msg.text)}</div>` : '';
+  const dirty = ch.list.length > 0;
+  el.innerHTML = `<div class="cs-sec">성과평가 <span class="settings-row-desc" style="font-weight:400;">· 고칠 수 있음 · ${escapeHtml(String(r.year || ''))}년 파일</span></div>
+${msg}
+<div class="settings-row-desc" style="margin-top:6px;">팀별 평가 단위 — 사무소 = 같은 사무소 팀원 합산 평가, 개인 = 팀원별 평가. 팀원별 사무소는 성과평가 › [팀 설정]에서 팀장이 정해요.</div>
+${teams || '<div class="cm-empty">성과평가 팀이 없어요.</div>'}
+${daysRow}
+<div class="pf-btns"><button type="button" class="pf-btn pri" ${dirty && !s.busy ? '' : 'disabled'} onclick="compPerfSave_()">${s.busy ? '저장 중...' : '저장'}</button><span class="pf-mut" style="font-size:12px;">${dirty ? '<span class="csp-chg">바뀐 값: </span>' + escapeHtml(ch.list.join(', ')) : '바꾼 값이 없어요'}</span></div>`;
+}
+// 한 줄 모양은 compSettingRowHtml_과 같고, 오른쪽만 읽기 칸 대신 고르는 버튼·입력 칸(ctrlHtml은 이미 escape된 HTML)
+function compPerfRowHtml_(title, desc, ctrlHtml) {
+  return `<div class="settings-row"><div class="settings-row-label"><div class="settings-row-title">${escapeHtml(title)}</div>${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}</div>${ctrlHtml}</div>`;
+}
+function compPerfPick_(team, mode) { compPerf_.units[team] = mode; compPerf_.msg = null; compPerfRender_(); }
+function compPerfDays_(v) {
+  compPerf_.days = String(v);
+  compPerf_.msg = null;
+  // 저장 버튼·바뀐 값 표시를 맞추려고 구역을 다시 그린다 — 다시 그리면 커서가 사라지므로 입력 칸으로 커서를 돌려놓는다
+  const keep = document.activeElement && document.activeElement.classList.contains('csp-days');
+  compPerfRender_();
+  if (keep) { const el = document.querySelector('.csp-days'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} } }
+}
+async function compPerfSave_() {
+  const ch = compPerfChanges_();
+  const body = { action: 'saveSettings' };
+  if (Object.keys(ch.units).length) body.units = ch.units;
+  if (ch.publishDays !== undefined) {
+    const n = Number(ch.publishDays);
+    if (ch.publishDays === '' || !Number.isInteger(n) || n < 0 || n > 31) { compPerf_.msg = { text: '실적 공개 일수는 0~31 사이 정수로 적어 주세요.' }; compPerfRender_(); return; }
+    body.publishDays = n;
+  }
+  compPerf_.busy = true; compPerf_.msg = null; compPerfRender_();
+  const res = await perfSaveFetch_(body);
+  compPerf_.busy = false;
+  if (!res || !res.ok) {
+    const text = res && res.error === 'MODE_LOCKED' ? (res.field || '그 팀') + '은(는) 실적이 있어 평가 단위를 바꿀 수 없어요.' : perfSaveErrText_(res);
+    compPerf_.msg = { text: text }; compPerfRender_(); return;
+  }
+  perfRes_ = null; // 성과평가 화면을 다시 열면 새 설정으로 불러옴
+  compPerf_.msg = { ok: true, text: '성과평가 설정을 저장했어요 (' + ch.list.join(', ') + '). 다른 화면은 새로 열면 반영돼요.' };
+  loadCompPerfSettings_(true);
 }
 // ==== 인사평가 설정 › 기존 기록 정리 (2-가, 설계서 v1.19 4-3) — 관리자만 보이는 화면(이 설정 화면 자체가 관리자 전용) ====
 // 서버 saveCompetencyTest action=backfill: preview(시트에 안 씀) → apply(빈 칸만, 잠금·중복 방지, 미리보기 칸 수와 다르면 멈춤).
@@ -4771,7 +4868,9 @@ const PERF_SAVE_ERR_ = {
   PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 화면을 새로 열어 값을 확인해 주세요.', BAD_OFFICE_NAME: '사무소 이름은 1~10자, 쉼표 없이 적어 주세요.', NOT_OFFICE_TEAM: '사무소 단위 팀만 팀 설정이 있어요.',
   YEAR_CLOSED: '이 해는 입력 기간이 끝나 저장할 수 없어요.', BAD_YEAR: '고른 연도를 열 수 없어요. 화면을 새로 열어 주세요.', BAD_MONTH: '달을 다시 골라 주세요.',
   NOTE_TOO_LONG: '비고는 200자까지 적을 수 있어요.', BAD_NOTE: '비고를 다시 적어 주세요.', NOTE_NO_ROW: '실적 줄이 없는 칸에는 비고를 적을 수 없어요. 화면을 새로 열어 주세요.',
-  MONTH_NOT_CLOSED: '마감 전인 달이에요. 화면을 새로 열어 [저장]으로 저장해 주세요.', NO_NOTE_FOR_BASELINE: '전년 기준 실적에는 비고를 적지 않아요.'
+  MONTH_NOT_CLOSED: '마감 전인 달이에요. 화면을 새로 열어 [저장]으로 저장해 주세요.', NO_NOTE_FOR_BASELINE: '전년 기준 실적에는 비고를 적지 않아요.',
+  MODE_LOCKED: '실적이 있는 팀은 평가 단위를 바꿀 수 없어요.', BAD_MODE: '평가 단위는 개인 또는 사무소만 고를 수 있어요.', BAD_PUBLISH_DAYS: '실적 공개 일수는 0~31 사이 정수로 적어 주세요.',
+  UNKNOWN_TEAM: '목록에 없는 팀이에요. 화면을 새로 열어 주세요.', DUPLICATE_SETTING_KEY: '인사평가설정 탭에 같은 키 줄이 둘 이상 있어요. 시트에서 한 줄만 남겨 주세요.'
 };
 function perfSaveErrText_(res) {
   if (!res) return '응답을 받지 못했어요. 저장됐을 수도 있으니 화면을 새로 열어 확인해 주세요.';

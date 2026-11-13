@@ -4678,6 +4678,11 @@ exports.getPerformanceTest = async (req, res) => {
       await performanceInput_(req, res, auth, t0, timings, year);
       return;
     }
+    // 4단계: 인사평가 설정 › 성과평가 구역 — 아래 performanceSettings_ (관리자만)
+    if (view === 'settings') {
+      await performanceSettings_(req, res, auth, t0, timings);
+      return;
+    }
     if (view !== 'ping') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
@@ -4950,6 +4955,30 @@ async function performanceInput_(req, res, auth, t0, timings, year) {
     nextClose: target.kind === 'baseline' || closeMonth >= target.maxMonth ? null : { month: closeMonth + 1, missing: performance.closeMissing(p) } }, view));
 }
 
+// getPerformanceTest view=settings — 관리자 인사평가 설정 화면의 성과평가 구역(설계서 4-6절, 4단계).
+// 올해 인사평가 파일의 인사평가설정·성과-월실적을 읽어 팀별 평가 단위·잠금(실적 있음)·공개 일수를 돌려준다. 읽기만.
+async function performanceSettings_(req, res, auth, t0, timings) {
+  const fail = function (error, extra) { res.status(200).json(Object.assign({ ok: false, serverMs: Date.now() - t0, timings, error: error }, extra || {})); };
+  if (String(auth.email || '').trim().toLowerCase() !== ADMIN_EMAIL) { fail('FORBIDDEN'); return; }
+  const client = await getSheetsClient();
+  const m0 = Date.now();
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  timings.mroSheetMs = Date.now() - m0;
+  const users = perfUsers_(mro[0] && mro[0].values);
+  const settingRows = (mro[1] && mro[1].values) || [];
+  const nowMs = Date.now();
+  const target = await perfWriteYear_(client, settingRows, undefined, nowMs); // 올해 파일
+  if (!target.ok) { fail(target.error, { year: target.year }); return; }
+  let f;
+  const c0 = Date.now();
+  try { f = await perfReadFile_(client, target.fileId); } catch (e) {
+    fail('SHEET_ACCESS_FAILED', { httpStatus: (e && e.response && e.response.status) || (e && e.code) || null }); return;
+  }
+  timings.perfSheetMs = Date.now() - c0;
+  const v = performance.settingsView({ settingsRows: f.settings, users: users, monthlyRows: f.monthly });
+  res.status(200).json(Object.assign({ ok: true, view: 'settings', serverMs: Date.now() - t0, timings, year: target.year }, v));
+}
+
 exports.savePerformanceTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -4959,7 +4988,7 @@ exports.savePerformanceTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['saveMonth', 'saveNote', 'close', 'reopen', 'saveOffices'].indexOf(b.action) < 0) {
+    if (['saveMonth', 'saveNote', 'close', 'reopen', 'saveOffices', 'saveSettings'].indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -4973,10 +5002,11 @@ exports.savePerformanceTest = async (req, res) => {
       const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === me; });
       const lead = perfLeadTeam_(viewer, users, me === ADMIN_EMAIL, b.team);
       if (!lead.ok) return lead;
+      if (b.action === 'saveSettings' && me !== ADMIN_EMAIL) return { ok: false, error: 'FORBIDDEN' }; // 4단계: 설정은 관리자만
       const settingRows = (mro[1] && mro[1].values) || [];
       const nowMs = Date.now();
-      // saveOffices는 그해(올해) 파일의 평가 단위만 확인하면 된다. 나머지는 고른 해의 파일.
-      const target = await perfWriteYear_(client, settingRows, b.action === 'saveOffices' ? undefined : b.year, nowMs);
+      // saveOffices·saveSettings는 그해(올해) 파일. 나머지는 고른 해의 파일.
+      const target = await perfWriteYear_(client, settingRows, b.action === 'saveOffices' || b.action === 'saveSettings' ? undefined : b.year, nowMs);
       if (!target.ok) return target;
       const holderId = crypto.randomUUID();
       const gotLock = await acquireLock(firestore, PERF_LOCK_NAME, holderId, { waitMs: PERF_LOCK_WAIT_MS, staleMs: PERF_LOCK_STALE_MS, pollMs: PERF_LOCK_POLL_MS });
@@ -4988,6 +5018,20 @@ exports.savePerformanceTest = async (req, res) => {
           return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: (e && e.response && e.response.status) || (e && e.code) || null };
         }
         timings.perfSheetMs = Date.now() - c0;
+        // 4단계: 인사평가설정 탭 성과 키 저장 — 같은 잠금(performanceEval) 안에서 다시 읽은 값으로 계획(평가 단위를 읽는 saveMonth와 겹치지 않게)
+        if (b.action === 'saveSettings') {
+          const plan = performance.planSettingsWrite({ settingsRows: f.settings, users: users, monthlyRows: f.monthly, units: b.units, publishDays: b.publishDays });
+          if (!plan.ok) return plan;
+          const w0s = Date.now();
+          const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {
+            const range = w.col === 'B' ? 'B' + w.row : 'A' + w.row + ':C' + w.row;
+            return { range: competency.quoteTab(competency.SETTINGS_TAB) + '!' + range, values: [w.values] };
+          }));
+          timings.writeMs = Date.now() - w0s;
+          const want = plan.writes.reduce(function (a, w) { return a + w.values.length; }, 0);
+          if (n !== want) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, changed: plan.changed };
+        }
         const mode = performance.unitModeOf(performance.readUnitModes(f.settings).modes, lead.team);
         const w0 = Date.now();
         if (b.action === 'saveOffices') {
