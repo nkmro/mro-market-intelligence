@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-11 시황 뉴스 기준 B단계(운영 반영): 뉴스 모음 제목 사전 제외(isDigestNewsTitle_ → 수집로그·탈락뉴스 '뉴스모음제목')·AI 지시문 3문장(수치 없는 기업 원가 기사 최대 2점·요약 주어·뉴스 모음 관련 없음)·testNewsRule1111b 추가 — collectMarketNews·buildSummarizePrompt_)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-13 새벽 시황 뉴스 수집 재발 방지 점검: dailyBackupCheck_ 맨 앞 runNewsWatchdog_(7시 전까지·하루 3번·모두 실패하면 메일)·newsWatchdogDecide_·sendNewsWatchdogMail_·testNewsWatchdog 추가, collectMarketNews에 CMN_START_AT·CMN_DONE_DATE·CATCHUP_TRIGGER_AT 기록)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -1547,6 +1547,8 @@ sheet.appendRow([entry.link, entry.code, entry.korean, entry.title, entry.descri
 function collectMarketNews() {
 const scriptStartTime_ = new Date().getTime();
 const props = PropertiesService.getScriptProperties();
+// 2026-11-13: 재발 방지 점검(runNewsWatchdog_)용 시작 시각 — 시작 15분 이내면 "수집 중"으로 보고 다시 시도하지 않는다
+props.setProperty(NEWS_WATCHDOG_START_KEY_, String(scriptStartTime_));
 
 // 2026-09-22: 시황 뉴스 수집 중단 기간 체크 (설정 시트 '시황수집중단기간', 재홍님 승인).
 // 명절/휴무 등 특정 기간에는 네이버 API 호출·AI 판단·게시를 전부 건너뛴다.
@@ -1907,6 +1909,9 @@ const rejectedLastRow_ = rejectedSheet_.getLastRow();
 rejectedSheet_.getRange(rejectedLastRow_ + 1, 1, rejectedNewsRows_.length, 9).setValues(rejectedNewsRows_);
 }
 props.setProperty('CMN_LAST_STAGE', '게시완료@' + new Date(scriptStartTime_).toISOString() + '/경과' + Math.round((new Date().getTime() - scriptStartTime_) / 1000) + '초/게시' + posted + '건/탈락' + rejectedNewsRows_.length + '건');
+// 2026-11-13: 오늘 수집(게시 단계) 완료 표시 — 재발 방지 점검이 다시 시도할지 판단한다. 정리(purge)는 건너뛸 수 있어 그 전에 기록.
+// 블랙아웃으로 건너뛴 날은 여기까지 오지 않으므로 기록하지 않는다(블랙아웃 판단은 점검 쪽에서 직접).
+props.setProperty(NEWS_WATCHDOG_DONE_KEY_, Utilities.formatDate(new Date(scriptStartTime_), 'Asia/Seoul', 'yyyy-MM-dd'));
 
 const skipped = candidates.length - processedCount;
 if (skipped > 0) {
@@ -1922,6 +1927,7 @@ ScriptApp.getProjectTriggers().forEach(t => {
 if (t.getUniqueId() === prevTriggerId) ScriptApp.deleteTrigger(t);
 });
 ss_props.deleteProperty('CATCHUP_TRIGGER_ID');
+ss_props.deleteProperty('CATCHUP_TRIGGER_AT'); // 2026-11-13: 예약 시각도 함께 지움
 }
 if (skipped > 0 || collectionBatchFailed) {
 const newTrigger = ScriptApp.newTrigger('collectMarketNews')
@@ -1929,6 +1935,7 @@ const newTrigger = ScriptApp.newTrigger('collectMarketNews')
 .after(60 * 60 * 1000)
 .create();
 ss_props.setProperty('CATCHUP_TRIGGER_ID', newTrigger.getUniqueId());
+ss_props.setProperty('CATCHUP_TRIGGER_AT', String(new Date().getTime())); // 2026-11-13: 재발 방지 점검이 "1시간 뒤 재실행 대기 중"을 알 수 있게
 Logger.log('안전마진 도달 또는 수집 배치 실패로 1시간 후 재실행 예약됨 (남은 후보 ' + skipped + '건, 수집 배치 실패: ' + collectionBatchFailed + ')');
 }
 // 2026-09-02: 게시(위)까지는 이미 끝난 뒤이므로, 정리(purge)는 남은 시간이 빠듯하면 이번 실행은
@@ -4680,6 +4687,12 @@ const BACKUP_CLOUD_RUN_FILES = [
 const GCP_PROJECT_ID = 'mro-market-intelligence';
 
 function dailyBackupCheck_() {
+// 2026-11-13: 새벽 시황 뉴스 수집 재발 방지 점검 — 자체 try/catch(점검이 실패해도 아래 백업 점검은 그대로 진행)
+try {
+runNewsWatchdog_();
+} catch (wErr) {
+Logger.log('runNewsWatchdog_ 오류: ' + wErr);
+}
 try {
 const hourSetting = getSetting_('백업시각');
 const targetHour = (hourSetting !== null && hourSetting !== '') ? Number(hourSetting) : 23;
@@ -4696,6 +4709,145 @@ props.setProperty('lastBackupDate', todayStr);
 } catch (err) {
 Logger.log('dailyBackupCheck_ 오류: ' + err);
 }
+}
+
+// =====================================================================
+// 2026-11-13 새벽 시황 뉴스 수집 재발 방지 점검 (재홍님 승인: 7시 전까지, 하루 3번, 모두 실패하면 메일)
+// 11/13 1:24 collectMarketNews가 시작도 못 하고 0초 실패(로그 없음) → 함수 안의 "1시간 뒤 재실행"도 예약되지 않아
+// 그날 뉴스가 0건이었다. 매시 8분 dailyBackupCheck_ 맨 앞에서 "오늘 수집이 끝났는지"를 보고, 안 끝났으면
+// 1분 뒤 collectMarketNews를 한 번 예약한다. 스크립트 속성 키:
+//   CMN_DONE_DATE   — 수집 함수가 게시 단계를 마치면 서울 날짜(yyyy-MM-dd)
+//   CMN_START_AT    — 수집 함수 시작 시각(밀리초)
+//   CATCHUP_TRIGGER_AT — 수집 함수 자신의 "1시간 뒤 재실행" 예약 시각(밀리초, CATCHUP_TRIGGER_ID와 함께)
+//   CMN_WATCHDOG    — 점검 기록 JSON {date, count, triggerId, mailed} (날짜가 바뀌면 처음부터)
+// =====================================================================
+const NEWS_WATCHDOG_DONE_KEY_ = 'CMN_DONE_DATE';
+const NEWS_WATCHDOG_START_KEY_ = 'CMN_START_AT';
+const NEWS_WATCHDOG_STATE_KEY_ = 'CMN_WATCHDOG';
+const NEWS_WATCHDOG_CUTOFF_HOUR_ = 7;              // 7시 점검까지(7시에는 다시 시도하지 않고 메일만)
+const NEWS_WATCHDOG_MAX_RETRIES_ = 3;              // 하루 최대 다시 시도 횟수
+const NEWS_WATCHDOG_RUNNING_MS_ = 15 * 60 * 1000;  // 시작 15분 이내 = 수집 중
+const NEWS_WATCHDOG_CATCHUP_MS_ = 65 * 60 * 1000;  // 1시간 뒤 재실행 예약 65분 이내 = 대기 중
+
+// 판단만 하는 순수 함수(시트·트리거·메일 없음 — 시험에서 가짜 날짜로 그대로 부른다).
+// ctx = { today:'yyyy-MM-dd', hour:0~23(서울), nowMs, triggerHour, cutoffHour, maxRetries, runningMs, catchupMs,
+//         blackout:true/false, doneDate, startAtMs, catchupAtMs, state:{date,count,triggerId,mailed} }
+// 반환 { action:'none'|'retry'|'mail', reason, state(새 기록) }
+function newsWatchdogDecide_(ctx) {
+const old = ctx.state || {};
+const st = old.date === ctx.today
+? { date: ctx.today, count: Number(old.count) || 0, triggerId: old.triggerId || '', mailed: old.mailed === true }
+: { date: ctx.today, count: 0, triggerId: old.triggerId || '', mailed: false }; // 날짜가 바뀌면 처음부터(지난 트리거 ID는 정리용으로만 남김)
+const none = function (reason) { return { action: 'none', reason: reason, state: st }; };
+// ① 오늘 이미 완료
+if (ctx.doneDate === ctx.today) return none('DONE');
+// ② 점검 시간 밖: 수집시각+1시 전, 또는 마감 시각 뒤
+if (ctx.hour < Number(ctx.triggerHour) + 1 || ctx.hour > ctx.cutoffHour) return none('OUT_OF_WINDOW');
+// ③ 수집 중단일(시황수집중단기간)
+if (ctx.blackout === true) return none('BLACKOUT');
+// ④ 수집이 도는 중이거나, 수집 함수 자신의 1시간 뒤 재실행이 대기 중
+if (ctx.startAtMs && ctx.nowMs - Number(ctx.startAtMs) >= 0 && ctx.nowMs - Number(ctx.startAtMs) < ctx.runningMs) return none('RUNNING');
+if (ctx.catchupAtMs && ctx.nowMs - Number(ctx.catchupAtMs) >= 0 && ctx.nowMs - Number(ctx.catchupAtMs) < ctx.catchupMs) return none('CATCHUP_PENDING');
+// ⑤ 마감 시각이거나 오늘 다시 시도를 다 씀 → 메일 1번
+if (ctx.hour >= ctx.cutoffHour || st.count >= ctx.maxRetries) {
+if (st.mailed) return none('MAILED_ALREADY');
+return { action: 'mail', reason: st.count >= ctx.maxRetries ? 'MAX_RETRIES' : 'CUTOFF', state: st };
+}
+// ⑥ 1분 뒤 수집 예약, 횟수 +1
+st.count = st.count + 1;
+return { action: 'retry', reason: 'RETRY_' + st.count, state: st };
+}
+// ==== newsWatchdogDecide_ 끝 ====
+
+// 실제 점검(dailyBackupCheck_가 매시 부름). 완료됐거나 8시 이후면 설정 시트를 읽지 않고 바로 끝난다.
+function runNewsWatchdog_() {
+const props = PropertiesService.getScriptProperties();
+const now = new Date();
+const today = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd');
+let state = {};
+try { state = JSON.parse(props.getProperty(NEWS_WATCHDOG_STATE_KEY_) || '{}') || {}; } catch (e) { state = {}; }
+// 지난번 점검이 만든 1분 뒤 예약 트리거(이미 실행됨)가 남아 있으면 먼저 정리 — 매일 1시 트리거·CATCHUP_TRIGGER_ID는 건드리지 않음
+if (state.triggerId) {
+const oldId = state.triggerId;
+ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getUniqueId() === oldId) ScriptApp.deleteTrigger(t); });
+state.triggerId = '';
+props.setProperty(NEWS_WATCHDOG_STATE_KEY_, JSON.stringify(state));
+}
+if (props.getProperty(NEWS_WATCHDOG_DONE_KEY_) === today) return; // ① 빠른 종료
+const hour = Number(Utilities.formatDate(now, 'Asia/Seoul', 'H'));
+if (hour > NEWS_WATCHDOG_CUTOFF_HOUR_) return; // ② 빠른 종료(8시~23시)
+const settings = getSettings_();
+const dow = new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCDay(); // 서울 요일(0=일) — collectMarketNews와 같은 식
+const d = newsWatchdogDecide_({
+today: today, hour: hour, nowMs: now.getTime(), triggerHour: settings.triggerHour,
+cutoffHour: NEWS_WATCHDOG_CUTOFF_HOUR_, maxRetries: NEWS_WATCHDOG_MAX_RETRIES_,
+runningMs: NEWS_WATCHDOG_RUNNING_MS_, catchupMs: NEWS_WATCHDOG_CATCHUP_MS_,
+blackout: isInNewsBlackout_(Utilities.formatDate(now, 'Asia/Seoul', 'yyMMdd'), settings.newsBlackoutPeriods, dow),
+doneDate: props.getProperty(NEWS_WATCHDOG_DONE_KEY_), startAtMs: Number(props.getProperty(NEWS_WATCHDOG_START_KEY_)) || 0,
+catchupAtMs: Number(props.getProperty('CATCHUP_TRIGGER_AT')) || 0, state: state
+});
+const st = d.state;
+if (d.action === 'retry') {
+const t = ScriptApp.newTrigger('collectMarketNews').timeBased().after(60 * 1000).create();
+st.triggerId = t.getUniqueId();
+Logger.log('[수집점검] 오늘 수집 완료 기록이 없어 1분 뒤 collectMarketNews 예약 (' + st.count + '/' + NEWS_WATCHDOG_MAX_RETRIES_ + '번째)');
+} else if (d.action === 'mail') {
+if (sendNewsWatchdogMail_(today, st.count, d.reason, props.getProperty('CMN_LAST_STAGE'))) st.mailed = true;
+Logger.log('[수집점검] 실패 메일 ' + (st.mailed ? '보냄' : '못 보냄(다음 점검에서 다시)') + ' — ' + d.reason);
+} else {
+Logger.log('[수집점검] 할 일 없음 — ' + d.reason);
+}
+props.setProperty(NEWS_WATCHDOG_STATE_KEY_, JSON.stringify(st));
+}
+
+// 실패 메일(연도 전환 메일 yrMail_과 같은 MailApp 방식·같은 받는 사람). 보냈으면 true
+function sendNewsWatchdogMail_(today, count, reason, lastStage) {
+try {
+const body = today + ' 새벽 시황 뉴스 수집이 끝나지 않았습니다.\n\n'
++ '- 자동 다시 시도: ' + count + '번 (하루 최대 ' + NEWS_WATCHDOG_MAX_RETRIES_ + '번, ' + NEWS_WATCHDOG_CUTOFF_HOUR_ + '시 전까지)\n'
++ '- 사유: ' + (reason === 'MAX_RETRIES' ? '다시 시도를 모두 썼는데도 완료 기록이 없음' : NEWS_WATCHDOG_CUTOFF_HOUR_ + '시까지 완료 기록이 없음') + '\n'
++ '- 마지막 진행 단계(CMN_LAST_STAGE): ' + (lastStage || '(없음)') + '\n\n'
++ '조치: Apps Script 편집기에서 collectMarketNews를 한 번 실행해 주세요. 실행 기록(왼쪽 [실행] 메뉴)에서 오늘 실패 내용을 확인할 수 있습니다.';
+MailApp.sendEmail(ADMIN_EMAIL, '[MRO 워크허브] 오늘 시황 뉴스 수집 실패 — 수동 실행 필요', body, { name: 'MRO 워크허브' });
+return true;
+} catch (e) {
+Logger.log('수집점검 메일 실패: ' + e);
+return false;
+}
+}
+
+// 편집기 시험(재홍님 실행용): 가짜 날짜로 판단표를 돌려 로그에 PASS/FAIL. 트리거·메일·속성은 바꾸지 않는다.
+// 마지막 줄에 "지금 실제 상태로 점검하면 무엇을 할지"(읽기만)도 남긴다.
+function testNewsWatchdog() {
+const T = function (o) {
+return Object.assign({ today: '2026-11-14', hour: 2, nowMs: Date.UTC(2026, 10, 13, 17, 8), triggerHour: 1, cutoffHour: 7, maxRetries: 3,
+runningMs: 15 * 60 * 1000, catchupMs: 65 * 60 * 1000, blackout: false, doneDate: '2026-11-13', startAtMs: 0, catchupAtMs: 0, state: {} }, o);
+};
+const cases = [
+['2시 미완료 → 다시 시도 1번째', T({}), 'retry', 1],
+['완료 → 아무것도 안 함', T({ doneDate: '2026-11-14' }), 'none', 0],
+['1시(수집시각) → 아직 아님', T({ hour: 1 }), 'none', 0],
+['8시 → 시간 밖', T({ hour: 8 }), 'none', 0],
+['블랙아웃 → 아무것도 안 함', T({ blackout: true }), 'none', 0],
+['시작 5분 → 수집 중', T({ startAtMs: Date.UTC(2026, 10, 13, 17, 3) }), 'none', 0],
+['1시간 뒤 재실행 30분 전 예약 → 대기', T({ catchupAtMs: Date.UTC(2026, 10, 13, 16, 38) }), 'none', 0],
+['3번 다 씀 → 메일', T({ hour: 5, state: { date: '2026-11-14', count: 3 } }), 'mail', 3],
+['메일 보낸 뒤 → 다시 안 보냄', T({ hour: 6, state: { date: '2026-11-14', count: 3, mailed: true } }), 'none', 3],
+['7시 2번째까지만 → 메일', T({ hour: 7, state: { date: '2026-11-14', count: 2 } }), 'mail', 2],
+['어제 기록 → 0부터', T({ state: { date: '2026-11-13', count: 3, mailed: true } }), 'retry', 1]
+];
+let fail = 0;
+cases.forEach(function (c) {
+const d = newsWatchdogDecide_(c[1]);
+const ok = d.action === c[2] && d.state.count === c[3];
+if (!ok) fail++;
+Logger.log((ok ? 'PASS ' : 'FAIL ') + c[0] + ' → ' + d.action + '/' + d.reason + '/횟수 ' + d.state.count);
+});
+Logger.log('testNewsWatchdog: ' + (cases.length - fail) + '/' + cases.length + ' 통과');
+const props = PropertiesService.getScriptProperties();
+const now = new Date();
+Logger.log('[지금 상태, 읽기만] 오늘 ' + Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd HH:mm') + ' / CMN_DONE_DATE=' + props.getProperty(NEWS_WATCHDOG_DONE_KEY_)
++ ' / CMN_WATCHDOG=' + props.getProperty(NEWS_WATCHDOG_STATE_KEY_) + ' / 트리거시각=' + getSettings_().triggerHour);
 }
 
 function runDailyBackup_(todayStr) {
