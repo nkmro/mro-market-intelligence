@@ -3180,10 +3180,92 @@ const issueMail = require('./lib/issueMail');
 const ISSUE_MAIL_RUNS = 'issueMailRuns';
 const ISSUE_MAIL_DELIVERIES = 'issueMailDeliveries';
 
+// ===== [2026-11-13 신규] 성과평가 월 마감 안내 메일 (설계서 PERFORMANCE_EVAL_DESIGN_v1.md 4-7절, 재홍님 결정 A안) =====
+// 이 함수(issueMailBatchTest) 맨 앞에서 자체 try/catch로 먼저 돈다 — 회사 메일 비밀번호(SMTP_PASSWORD)가 이 함수에만 연결돼 있어서.
+// 이슈 메일 코드는 그대로이고, 이슈 메일이 꺼져 있거나(DISABLED) 시각 전(NOT_YET)이어도 마감 메일은 따로 판단한다.
+// 판단·문구는 lib/perfCloseMail.js(순수 함수). 여기서는 시트 읽기(MRO 본 시트 1번 + 인사평가 파일 1번, 1월엔 작년 파일 1번 더)·
+// Firestore perfCloseMails(문서 = 마감 1건, 이미 받은 사람 목록)·회사 메일 발송만 한다. 시트에는 쓰지 않는다.
+const perfCloseMail = require('./lib/perfCloseMail');
+const PERF_CLOSE_MAILS = 'perfCloseMails';
+async function runPerfCloseMail_(nowMs) {
+  const client = await getSheetsClient();
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  const users = perfUsers_(mro[0] && mro[0].values);
+  const settingRows = (mro[1] && mro[1].values) || [];
+  const thisYear = competency.seoulYear(nowMs);
+  const fileId = competency.findFileId(settingRows, thisYear);
+  if (!fileId) return { skipped: true, reason: 'NO_FILE', year: thisYear };
+  const readFile = async function (id) {
+    const vr = await batchGetValues(client, id, [competency.quoteTab(competency.SETTINGS_TAB) + '!A1:C', competency.quoteTab(performance.TAB_CLOSE) + '!A2:F'].map(encodeURIComponent), { unformatted: true });
+    return { settings: (vr[0] && vr[0].values) || [], close: (vr[1] && vr[1].values) || [] };
+  };
+  const cur = await readFile(fileId);
+  const ms = perfCloseMail.readMailSettings(cur.settings);
+  if (!ms.enabled) return { skipped: true, reason: 'DISABLED' };
+  const years = [{ year: thisYear, closeRows: cur.close }];
+  // 1월: 작년 12월 마감은 작년 파일에 저장된다(1월 유예) → 작년 파일도 읽는다(같은 파일이면 건너뜀)
+  if (Number(competency.seoulIsoDate(nowMs).slice(5, 7)) === 1) {
+    const prevId = competency.findFileId(settingRows, thisYear - 1);
+    if (prevId && prevId !== fileId) years.push({ year: thisYear - 1, closeRows: (await readFile(prevId)).close });
+  }
+  const jobs = perfCloseMail.planDue({ nowMs: nowMs, years: years, hour: ms.hour, testRecipient: ms.testRecipient });
+  const summary = { hour: ms.hour, testMode: !!ms.testRecipient, due: jobs.length, sent: 0, failed: 0, jobs: [] };
+  if (!jobs.length) return summary;
+  const publishDays = performance.readPublishDays(cur.settings).days;
+  let loggedIn = false;
+  for (const job of jobs) {
+    const ref = firestore.collection(PERF_CLOSE_MAILS).doc(job.key);
+    const snap = await ref.get();
+    const prev = snap.exists ? snap.data() : {};
+    if (prev.status === 'done') { summary.jobs.push({ key: job.key, skipped: 'ALREADY_DONE' }); continue; }
+    const built = perfCloseMail.buildMessages(job, { nowMs: nowMs, publishDays: publishDays, users: users, testRecipient: ms.testRecipient, alreadySent: prev.sentTo || [] });
+    const base = { key: job.key, test: job.test, year: job.year, team: job.team, month: job.month, closeDate: job.closeDate, closedAt: job.closedAt,
+      recipientCount: built.recipients.members.length + built.recipients.execs.length, excluded: built.recipients.excluded.map(function (x) { return x.reason; }) };
+    if (!built.messages.length) {
+      await ref.set(Object.assign({ status: 'done', sentTo: prev.sentTo || [], failed: 0, updatedAt: FieldValue.serverTimestamp() }, base));
+      summary.jobs.push({ key: job.key, sent: 0 }); continue;
+    }
+    if (!loggedIn) {
+      // 회사 메일 로그인은 실행마다 1회만(이슈 메일과 같은 계정 잠김 방지). 실패하면 아무에게도 안 보내고 다음 정시에 다시.
+      try { await mailer.verifyLogin(); loggedIn = true; } catch (loginErr) {
+        const e = mailer.describeError(loginErr);
+        await ref.set(Object.assign({ status: 'login_failed', error: e, sentTo: prev.sentTo || [], updatedAt: FieldValue.serverTimestamp() }, base));
+        summary.loginFailed = e; return summary;
+      }
+    }
+    const sentTo = (prev.sentTo || []).slice(); const failures = [];
+    const result = await mailer.sendMessages(built.messages.map(function (m) { return { to: m.to, subject: m.subject, html: m.html, text: m.text }; }));
+    if (!result.ok) failures.push({ error: result.error, index: result.index });
+    else result.results.forEach(function (r) { if (r.ok) sentTo.push(r.to); else failures.push({ to: r.to, error: r.error }); });
+    const nSent = result.ok ? result.sent : 0, nFail = built.messages.length - nSent;
+    summary.sent += nSent; summary.failed += nFail;
+    // 일부 실패 → 관리자에게 알림 1통(마감 1건에 1번만). 남은 사람은 다음 정시에 다시(정식은 마감 다음 날까지만)
+    let notified = prev.failNotified === true;
+    if (nFail > 0 && !notified) {
+      try {
+        const lines = '발송 ' + nSent + '통 성공, ' + nFail + '통 실패. 남은 사람은 다음 정시에 다시 보냅니다.\n' + failures.map(function (f) { return (f.to || '') + ' ' + JSON.stringify(f.error); }).join('\n');
+        await mailer.sendMessages([{ to: mailer.FROM_ADDRESS, subject: '[MRO 워크허브] 성과평가 마감 메일 일부 발송 실패 (' + job.closeDate + ' ' + job.team + ' ' + job.month + '월)',
+          text: lines, html: '<pre style="font-size:12px;">' + lines.replace(/[<>&]/g, '') + '</pre>' }]);
+        notified = true;
+      } catch (notifyErr) { console.error('[perfCloseMail] 관리자 알림 실패: ' + notifyErr); }
+    }
+    await ref.set(Object.assign({ status: nFail > 0 ? 'partial' : 'done', sentTo: sentTo, failed: nFail, failures: failures.slice(0, 50), failNotified: notified,
+      lastSentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, base));
+    summary.jobs.push({ key: job.key, sent: nSent, failed: nFail });
+  }
+  return summary;
+}
+
 exports.issueMailBatchTest = async (req, res) => {
   const t0 = Date.now();
   const nowMs = Date.now();
   const today = issueMail.kstDateStr(nowMs);
+  // [2026-11-13] 성과평가 마감 메일 — 자체 try/catch(실패해도 아래 이슈 메일은 그대로 진행). 결과는 로그 한 줄만(이슈 메일 응답은 바꾸지 않음)
+  try {
+    console.log('[perfCloseMail] ' + JSON.stringify(await runPerfCloseMail_(nowMs)));
+  } catch (pcErr) {
+    console.error('[perfCloseMail] 오류: ' + String((pcErr && pcErr.message) || pcErr));
+  }
   try {
     const client = await getSheetsClient();
     const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
@@ -4976,6 +5058,19 @@ async function performanceSettings_(req, res, auth, t0, timings) {
   }
   timings.perfSheetMs = Date.now() - c0;
   const v = performance.settingsView({ settingsRows: f.settings, users: users, monthlyRows: f.monthly });
+  // 마감 메일(2026-11-13): 켜짐·시험 여부(시험 주소는 보내지 않음) + 최근 발송 기록 1건(Firestore perfCloseMails, 읽기 1번)
+  const mailSet = perfCloseMail.readMailSettings(f.settings);
+  let last = null;
+  try {
+    const q = await firestore.collection(PERF_CLOSE_MAILS).orderBy('updatedAt', 'desc').limit(1).get();
+    if (!q.empty) {
+      const d = q.docs[0].data();
+      last = { test: d.test === true, year: d.year, team: d.team, month: d.month, closeDate: d.closeDate, status: d.status,
+        sent: (d.sentTo || []).length, failed: d.failed || 0, recipientCount: d.recipientCount || 0,
+        at: d.updatedAt && d.updatedAt.toMillis ? performance.seoulStamp(d.updatedAt.toMillis()) : '' };
+    }
+  } catch (e) { last = null; }
+  v.closeMail = { enabled: mailSet.enabled, testMode: !!mailSet.testRecipient, last: last };
   res.status(200).json(Object.assign({ ok: true, view: 'settings', serverMs: Date.now() - t0, timings, year: target.year }, v));
 }
 
@@ -5020,7 +5115,7 @@ exports.savePerformanceTest = async (req, res) => {
         timings.perfSheetMs = Date.now() - c0;
         // 4단계: 인사평가설정 탭 성과 키 저장 — 같은 잠금(performanceEval) 안에서 다시 읽은 값으로 계획(평가 단위를 읽는 saveMonth와 겹치지 않게)
         if (b.action === 'saveSettings') {
-          const plan = performance.planSettingsWrite({ settingsRows: f.settings, users: users, monthlyRows: f.monthly, units: b.units, publishDays: b.publishDays });
+          const plan = performance.planSettingsWrite({ settingsRows: f.settings, users: users, monthlyRows: f.monthly, units: b.units, publishDays: b.publishDays, closeMailHour: b.closeMailHour });
           if (!plan.ok) return plan;
           const w0s = Date.now();
           const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {
