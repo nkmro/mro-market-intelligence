@@ -4538,7 +4538,7 @@ loadCompPerfSettings_(false);
 // ==== 인사평가 설정 › 성과평가 구역 (4단계, 설계서 4-6절 · 2026-11-13 재홍님 결정 ①~⑤) — 이 화면에서 유일하게 고칠 수 있는 구역 ====
 // 읽기: getPerformanceTest view=settings(관리자만). 저장: savePerformanceTest action=saveSettings — 바꾼 값만 보낸다.
 // 실적이 있는 팀은 평가 단위를 바꿀 수 없다(🔒, 서버도 MODE_LOCKED). 저장한 값은 다른 화면을 새로 열 때 반영(서버가 요청마다 시트를 다시 읽음).
-// 2026-11-13 마감 메일: 성과마감메일시각(이 구역에서 고침)·성과마감메일사용·성과마감메일테스트수신자(시트에서만, 화면에 값을 보이지 않음)도 "그 밖의 줄"에서 뺀다
+// 2026-11-13 마감 메일: 성과마감메일시각·성과마감메일사용(둘 다 이 구역에서 고침)·성과마감메일테스트수신자(시트에서만, 화면에 값을 보이지 않음)도 "그 밖의 줄"에서 뺀다
 function compIsPerfKey_(k) { return k === '성과공개일수' || k === '성과마감메일시각' || k === '성과마감메일사용' || k === '성과마감메일테스트수신자' || (k.indexOf('성과평가단위_') === 0 && k.length > '성과평가단위_'.length); }
 let compPerf_ = null, compPerfReq_ = 0;
 async function loadCompPerfSettings_(keepMsg) {
@@ -4550,7 +4550,8 @@ async function loadCompPerfSettings_(keepMsg) {
   ((res && res.teams) || []).forEach(function (t) { units[t.team] = t.mode; });
   const days = res && res.publishDays ? String(res.publishDays.valid ? res.publishDays.value : (res.publishDays.raw === null ? '' : res.publishDays.raw)) : '';
   const hour = res && res.closeMailHour ? String(res.closeMailHour.valid ? res.closeMailHour.value : (res.closeMailHour.raw === null ? '' : res.closeMailHour.raw)) : '';
-  compPerf_ = { res: res, units: units, days: days, hour: hour, msg: msg, busy: false };
+  const mail = !!(res && res.closeMailEnabled && res.closeMailEnabled.enabled);
+  compPerf_ = { res: res, units: units, days: days, hour: hour, mail: mail, msg: msg, busy: false };
   compPerfRender_();
 }
 function compPerfChanges_() {
@@ -4564,6 +4565,8 @@ function compPerfChanges_() {
   const mh = r.closeMailHour || { valid: false, raw: null };
   const curH = mh.valid ? String(mh.value) : String(mh.raw === null ? '' : mh.raw);
   if (compPerf_.hour.trim() !== curH) { out.closeMailHour = compPerf_.hour.trim(); out.list.push('마감 메일 시각 ' + (curH || '기본 17') + ' → ' + out.closeMailHour); }
+  const curM = !!(r.closeMailEnabled && r.closeMailEnabled.enabled);
+  if (compPerf_.mail !== curM) { out.closeMailEnabled = compPerf_.mail; out.list.push('마감 안내 메일 ' + (curM ? '켜짐' : '꺼짐') + ' → ' + (compPerf_.mail ? '켜짐' : '꺼짐')); }
   return out;
 }
 function compPerfRender_() {
@@ -4584,12 +4587,22 @@ function compPerfRender_() {
   }).join('');
   const days = `<input class="csp-days" type="number" min="0" max="31" step="1" inputmode="numeric" value="${escapeHtml(s.days)}" ${s.busy ? 'disabled' : ''} oninput="compPerfDays_(this.value)" aria-label="실적 공개 일수"> 일`;
   const daysRow = compPerfRowHtml_('실적 공개 일수', '팀장이 월 마감한 날부터 N일 동안 팀원에게 매출·이익 숫자를 보여줘요. 0 = 숫자 공개 안 함(점수·순위는 항상 보임), 0~31', `<div>${days}</div>`);
-  const hourIn = `<input class="csp-days csp-hour" type="number" min="0" max="23" step="1" inputmode="numeric" placeholder="17" value="${escapeHtml(s.hour)}" ${s.busy ? 'disabled' : ''} oninput="compPerfHour_(this.value)" aria-label="마감 메일 시각"> 시`;
+  const hourIn = `<input class="csp-days csp-hour" type="number" min="0" max="23" step="1" inputmode="numeric" value="${escapeHtml(s.hour)}" ${s.busy ? 'disabled' : ''} oninput="compPerfHour_(this.value)" aria-label="마감 메일 시각"> 시`;
   const cm = r.closeMail || {};
   const last = cm.last ? '최근 마감 메일: ' + (cm.last.test ? '[시험] ' : '') + cm.last.month + '월 · ' + cm.last.team + ' · ' + (cm.last.at ? perfMd_(cm.last.at) + ' ' + String(cm.last.at).slice(11, 16) : '')
-    + ' · ' + cm.last.sent + '명에게 보냄' + (cm.last.status === 'login_failed' ? ' (회사 메일 로그인 실패 — 다음 정시에 다시)' : ' (실패 ' + cm.last.failed + ')') : '';
-  const hourRow = compPerfRowHtml_('마감 메일 시각', '팀장이 월 마감한 날, 이 시각에 그 팀 팀원과 임원에게 안내 메일을 보내요. 이 시각이 지난 뒤에 마감하면 다음 정시(2분)에 바로 보내요. 0~23, 기본 17(오후 5시)', `<div>${hourIn}</div>`)
-    + `<div class="settings-row-desc" style="margin:2px 0 6px;">메일 발송: ${cm.enabled ? '<b>켜짐</b>' : '<b>꺼짐</b> — 인사평가설정 탭 성과마감메일사용을 TRUE로 바꾸면 켜져요'}${cm.enabled && cm.testMode ? ' · <b>시험 모드</b>(시험 수신자 한 곳에만 보냄)' : ''}${last ? '<br>' + escapeHtml(last) : ''}</div>`;
+    + ' · ' + cm.last.sent + (cm.last.test ? '통 보냄' : '명에게 보냄') + (cm.last.status === 'login_failed' ? ' (회사 메일 로그인 실패 — 다음 정시에 다시)' : ' (실패 ' + cm.last.failed + ')') : '';
+  // 2026-11-13 통일: 켜기/끄기도 이 구역 버튼(시트 성과마감메일사용 TRUE/FALSE). 시험 수신자는 시트에서만 — 화면에는 "시험 모드" 표시만
+  const mailSeg = [[true, '켜짐'], [false, '꺼짐']].map(function (m) {
+    return `<button type="button" class="${s.mail === m[0] ? 'on' : ''}" ${s.busy ? 'disabled' : ''} onclick="compPerfMail_(${m[0]})">${m[1]}</button>`;
+  }).join('');
+  // 시트 우선(2026-11-13 재홍님): 화면은 시트에 실제로 있는 값을 보여 준다 — 줄이 없거나 값이 잘못되면 그렇다고 적고, 기본값을 입력된 값처럼 보이지 않는다
+  const me = r.closeMailEnabled || { enabled: false, raw: null };
+  const mailSheet = me.raw === null ? '시트에 줄 없음 → 꺼짐' : '시트 값: ' + me.raw + (me.enabled ? '' : (me.raw.toUpperCase() === 'FALSE' ? '' : ' → TRUE가 아니라 꺼짐'));
+  const mailRow = compPerfRowHtml_('마감 안내 메일' + (s.mail !== me.enabled ? ' *' : ''), '팀장이 월 마감하면 그 팀 팀원과 임원에게 안내 메일을 보내요. · ' + mailSheet + (cm.enabled && cm.testMode ? ' · 시험 모드(시험 수신자 한 곳에만 보냄)' : ''), `<div class="csp-seg">${mailSeg}</div>`);
+  const mhr = r.closeMailHour || { valid: false, raw: null };
+  const hourSheet = mhr.raw === null ? '시트에 줄 없음 → 기본 17시로 동작(저장하면 시트에 줄이 생겨요)' : (mhr.valid ? '' : '시트 값 "' + mhr.raw + '"이(가) 잘못돼 기본 17시로 동작');
+  const hourRow = compPerfRowHtml_('마감 메일 시각', '팀장이 월 마감한 날, 이 시각에 그 팀 팀원과 임원에게 안내 메일을 보내요. 이 시각이 지난 뒤에 마감하면 다음 정시(2분)에 바로 보내요. 0~23, 기본 17(오후 5시)' + (hourSheet ? ' · ' + hourSheet : ''), `<div>${hourIn}</div>`)
+    + (last ? `<div class="settings-row-desc" style="margin:2px 0 6px;">${escapeHtml(last)}</div>` : '');
   const msg = s.msg ? `<div class="cy-band ${s.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(s.msg.text)}</div>` : '';
   const dirty = ch.list.length > 0;
   el.innerHTML = `<div class="cs-sec">성과평가 <span class="settings-row-desc" style="font-weight:400;">· 고칠 수 있음 · ${escapeHtml(String(r.year || ''))}년 파일</span></div>
@@ -4597,6 +4610,7 @@ ${msg}
 <div class="settings-row-desc" style="margin-top:6px;">팀별 평가 단위 — 사무소 = 같은 사무소 팀원 합산 평가, 개인 = 팀원별 평가. 팀원별 사무소는 성과평가 › [팀 설정]에서 팀장이 정해요.</div>
 ${teams || '<div class="cm-empty">성과평가 팀이 없어요.</div>'}
 ${daysRow}
+${mailRow}
 ${hourRow}
 <div class="pf-btns"><button type="button" class="pf-btn pri" ${dirty && !s.busy ? '' : 'disabled'} onclick="compPerfSave_()">${s.busy ? '저장 중...' : '저장'}</button><span class="pf-mut" style="font-size:12px;">${dirty ? '<span class="csp-chg">바뀐 값: </span>' + escapeHtml(ch.list.join(', ')) : '바꾼 값이 없어요'}</span></div>`;
 }
@@ -4605,6 +4619,7 @@ function compPerfRowHtml_(title, desc, ctrlHtml) {
   return `<div class="settings-row"><div class="settings-row-label"><div class="settings-row-title">${escapeHtml(title)}</div>${desc ? `<div class="settings-row-desc">${escapeHtml(desc)}</div>` : ''}</div>${ctrlHtml}</div>`;
 }
 function compPerfPick_(team, mode) { compPerf_.units[team] = mode; compPerf_.msg = null; compPerfRender_(); }
+function compPerfMail_(on) { compPerf_.mail = on === true; compPerf_.msg = null; compPerfRender_(); } // 마감 안내 메일 켜짐/꺼짐(2026-11-13 통일)
 // 마감 메일 시각 칸(2026-11-13) — 공개 일수 칸과 같은 방식(다시 그린 뒤 커서를 돌려놓음)
 function compPerfHour_(v) {
   compPerf_.hour = String(v);
@@ -4635,6 +4650,7 @@ async function compPerfSave_() {
     if (ch.closeMailHour === '' || !Number.isInteger(h) || h < 0 || h > 23) { compPerf_.msg = { text: '마감 메일 시각은 0~23 사이 정수로 적어 주세요.' }; compPerfRender_(); return; }
     body.closeMailHour = h;
   }
+  if (ch.closeMailEnabled !== undefined) body.closeMailEnabled = ch.closeMailEnabled;
   compPerf_.busy = true; compPerf_.msg = null; compPerfRender_();
   const res = await perfSaveFetch_(body);
   compPerf_.busy = false;
@@ -4908,7 +4924,7 @@ const PERF_SAVE_ERR_ = {
   NOTE_TOO_LONG: '비고는 200자까지 적을 수 있어요.', BAD_NOTE: '비고를 다시 적어 주세요.', NOTE_NO_ROW: '실적 줄이 없는 칸에는 비고를 적을 수 없어요. 화면을 새로 열어 주세요.',
   MONTH_NOT_CLOSED: '마감 전인 달이에요. 화면을 새로 열어 [저장]으로 저장해 주세요.', NO_NOTE_FOR_BASELINE: '전년 기준 실적에는 비고를 적지 않아요.',
   MODE_LOCKED: '실적이 있는 팀은 평가 단위를 바꿀 수 없어요.', BAD_MODE: '평가 단위는 개인 또는 사무소만 고를 수 있어요.', BAD_PUBLISH_DAYS: '실적 공개 일수는 0~31 사이 정수로 적어 주세요.',
-  UNKNOWN_TEAM: '목록에 없는 팀이에요. 화면을 새로 열어 주세요.', BAD_CLOSE_MAIL_HOUR: '마감 메일 시각은 0~23 사이 정수로 적어 주세요.', DUPLICATE_SETTING_KEY: '인사평가설정 탭에 같은 키 줄이 둘 이상 있어요. 시트에서 한 줄만 남겨 주세요.'
+  UNKNOWN_TEAM: '목록에 없는 팀이에요. 화면을 새로 열어 주세요.', BAD_CLOSE_MAIL_HOUR: '마감 메일 시각은 0~23 사이 정수로 적어 주세요.', BAD_CLOSE_MAIL_ENABLED: '마감 안내 메일은 켜짐 또는 꺼짐만 고를 수 있어요.', DUPLICATE_SETTING_KEY: '인사평가설정 탭에 같은 키 줄이 둘 이상 있어요. 시트에서 한 줄만 남겨 주세요.'
 };
 function perfSaveErrText_(res) {
   if (!res) return '응답을 받지 못했어요. 저장됐을 수도 있으니 화면을 새로 열어 확인해 주세요.';

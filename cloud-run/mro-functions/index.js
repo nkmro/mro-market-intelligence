@@ -5115,7 +5115,7 @@ exports.savePerformanceTest = async (req, res) => {
         timings.perfSheetMs = Date.now() - c0;
         // 4단계: 인사평가설정 탭 성과 키 저장 — 같은 잠금(performanceEval) 안에서 다시 읽은 값으로 계획(평가 단위를 읽는 saveMonth와 겹치지 않게)
         if (b.action === 'saveSettings') {
-          const plan = performance.planSettingsWrite({ settingsRows: f.settings, users: users, monthlyRows: f.monthly, units: b.units, publishDays: b.publishDays, closeMailHour: b.closeMailHour });
+          const plan = performance.planSettingsWrite({ settingsRows: f.settings, users: users, monthlyRows: f.monthly, units: b.units, publishDays: b.publishDays, closeMailHour: b.closeMailHour, closeMailEnabled: b.closeMailEnabled });
           if (!plan.ok) return plan;
           const w0s = Date.now();
           const n = await perfBatchWrite_(target.fileId, plan.writes.map(function (w) {

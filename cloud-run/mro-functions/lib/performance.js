@@ -19,6 +19,7 @@ const UNIT_KEY_PREFIX = '성과평가단위_'; // 팀마다 1줄, 값 개인/사
 const PUBLISH_DAYS_KEY = '성과공개일수';  // 0~31, 0·빈칸·숫자 아님 = 공개 안 함(0)
 const CLOSE_MAIL_HOUR_KEY = '성과마감메일시각'; // 0~23, 줄 없음·잘못된 값 = 기본 17(오후 5시, 2026-11-13 재홍님)
 const CLOSE_MAIL_HOUR_DEFAULT = 17;
+const CLOSE_MAIL_ENABLED_KEY = '성과마감메일사용'; // TRUE일 때만 발송(대소문자 무시), 줄 없음·그 밖 = 꺼짐 — lib/perfCloseMail.js readMailSettings와 같은 규칙 (2026-11-13 앱에서 켜고 끄기)
 const UNIT_MODES = ['개인', '사무소'];
 
 // 5-2절 ③: 코드가 아는 항목키 5개와 묶음 — 숫자만 시트에서 바꿀 수 있다
@@ -65,6 +66,13 @@ function readCloseMailHour(settingsRows) {
   const n = Number(raw);
   const valid = raw !== '' && Number.isInteger(n) && n >= 0 && n <= 23;
   return { hour: valid ? n : CLOSE_MAIL_HOUR_DEFAULT, raw: row ? raw : null, valid: valid };
+}
+// 성과마감메일사용: 'TRUE'(대소문자 무시)·시트 체크 true일 때만 켜짐. raw = 시트 값 글자(줄 없음 null)
+function readCloseMailEnabled(settingsRows) {
+  const row = (settingsRows || []).find(function (r) { return cell(r && r[0]) === CLOSE_MAIL_ENABLED_KEY; });
+  let raw = row ? cell(row[1]) : null;
+  if (raw !== null && /^(true|false)$/i.test(raw)) raw = raw.toUpperCase(); // 시트 불리언(true/false)은 시트 화면처럼 TRUE/FALSE로
+  return { enabled: raw === 'TRUE', raw: raw };
 }
 
 // 등급표 "110:100, 100:90, 90:80, 나머지:70" → [{over:1.10, pts:100}, ..., {over:null, pts:70}]
@@ -643,7 +651,7 @@ function planOffices(p) { // p = { userRows, team, changes }
 
 // =====================================================================
 // 4단계: 인사평가 설정 › 성과평가 구역 (설계서 4-6절, 2026-11-13 재홍님 결정)
-// ① 성과 키 2종(성과평가단위_팀·성과공개일수)은 이 구역에서만 보여 주고 고친다 (+ 2026-11-13 마감 메일 시각 성과마감메일시각, 0~23)
+// ① 성과 키 2종(성과평가단위_팀·성과공개일수)은 이 구역에서만 보여 주고 고친다 (+ 2026-11-13 마감 메일 시각 성과마감메일시각 0~23 · 켜기 성과마감메일사용 TRUE/FALSE)
 // ② 팀 = 활성 일반·담당·팀장이 있는 팀(teamsOf) + 시트에 성과평가단위_ 줄만 있는 팀
 // ③ 바꾼 값만 쓴다: 줄이 있으면 B열(값)만, 없으면 마지막 줄 다음에 새 줄(A 키·B 값·C 설명). "개인"으로 되돌려도 줄은 지우지 않음
 // ④ 그 파일 성과-월실적에 실적 줄이 있는 팀은 평가 단위를 바꿀 수 없다(MODE_LOCKED)
@@ -653,6 +661,7 @@ function planOffices(p) { // p = { userRows, team, changes }
 const UNIT_DESC = '성과평가 단위(개인/사무소). 팀마다 1줄, 줄이 없는 팀은 개인';
 const PUBLISH_DESC = '팀장이 월 마감한 날부터 며칠까지 팀원에게 매출·이익 숫자를 보여줄지(0~31, 0=공개 안 함)';
 const PUBLISH_DAYS_MAX = 31;
+const CLOSE_MAIL_ENABLED_DESC = '마감 안내 메일 켜기(TRUE일 때만 발송, FALSE·줄 없음 = 꺼짐)';
 const CLOSE_MAIL_HOUR_DESC = '팀장이 월 마감한 날 이 시각(0~23시)에 그 팀 팀원·임원에게 마감 안내 메일. 이미 지났으면 다음 정시 2분';
 
 // 설정 화면용: 팀마다 평가 단위·시트 줄 여부·실적 여부(잠금) + 공개 일수 + 잘못 적힌 단위 줄
@@ -677,7 +686,7 @@ function settingsView(p) { // p = { settingsRows(A1:C), users, monthlyRows(A2:L)
   });
   const pub = readPublishDays(rows);
   const mh = readCloseMailHour(rows);
-  return { teams: teams, publishDays: { value: pub.days, raw: pub.raw, valid: pub.valid }, closeMailHour: { value: mh.hour, raw: mh.raw, valid: mh.valid }, badUnitRows: unit.bad };
+  return { teams: teams, publishDays: { value: pub.days, raw: pub.raw, valid: pub.valid }, closeMailHour: { value: mh.hour, raw: mh.raw, valid: mh.valid }, closeMailEnabled: readCloseMailEnabled(rows), badUnitRows: unit.bad };
 }
 
 // 저장 계획. p = { settingsRows(A1:C), users, monthlyRows, units:{ 팀: '개인'|'사무소' } 또는 없음, publishDays: 숫자 또는 없음(undefined) }
@@ -737,6 +746,20 @@ function planSettingsWrite(p) {
       changed.push({ key: CLOSE_MAIL_HOUR_KEY, from: view.closeMailHour.valid ? view.closeMailHour.value : view.closeMailHour.raw, to: n });
     }
   }
+  // 마감 안내 메일 켜기/끄기(2026-11-13 통일): true/false만. 시트에는 TRUE/FALSE(불리언)로. 줄 없음 + 끄기 = 이미 꺼짐 → 줄을 새로 만들지 않음
+  if (p.closeMailEnabled !== undefined) {
+    const on = p.closeMailEnabled;
+    if (on !== true && on !== false) return { ok: false, error: 'BAD_CLOSE_MAIL_ENABLED', field: cell(on) };
+    const cur = view.closeMailEnabled;
+    const same = cur.enabled === on && (on ? true : (cur.raw === null || cur.raw.toUpperCase() === 'FALSE'));
+    if (!same) {
+      const hits = rowOf(CLOSE_MAIL_ENABLED_KEY);
+      if (hits.length > 1) return { ok: false, error: 'DUPLICATE_SETTING_KEY', field: CLOSE_MAIL_ENABLED_KEY };
+      if (hits.length === 1) writes.push({ row: hits[0], col: 'B', values: [on] });
+      else writes.push({ row: next++, col: 'A:C', values: [CLOSE_MAIL_ENABLED_KEY, on, CLOSE_MAIL_ENABLED_DESC] });
+      changed.push({ key: CLOSE_MAIL_ENABLED_KEY, from: cur.enabled, to: on });
+    }
+  }
   if (!writes.length) return { ok: false, error: 'NOTHING_TO_SAVE' };
   return { ok: true, writes: writes, changed: changed };
 }
@@ -749,5 +772,5 @@ module.exports = {
   MONTHLY_COLS, CLOSE_COLS, seoulStamp, indexRows, nextFreeRow, teamUnits, inputView, planMonthWrite, closeMissing, planClose, planOffices,
   NOTE_COLS, NOTE_MAX, checkNote, notesView, planNoteWrite,
   PUBLISH_DAYS_MAX, settingsView, planSettingsWrite,
-  CLOSE_MAIL_HOUR_KEY, CLOSE_MAIL_HOUR_DEFAULT, readCloseMailHour
+  CLOSE_MAIL_HOUR_KEY, CLOSE_MAIL_HOUR_DEFAULT, readCloseMailHour, CLOSE_MAIL_ENABLED_KEY, readCloseMailEnabled
 };

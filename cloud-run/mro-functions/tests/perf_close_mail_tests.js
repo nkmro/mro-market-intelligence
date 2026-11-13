@@ -97,6 +97,22 @@ t('S6 같은 키 줄 둘 → DUPLICATE_SETTING_KEY', perf.planSettingsWrite({ se
 const sv = perf.settingsView({ settingsRows: SS.concat([['성과마감메일시각', 'x']]), users: SU, monthlyRows: [] });
 t('S7 화면용: 잘못된 값 "x" → 값 17·raw "x"·valid false', sv.closeMailHour.value === 17 && sv.closeMailHour.raw === 'x' && sv.closeMailHour.valid === false, sv.closeMailHour);
 
+// S8~: 마감 안내 메일 켜기/끄기(성과마감메일사용, 2026-11-13 앱·시트 통일)
+const en = function (rows) { return perf.readCloseMailEnabled(rows); };
+t('S8 읽기 규칙이 메일 쪽(perfCloseMail.readMailSettings)과 같다: TRUE·true·불리언 true → 켜짐, FALSE·빈칸·"예"·줄 없음 → 꺼짐', [['TRUE', true], ['true', true], [true, true], ['FALSE', false], ['', false], ['예', false]].every(function (c) {
+  const rows = [['성과마감메일사용', c[0]]]; return en(rows).enabled === c[1] && pc.readMailSettings(rows).enabled === c[1]; }) && en([]).enabled === false && en([]).raw === null && pc.readMailSettings([]).enabled === false);
+w = perf.planSettingsWrite({ settingsRows: SS.concat([['성과마감메일사용', 'TRUE', '']]), users: SU, monthlyRows: [], closeMailEnabled: false });
+t('S9 켜짐(시트 TRUE) → 끄기: 그 줄(3행) B열만 불리언 false, 바뀐 내용 true → false', w.ok && w.writes.length === 1 && w.writes[0].row === 3 && w.writes[0].col === 'B' && w.writes[0].values[0] === false && w.changed[0].from === true && w.changed[0].to === false, w);
+w = perf.planSettingsWrite({ settingsRows: SS, users: SU, monthlyRows: [], closeMailEnabled: true });
+t('S10 줄 없음 → 켜기: 새 줄 A~C(키·true·설명)', w.ok && w.writes[0].col === 'A:C' && w.writes[0].values[0] === '성과마감메일사용' && w.writes[0].values[1] === true, w);
+t('S11 줄 없음 + 끄기 = 이미 꺼짐 → NOTHING_TO_SAVE(줄을 새로 만들지 않음), 시트 TRUE + 켜기 → NOTHING_TO_SAVE',
+  perf.planSettingsWrite({ settingsRows: SS, users: SU, monthlyRows: [], closeMailEnabled: false }).error === 'NOTHING_TO_SAVE'
+  && perf.planSettingsWrite({ settingsRows: SS.concat([['성과마감메일사용', true]]), users: SU, monthlyRows: [], closeMailEnabled: true }).error === 'NOTHING_TO_SAVE');
+w = perf.planSettingsWrite({ settingsRows: SS.concat([['성과마감메일사용', '예']]), users: SU, monthlyRows: [], closeMailEnabled: false });
+t('S12 시트 값이 "예"(잘못됨, 꺼짐으로 읽힘) + 끄기 → FALSE로 고쳐 씀', w.ok && w.writes[0].values[0] === false, w);
+t('S13 true/false 말고 "TRUE"·1·null → BAD_CLOSE_MAIL_ENABLED', ['TRUE', 1, null].every(function (v) { return perf.planSettingsWrite({ settingsRows: SS, users: SU, monthlyRows: [], closeMailEnabled: v }).error === 'BAD_CLOSE_MAIL_ENABLED'; }));
+t('S14 화면용 settingsView에 closeMailEnabled {enabled, raw}', JSON.stringify(perf.settingsView({ settingsRows: SS.concat([['성과마감메일사용', 'TRUE']]), users: SU, monthlyRows: [] }).closeMailEnabled) === '{"enabled":true,"raw":"TRUE"}');
+
 // ── I: index.js — 가짜 시트·Firestore·메일
 const env = { me: 'jhjoo@nkmro.com', sent: [], logs: [], loginFail: false, sendFailTo: {}, throwSheets: false, store: {} };
 const SHEET = {
@@ -119,6 +135,13 @@ const fakeFirestore = { collection: function (col) { return { doc: function (id)
     return { empty: docs.length === 0, docs: docs.map(function (d) { return { data: function () { return Object.assign({}, d, { updatedAt: { toMillis: function () { return KST(2026, 10, 14, 11, 2); } } }); } }; }) }; } }; } }; } }; } };
 const stubs = {
   '@google-cloud/firestore': { Firestore: class { constructor() { return fakeFirestore; } }, FieldValue: { serverTimestamp: function () { return 'TS'; }, delete: function () { return 'DEL'; } } },
+  './lib/writeLock': { acquireLock: async function () { return true; }, releaseLock: async function () {} },
+  './lib/writeIdempotency': { IDEMPOTENCY_COLLECTION: 'x', withIdempotency: async function (fs, key, action, fn) { return fn(); } },
+  'google-auth-library': { GoogleAuth: class { constructor() {} async getClient() { return { request: async function (o) {
+    let n = 0; o.data.data.forEach(function (d) { env.writes = (env.writes || []).concat([{ range: d.range, values: d.values[0] }]);
+      const m = /^'?(.+?)'?!([A-Z])(\d+)(?::([A-Z])\d+)?$/.exec(d.range); const row = Number(m[3]) - 1; const arr = SHEET.F26[m[1]];
+      while (arr.length <= row) arr.push([]); d.values[0].forEach(function (v, i) { arr[row][m[2].charCodeAt(0) - 65 + i] = v; n++; }); });
+    return { data: { totalUpdatedCells: n } }; } }; } } },
   './lib/auth': { authenticateSession: async function () { return { ok: true, email: env.me, timings: {} }; } },
   './lib/sheetsClient': Object.assign({}, realSheets, { getSheetsClient: async function () { if (env.throwSheets) throw new Error('SHEETS_DOWN'); return {}; },
     batchGetValues: async function (c, id, ranges) {
@@ -192,6 +215,16 @@ const reset = function () { env.sent = []; env.logs = []; };
   r = await run('getPerformanceTest', { sessionToken: 't', view: 'settings' });
   t('I14 view=settings: closeMail 켜짐·시험 모드·최근 기록(시험, 동부 9월), 시각 9, 시험 주소 문자열은 응답에 없음', r.ok && r.closeMail.enabled === true && r.closeMail.testMode === true && r.closeMail.last && r.closeMail.last.test === true
     && r.closeMailHour.value === 9 && JSON.stringify(r).indexOf('성과마감메일테스트수신자') < 0 && JSON.stringify(r.closeMail).indexOf('jhjoo@') < 0, r && r.closeMail);
+  // 앱에서 끄기 → 시트 B열 false → 다음 실행은 DISABLED (시트 우선: 서버는 요청마다 시트를 다시 읽음)
+  r = await run('savePerformanceTest', { sessionToken: 't', action: 'saveSettings', idempotencyKey: 'k1', closeMailEnabled: false });
+  const useRow = SHEET.F26['인사평가설정'].findIndex(function (x) { return x[0] === '성과마감메일사용'; });
+  t('I17 앱에서 끄기 저장 → 인사평가설정 성과마감메일사용 줄 B열만 false(1칸)', r.ok && r.updatedCells === 1 && SHEET.F26['인사평가설정'][useRow][1] === false && env.writes.length === 1 && env.writes[0].range === "'인사평가설정'!B" + (useRow + 1), { r: r, w: env.writes });
+  r = await run('getPerformanceTest', { sessionToken: 't', view: 'settings' });
+  t('I18 다시 읽으면 closeMailEnabled {enabled:false, raw:"FALSE"(시트 화면과 같은 표기)}, 메일 쪽도 꺼짐', r.closeMailEnabled.enabled === false && r.closeMailEnabled.raw === 'FALSE' && r.closeMail.enabled === false, r.closeMailEnabled);
+  reset(); fakeNow = KST(2026, 11, 13, 18, 2); await run('issueMailBatchTest');
+  t('I19 꺼진 뒤 일괄 실행 → DISABLED, 보냄 0', lastLog().indexOf('"reason":"DISABLED"') > 0 && env.sent.length === 0, lastLog());
+  r = await run('savePerformanceTest', { sessionToken: 't', action: 'saveSettings', idempotencyKey: 'k2', closeMailEnabled: true });
+  t('I20 다시 켜기 → 같은 줄 B열 true', r.ok && SHEET.F26['인사평가설정'][useRow][1] === true);
   // 1월: 작년 파일 12월 마감
   SHEET.F26['인사평가설정'] = SHEET.F26['인사평가설정'].filter(function (x) { return x[0] !== '성과마감메일테스트수신자'; });
   SHEET.F26['성과-마감'].push([2026, '동부', 12, 'jhjoo@nkmro.com', '2027-01-05 09:30', '12월 마감(1월 유예)']);
