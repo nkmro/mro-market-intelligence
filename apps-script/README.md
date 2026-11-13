@@ -45,6 +45,10 @@ Apps Script 편집기 → 프로젝트 설정 → 스크립트 속성에서 아�
 | `NAVER_CLIENT_ID` | 네이버 뉴스 검색 API 클라이언트 ID |
 | `NAVER_CLIENT_SECRET` | 네이버 뉴스 검색 API 시크릿 |
 | `CATCHUP_TRIGGER_ID` | 특정 트리거(자동 실행) 식별자 |
+| `CATCHUP_TRIGGER_AT` | `collectMarketNews()`가 "1시간 뒤 재실행"을 예약한 시각(밀리초, `CATCHUP_TRIGGER_ID`와 함께 쓰고 지움 — 2026-11-13) |
+| `CMN_LAST_STAGE` | `collectMarketNews()` 진행 체크포인트(`단계명@시작시각/경과초`, 사후 진단용) |
+| `CMN_START_AT` / `CMN_DONE_DATE` | 수집 시작 시각(밀리초) / 게시 단계를 마친 서울 날짜 — 새벽 수집 재발 방지 점검이 읽음(2026-11-13) |
+| `CMN_WATCHDOG` | 재발 방지 점검 기록 JSON `{date, count, triggerId, mailed}`(2026-11-13) |
 
 > 참고: `ADMIN_EMAIL`(관리자 이메일)과 `BACKUP_PARENT_FOLDER_ID`(백업 저장용 Drive 폴더 ID)는 Script Properties가 아니라 코드에 직접 상수로 쓰여 있습니다. 비밀번호나 API Key 같은 "비밀값"은 아니지만, 내부 식별자가 코드에 노출되어 있다는 점은 참고해 주세요.
 
@@ -73,5 +77,7 @@ Apps Script 편집기 → 프로젝트 설정 → 스크립트 속성에서 아�
 - `collectMarketNews()` — 뉴스 수집·게시(설정 `트리거시각`). 자세한 단계는 최상위 `README.md`의 "뉴스 수집·게시 파이프라인" 절.
 - `yearRolloverDaily()` — 인사평가 연도 자동 전환. 일 단위 타이머, 오전 4~5시(GMT+09:00). 12월 `연도전환시작일`(인사평가 파일의 `인사평가설정` 탭, 기본 1)~31일에 `인사평가파일_{다음 해}`가 없으면 올해 인사평가 파일을 복사해 다음 해 파일을 만들고 '설정' 탭에 등록합니다. 12월에 끝내 실패했으면 1월에도 그해 파일이 없을 때만 이어서 시도하고, 이미 있으면 조용히 끝납니다. 성공 1번·실패할 때마다 관리자에게 메일.
   - 관련 함수: `installYearRolloverTrigger`(트리거 등록, 1번만), `yearRolloverRunNow`(수동 실행), `yearRolloverTest`/`yearRolloverCleanupTest`(시험 파일 `TEST_{연도}_인사평가` 만들기·정리, '설정' 탭에 쓰지 않음).
+- `dailyBackupCheck_()` — 매시(현재 8분) 실행. 맨 앞에서 **새벽 뉴스 수집 재발 방지 점검** `runNewsWatchdog_()`(2026-11-13, 커밋 `a694608`)를 먼저 하고, 그다음 설정 `백업시각`이면 하루 1번 백업합니다. 점검은 `트리거시각`+1시~7시 사이에 오늘 수집 완료 기록이 없으면 1분 뒤 `collectMarketNews`를 다시 예약(하루 최대 3번)하고, 7시 점검이거나 3번 다 써도 안 끝났으면 관리자에게 메일 1번. 규칙 상세는 최상위 `README.md`의 "뉴스 수집·게시 파이프라인" 절 끝.
+  - 관련 함수: `newsWatchdogDecide_`(판단만 하는 순수 함수), `sendNewsWatchdogMail_`(메일), `testNewsWatchdog`(편집기에서 실행하는 시험 — 판단 11가지 + 지금 상태 읽기만).
 - 메일: `MailApp.sendEmail`을 씁니다(2026-11-10 `GmailApp`에서 변경 — `GmailApp.sendEmail`은 `https://mail.google.com/` 전체 권한이 필요해서). `appsscript.json`의 `oauthScopes`에 `https://www.googleapis.com/auth/script.send_mail`이 있어야 하고, 권한 목록을 바꾸면 편집기에서 한 번 다시 승인해야 합니다.
 - `appsscript.json`도 `Code.gs`처럼 편집기가 원본이고 이 저장소가 미러입니다(2026-11-10 기준 두 곳이 같은 내용).
