@@ -68,7 +68,14 @@ function world(o) {
     mkSheet('역량-영업수행역량-대면영업', [['순번', '이름', '기록ID'], ['1', '이도윤', 'X3']]),
     mkSheet('역량-옛탭-보관', [['순번', '이름'], ['1', '보관']], { hidden: true }),
     mkSheet('CRM-역량평가-기준', [['역량', '설명'], ['- 영업', '...']]),
-    mkSheet('인사평가설정', [['키', '값', '설명'], ['연도전환시작일', o.startDay === undefined ? '1' : o.startDay, ''], ['전년도입력마감일', '15', '']])
+    mkSheet('인사평가설정', [['키', '값', '설명'], ['연도전환시작일', o.startDay === undefined ? '1' : o.startDay, ''], ['전년도입력마감일', '15', ''],
+      ['성과평가단위_동부', '사무소', ''], ['성과공개일수', 1, ''], ['성과마감메일사용', true, ''], ['성과마감메일시각', 17, '']]),
+    // 2026-11-13 성과평가 탭(예시 숫자 — 실제 실적 아님): 월실적(2025 기준 줄 + 2026 줄)·마감·평가기준 + 이름이 비슷한 보관 탭
+    mkSheet('성과-월실적', [o.perfHeader11 ? ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시'] : ['연도', '월', '팀', '단위구분', '단위', '단위이름', '매출액', '이익', '인원', '수정자', '수정일시', '비고'],
+      [2025, 9, '동부', '사무소', '가사무소', '가사무소', 100, 10, 2, '', '', ''], [2026, 9, '동부', '사무소', '가사무소', '가사무소', 120, 12, 2, 'jh', '2026-10-14 10:00', '예시 비고']]),
+    mkSheet('성과-마감', [['연도', '팀', '마감월', '마감자', '마감일시', '기록'], [2026, '동부', 9, 'jh', '2026-10-14 10:05', '9월 마감']], { hidden: !!o.perfCloseHidden }),
+    mkSheet('성과-평가기준', [['묶음', '묶음가중치', '항목키', '항목 이름', '배점비율', '등급표'], ['성장', 0.5, 'sales', '매출', 0.3, '110:100, 나머지:70']]),
+    mkSheet('성과-월실적_옛', [['연도', '월'], [2024, 12]])
   ], o.noSA ? ['joojhong@gmail.com'] : ['joojhong@gmail.com', SA]);
   // MRO '설정' 탭: [키, 값, 설명, 구분]
   const setRows = [['키', '값', '설명', '구분'], ['팀장_열람범위', '자기팀', '', '공통'], [o.noCurKey ? '다른키' : '인사평가파일_2026', cur, '', '공통'],
@@ -265,6 +272,45 @@ const KST = (y, m, d, h) => new Date(Date.UTC(y, m - 1, d, (h === undefined ? 4 
   const w5 = world();
   const r5 = w5.fn.yrRun_(false, KST(2027, 3, 2), true);
   t('Y27 3월·2027 없음·수동 → 작년(2026) 파일로 2027 생성·등록(복구)', r5.ok && r5.name === '2027_인사평가' && w5.settings.rows.some(x => x[0] === '인사평가파일_2027'), r5);
+}
+
+// (가짜 시트의 getLastColumn = 머리글·데이터 모든 줄에서 마지막으로 값이 있는 칸 — 공식 문서 "last column that has content"와 같은 규칙)
+// ───── 2026-11-13 성과평가 탭 처리 (재홍님 결정: 성과-월실적·성과-마감은 비우고, 성과-평가기준·인사평가설정은 그대로) ─────
+{
+  const w = world();
+  const r = w.fn.yrRun_(false, KST(2026, 12, 1));
+  const nf = w.byName('2027_인사평가');
+  const sh = n => nf.sheets.find(s => s.name === n);
+  const blankBelow = s => s.rows.slice(1).every(row => row.every(v => v === ''));
+  t('Y28a 성과-월실적: 1행 머리글 12칸 그대로, 2행 아래(2025·2026 줄) 내용 비움', r.ok && sh('성과-월실적').rows[0].length === 12 && sh('성과-월실적').rows[0][11] === '비고' && blankBelow(sh('성과-월실적')), sh('성과-월실적').rows);
+  t('Y28b 성과-마감: 1행 머리글 6칸 그대로, 2행 아래 비움', sh('성과-마감').rows[0].join() === '연도,팀,마감월,마감자,마감일시,기록' && blankBelow(sh('성과-마감')), sh('성과-마감').rows);
+  t('Y28c 지우는 방식 = 내용만(clearContent) — 줄 수는 그대로(줄 삭제 아님), 탭마다 1번', sh('성과-월실적').rows.length === 3 && sh('성과-마감').rows.length === 2 && sh('성과-월실적').cleared === 1 && sh('성과-마감').cleared === 1);
+  t('Y28d 성과-평가기준 그대로', sh('성과-평가기준').rows[1].join() === '성장,0.5,sales,매출,0.3,110:100, 나머지:70' && !sh('성과-평가기준').cleared);
+  t('Y28e 인사평가설정의 성과 줄(평가 단위·공개 일수·메일 켜짐·시각) 그대로 다음 해로', ['성과평가단위_동부|사무소', '성과공개일수|1', '성과마감메일사용|true', '성과마감메일시각|17'].every(k => sh('인사평가설정').rows.some(x => (x[0] + '|' + x[1]) === k)));
+  t('Y28f 이름이 비슷한 탭(성과-월실적_옛)은 지우지 않음 — 정확한 이름 2개만', sh('성과-월실적_옛').rows[1].join() === '2024,12' && !sh('성과-월실적_옛').cleared);
+  t('Y28g 올해(2026) 파일의 성과 탭은 손대지 않음', (() => { const c = w.file(w.cur).sheets; const g = n => c.find(s => s.name === n); return g('성과-월실적').rows[2][6] === 120 && g('성과-마감').rows[1][2] === 9 && !g('성과-월실적').cleared; })());
+  t('Y28i 경계: 2025 줄은 L(비고) 빈칸·2026 줄은 L 채움(섞임) → L까지 모두 비움(지운 칸 12열)', sh('성과-월실적').rows[1].length >= 12 && sh('성과-월실적').rows[2][11] === '' && sh('성과-월실적').rows[1].slice(0, 12).every(v => v === ''));
+  t('Y28h 완료 메일 보고: "지움: 성과-월실적 2줄"·"지움: 성과-마감 1줄", 그대로 둔 탭에 성과-평가기준·인사평가설정', r.report.indexOf('지움: 성과-월실적 2줄') >= 0 && r.report.indexOf('지움: 성과-마감 1줄') >= 0
+    && r.report.some(x => x.indexOf('그대로 둔 탭: ') === 0 && x.indexOf('성과-평가기준') > 0 && x.indexOf('인사평가설정') > 0 && x.indexOf('성과-월실적,') < 0), r.report);
+}
+{
+  const w = world({ perfHeader11: true });
+  w.fn.yrRun_(false, KST(2026, 12, 1));
+  const s = w.byName('2027_인사평가').sheets.find(x => x.name === '성과-월실적');
+  t('Y28j 경계: 머리글이 11칸(L 머리글 없음)인데 데이터에 L(비고)이 있어도 → 마지막 값 있는 칸(L)까지 비움', s.rows[0].length === 11 && s.rows[2][11] === '' && s.rows.slice(1).every(row => row.every(v => v === '')), s.rows);
+}
+{
+  const w = world({ perfCloseHidden: true });
+  w.fn.yrRun_(false, KST(2026, 12, 1));
+  const nf = w.byName('2027_인사평가');
+  t('Y29 숨긴 성과-마감 탭은 건드리지 않음(역량 숨긴 탭과 같은 규칙), 성과-월실적은 비움', nf.sheets.find(s => s.name === '성과-마감').rows[1][2] === 9 && !nf.sheets.find(s => s.name === '성과-마감').cleared && nf.sheets.find(s => s.name === '성과-월실적').cleared === 1);
+}
+{
+  const w = world();
+  const r = w.fn.yearRolloverTest();
+  const nf = Object.values(w.st.files).find(f => /^TEST_/.test(f.name));
+  t('Y30 시험 모드(yearRolloverTest): TEST_ 파일에서도 성과 탭 2개 비움 + 메일 보고에 지움 줄, 설정 탭에는 안 씀', r.ok && nf && nf.sheets.find(s => s.name === '성과-월실적').cleared === 1
+    && w.st.mails.length === 1 && w.st.mails[0].body.indexOf('지움: 성과-월실적 2줄') >= 0 && w.st.mails[0].body.indexOf('지움: 성과-마감 1줄') >= 0 && !w.settings.rows.some(x => x[0] === '인사평가파일_2027'), { r: r && r.ok, mail: w.st.mails[0] && w.st.mails[0].body.slice(0, 400) });
 }
 
 console.log('pass ' + pass + ' / fail ' + fail);

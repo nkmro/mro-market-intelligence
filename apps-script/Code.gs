@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-13 새벽 시황 뉴스 수집 재발 방지 점검: dailyBackupCheck_ 맨 앞 runNewsWatchdog_(7시 전까지·하루 3번·모두 실패하면 메일)·newsWatchdogDecide_·sendNewsWatchdogMail_·testNewsWatchdog 추가, collectMarketNews에 CMN_START_AT·CMN_DONE_DATE·CATCHUP_TRIGGER_AT 기록)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-13 인사평가 자동 연도 전환에 성과평가 반영: 새해 파일의 성과-월실적·성과-마감 탭도 역량- 탭처럼 2행 아래 내용만 지움(YR_PERF_CLEAR_TABS_), 성과-평가기준·인사평가설정은 그대로)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -5250,6 +5250,7 @@ function runRemoveLoginDiagFlushTriggerOnce() {
 // (11/10 재홍님 확인 4) 12월에 끝내 실패하면 1월에도 그해 파일(인사평가파일_{올해})이 없을 때만 이어서 시도한다(작년 파일을 복사).
 // 수동 복구: yearRolloverRunNow — 실제 모드로 1번. 12월이면 다음 해, 그 밖엔 올해 파일이 없을 때만 작년→올해. 둘 다 아니면 아무것도 안 함.
 // 하는 일: 올해 파일 복사(이름 앞 연도만 바꿈) → 기록 탭('역량-'로 시작·숨기지 않은 탭) 2행 아래 내용만 지움 →
+// (2026-11-13 성과평가) 성과-월실적·성과-마감 탭(숨기지 않은 것)도 2행 아래 내용만 지움 — 성과-평가기준·인사평가설정은 다음 해에도 쓰므로 그대로 →
 // 올해 파일의 서비스 계정 편집자를 새 파일에도 편집자로 추가 → '설정' 탭 마지막 '공통' 줄 아래 인사평가파일_{다음 해} 등록 → 메일.
 // - 이미 인사평가파일_{다음 해}가 있으면 조용히 끝(중복 생성 방지). 실패하면 메일(매번)·다음 날 같은 시각 재시도.
 // - 중간에 실패해도 파일을 또 만들지 않게, 만든 파일 ID를 스크립트 속성 YR_{다음 해}_FILEID에 적어 두고 이어서 한다.
@@ -5259,6 +5260,8 @@ const YR_FILE_KEY_PREFIX_ = '인사평가파일_';
 const YR_SETTINGS_TAB_ = '인사평가설정';
 const YR_START_DAY_KEY_ = '연도전환시작일';
 const YR_RECORD_TAB_PREFIX_ = '역량-';
+// 2026-11-13 성과평가: 새해 파일에서 비울 탭(정확한 이름, | 로 구분). 성과-평가기준은 넣지 않음(다음 해에도 씀)
+const YR_PERF_CLEAR_TABS_ = '성과-월실적|성과-마감';
 const YR_TEST_PREFIX_ = 'TEST_';
 const YR_HANDLER_ = 'yearRolloverDaily';
 
@@ -5406,13 +5409,13 @@ report.push('복사: ' + newName + ' (새로 만듦)');
 } else {
 report.push('복사: ' + nf.getName() + ' (어제 만든 파일 이어서)');
 }
-// 2) 기록 탭 2행 아래 내용만 지움 (머리글·서식·드롭다운 규칙은 그대로)
+// 2) 기록 탭 2행 아래 내용만 지움 (머리글·서식·드롭다운 규칙은 그대로) — 역량- 탭 + 성과-월실적·성과-마감(2026-11-13)
 step = 2;
 const nss = SpreadsheetApp.openById(nf.getId());
 const kept = [];
 nss.getSheets().forEach(function (sh) {
 const name = sh.getName();
-if (name.indexOf(YR_RECORD_TAB_PREFIX_) === 0 && !sh.isSheetHidden()) {
+if ((name.indexOf(YR_RECORD_TAB_PREFIX_) === 0 || YR_PERF_CLEAR_TABS_.split('|').indexOf(name) >= 0) && !sh.isSheetHidden()) {
 const lr = sh.getLastRow(), lc = sh.getLastColumn();
 if (lr > 1 && lc > 0) sh.getRange(2, 1, lr - 1, lc).clearContent();
 report.push('지움: ' + name + ' ' + Math.max(lr - 1, 0) + '줄');
