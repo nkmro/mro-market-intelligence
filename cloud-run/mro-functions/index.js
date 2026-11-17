@@ -5208,3 +5208,71 @@ exports.savePerformanceTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
   }
 };
+
+// =====================================================================
+// 실적 관리 › 주간 실적 1-가 (2026-11-17 재홍님 결정): getWeeklySalesTest — 연결 시험(ping)만. 읽기 전용, 쓰기 없음.
+// - MRO 본 시트 '설정'의 실적관리파일_{연도}로 그해 실적 파일을 찾고, 탭 5개 머리글·실적-설정 값·고객사/계획 연결을 점검.
+// - 관리자만. 보기(view)·입력은 1-나 이후(getPerformanceTest의 1-가 ping → 1-나 view와 같은 순서).
+// =====================================================================
+const weeklySales = require('./lib/weeklySales');
+exports.getWeeklySalesTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const { sessionToken, view, year } = req.body || {};
+    const auth = await authenticateSession(firestore, sessionToken);
+    if (!auth.ok) {
+      res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth));
+      return;
+    }
+    const timings = Object.assign({}, auth.timings);
+    if (view !== 'ping') {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
+      return;
+    }
+    if (String(auth.email || '').trim().toLowerCase() !== ADMIN_EMAIL) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'FORBIDDEN' });
+      return;
+    }
+    const client = await getSheetsClient();
+    const m0 = Date.now();
+    const mro = await batchGetValues(client, SPREADSHEET_ID, [POLL_SETTINGS_RANGE]);
+    timings.mroSheetMs = Date.now() - m0;
+    const targetYear = Number(year) || competency.seoulYear();
+    const fileId = weeklySales.findFileId((mro[0] && mro[0].values) || [], targetYear);
+    if (!fileId) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SALES_FILE_MISSING',
+        detail: "'설정' 탭에 " + weeklySales.FILE_KEY_PREFIX + targetYear + ' 키가 없음', year: targetYear });
+      return;
+    }
+    const q = competency.quoteTab;
+    const ranges = weeklySales.TABS.map(function (t) { return q(t) + '!1:1'; })
+      .concat([q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K', q(weeklySales.TAB_PLAN) + '!A2:C'])
+      .map(encodeURIComponent);
+    const s0 = Date.now();
+    let vr;
+    try {
+      vr = await batchGetValues(client, fileId, ranges, { unformatted: true });
+    } catch (e) {
+      const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+      const msg = String((e && e.response && e.response.data && e.response.data.error && e.response.data.error.message) || (e && e.message) || e);
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED',
+        httpStatus: httpStatus, detail: msg.slice(0, 300), year: targetYear, fileId: fileId });
+      return;
+    }
+    timings.salesSheetMs = Date.now() - s0;
+    const n = weeklySales.TABS.length;
+    const tabs = weeklySales.TABS.map(function (t, i) { return weeklySales.checkHeaders(t, ((vr[i] && vr[i].values) || [])[0]); });
+    const settings = weeklySales.readSettings((vr[n] && vr[n].values) || []);
+    const link = weeklySales.crossCheck((vr[n + 1] && vr[n + 1].values) || [], (vr[n + 2] && vr[n + 2].values) || [], targetYear);
+    const now = weeklySales.currentReport(Date.now(), settings);
+    res.status(200).json({
+      ok: tabs.every(function (t) { return t.ok; }) && settings.bad.length === 0,
+      serverMs: Date.now() - t0, timings, year: targetYear, fileId: fileId,
+      tabs: tabs, settings: settings, link: link, now: now
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};
