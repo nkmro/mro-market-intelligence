@@ -8082,8 +8082,9 @@ function wkInBase_() { return { year: wkIn_.year, month: wkIn_.month, week: wkIn
 async function wkAfter_(msg) { wkInMsg_ = msg; wkBusy_ = false; await loadWeeklyPage(); } // 위 팀 카드·표까지 새로 → 입력 탭도 다시
 async function wkInSave_(complete) {
 if (wkBusy_ || !wkIn_) return;
+const entries = wkInEntries_(); // 다시 그리기 전에 입력칸 값을 먼저 읽는다(다시 그리면 서버 값으로 덮임)
 wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
-const r1 = await wkPost_(Object.assign({ action: 'save', entries: wkInEntries_() }, wkInBase_()));
+const r1 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_()));
 if (!r1 || !r1.ok) { wkBusy_ = false; wkInMsg_ = '저장하지 못했어요: ' + wkErr_(r1); wkRenderInput_(); return; }
 if (!complete) { await wkAfter_('✓ 저장했어요.'); return; }
 const r2 = await wkPost_(Object.assign({ action: 'complete' }, wkInBase_()));
@@ -8102,9 +8103,10 @@ if (wkBusy_ || !wkIn_) return;
 const g = function (id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 const c = { team: wkIn_.team, name: g('wa-name'), series: g('wa-series'), orderType: g('wa-order'), office: g('wa-office'), note: g('wa-note') };
 if (!c.name) { wkInMsg_ = '구매사명을 넣어 주세요.'; wkRenderInput_(); return; }
+const entries = wkInEntries_(); // 다시 그리기 전에 먼저 읽기
 wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
 // 이미 넣은 숫자가 사라지지 않게 먼저 저장(입력 가능할 때만)
-const r0 = await wkPost_(Object.assign({ action: 'save', entries: wkInEntries_() }, wkInBase_()));
+const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_()));
 if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '추가 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; }
 const r = await wkPost_({ action: 'addCustomer', year: wkIn_.year, customer: c });
 if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '고객사를 추가하지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }

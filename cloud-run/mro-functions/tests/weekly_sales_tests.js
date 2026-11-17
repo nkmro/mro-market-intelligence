@@ -239,6 +239,36 @@ const a1 = await acquireLock(fs2, 'weeklySales', 'h1', o), a2 = await acquireLoc
 await releaseLock(fs2, 'weeklySales', 'h1'); const a3 = await acquireLock(fs2, 'weeklySales', 'h2', o);
 t('K1 같은 잠금은 동시에 1명, 성과평가 잠금과는 별개, 풀면 다음 사람', a1 === true && a2 === false && p1 === true && a3 === true);
 
+// 화면: [저장]·[입력 완료]·[추가] 때 입력칸 값을 다시 그리기 전에 읽는지 (11/17 운영 시험에서 숫자가 사라진 문제)
+const uiHtml = require('fs').readFileSync(require('path').join(__dirname, '..', '..', '..', 'feed.html'), 'utf8');
+function uiGrab(name) {
+  const i = uiHtml.indexOf('async function ' + name + '(') >= 0 ? uiHtml.indexOf('async function ' + name + '(') : uiHtml.indexOf('function ' + name + '(');
+  let d = 0; const j = uiHtml.indexOf('{', i);
+  for (let k = j; k < uiHtml.length; k++) { if (uiHtml[k] === '{') d++; else if (uiHtml[k] === '}') { d--; if (d === 0) return uiHtml.slice(i, k + 1); } }
+}
+async function uiRun(call) {
+  const els = { 'wi-s-0': { value: '1,234' }, 'wi-p-0': { value: '56' }, 'wi-n-0': { value: '메모' }, 'wa-name': { value: '새고객' } };
+  const posts = [];
+  const ctx = {
+    document: { getElementById: function (id) { return els[id] || null; } },
+    wkIn_: { rows: [{ name: '가나산업' }], year: 2026, month: 11, week: 2, team: '서부' },
+    wkBusy_: false, wkInMsg_: '', wkAddOpen_: true,
+    wkRenderInput_: function () { Object.keys(els).forEach(function (k) { if (k.indexOf('wi-') === 0) els[k].value = ''; }); }, // 다시 그리기 = 서버 값(빈칸)으로 덮임
+    wkPost_: async function (b) { posts.push(b); return { ok: true }; },
+    wkErr_: function () { return ''; }, loadWeeklyPage: async function () {}
+  };
+  require('vm').createContext(ctx);
+  require('vm').runInContext(['wkInEntries_', 'wkInBase_', 'wkAfter_', 'wkInSave_', 'wkInAdd_'].map(uiGrab).join('\n'), ctx);
+  await require('vm').runInContext(call, ctx);
+  return posts;
+}
+let up = await uiRun('wkInSave_(false)');
+t('Q1 [저장] 넣은 숫자 그대로 보냄', up[0].action === 'save' && up[0].entries[0].sales === '1,234' && up[0].entries[0].profit === '56' && up[0].entries[0].note === '메모');
+up = await uiRun('wkInSave_(true)');
+t('Q2 [입력 완료] 저장 먼저, 숫자 그대로', up[0].action === 'save' && up[0].entries[0].sales === '1,234' && up[1].action === 'complete');
+up = await uiRun('wkInAdd_()');
+t('Q3 [고객사 추가] 전 저장에 숫자 그대로', up[0].action === 'save' && up[0].entries[0].sales === '1,234' && up[1].action === 'addCustomer');
+
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();
