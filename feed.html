@@ -758,6 +758,53 @@ font-size: 13px; padding: 2px 4px; display: none;
 .pf-t td.l { text-align: left; }
 .pf-t td.c { text-align: center; }
 .pf-t tr.me td { background: #f7f2fb; }
+/* 실적 관리 › 주간 실적 1-나 (2026-11-17 시안 승인): 주차·팀 현황 카드 + 표. 기존 pf- 모양을 쓰고 아래만 추가 */
+.wk-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 10px 0 12px; }
+.wk-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wk-nav { border: 1px solid var(--border); background: var(--card); border-radius: 8px; width: 32px; height: 32px; font-size: 16px; cursor: pointer; color: var(--accent); }
+.wk-nav:disabled { color: #c9c6bf; cursor: default; }
+.wk-title { font-size: 20px; font-weight: 800; color: var(--accent); line-height: 1.2; }
+.wk-title small { display: block; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.wk-sel { display: flex; gap: 6px; }
+.wk-due { margin-left: auto; background: #fdecea; color: var(--danger); font-weight: 700; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; }
+.wk-due-ok { background: #eef8f2; color: #1d6b43; }
+.wk-due-late { background: #f1efea; color: var(--text-muted); }
+.wk-steps { display: flex; margin: 14px 0 4px; }
+.wk-step { flex: 1; position: relative; text-align: center; font-size: 12px; color: var(--text-muted); cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
+.wk-step:disabled { cursor: default; }
+.wk-step i { display: block; width: 14px; height: 14px; border-radius: 50%; margin: 0 auto 4px; background: #d9d5e6; position: relative; z-index: 1; border: 3px solid var(--card); box-sizing: content-box; }
+.wk-step::before { content: ""; position: absolute; top: 9px; left: -50%; width: 100%; height: 3px; background: #e4e0ee; }
+.wk-step:first-child::before { display: none; }
+.wk-step.past i, .wk-step.past::before, .wk-step.cur::before { background: var(--sidebar-bg-end); }
+.wk-step.cur i { background: var(--accent); width: 18px; height: 18px; margin-top: -2px; box-shadow: 0 0 0 3px var(--accent-soft); }
+.wk-step b { display: block; font-size: 13px; color: var(--text); }
+.wk-step.cur b { color: var(--accent); }
+.wk-step.fut b { color: #b8b4ad; }
+.wk-step span { font-size: 11px; }
+.wk-gm { font-style: normal; background: #efe6fb; color: var(--purple); font-weight: 700; font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+.wk-hr { border: 0; border-top: 1px solid #eeece6; margin: 12px 0; }
+.wk-ph { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; }
+.wk-ph .bar { flex: 1; height: 8px; background: #eeece6; border-radius: 5px; overflow: hidden; display: flex; }
+.wk-ph .bar i { display: block; height: 100%; }
+.wk-teams { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.wk-team { border-radius: 10px; padding: 9px 10px; border: 1px solid var(--border); display: flex; align-items: center; gap: 9px; }
+.wk-team .ico { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; flex: 0 0 auto; }
+.wk-team b { display: block; font-size: 14px; }
+.wk-team small { display: block; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-team em { font-style: normal; font-size: 12px; font-weight: 700; }
+.wk-team.done { background: #eef8f2; border-color: #bfe3cd; } .wk-team.done .ico { background: #2e8b57; } .wk-team.done em { color: #1d6b43; }
+.wk-team.ing { background: #fffaf0; border-color: #f0d58a; } .wk-team.ing .ico { background: #d9a21b; } .wk-team.ing em { color: #8a5a00; }
+.wk-team.none { background: #faf9f6; } .wk-team.none .ico { background: #b8b4ad; } .wk-team.none em { color: var(--text-muted); }
+.wk-t th.grp { background: #e7e3ef; }
+.wk-t td.sub { background: #f4f2f8; font-weight: 700; }
+.wk-t td.tot { background: var(--accent-soft); font-weight: 700; color: var(--accent); }
+.wk-t td.na { color: #b0ada6; }
+.wk-t td.sticky, .wk-t th.sticky { position: sticky; left: 0; z-index: 1; }
+.wk-t td.sticky { background: var(--card); min-width: 150px; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-t td.sub.sticky { background: #f4f2f8; } .wk-t td.tot.sticky { background: var(--accent-soft); }
+.wk-sub { display: block; font-size: 10.5px; color: var(--text-muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.wk-up { color: #1d6b43; } .wk-down { color: var(--danger); }
+@media (max-width: 768px) { .wk-teams { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wk-due { margin-left: 0; } }
 .pf-t td.tot { font-weight: 700; color: var(--accent); }
 .pf-t td.b { font-weight: 600; }
 .pf-t td.g { color: var(--blue); }
@@ -1023,6 +1070,13 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
       <div class="nav-item" id="nav-settings" data-view="settings" onclick="switchView('settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 시황 설정</div>
         </div>
       </div>
+      <!-- 실적 관리 › 주간 실적 1-나 (2026-11-17): MRO 자재 시황과 인사평가 사이. 관리자·임원·팀장만 보임. NEW는 2단계(4팀 완료 결과 메일)부터 켬 -->
+      <div class="nav-group" id="nav-group-sales" data-group="sales" style="display:none;">
+        <div class="nav-group-head" onclick="toggleNavGroup_('sales')"><span class="nav-group-caret">▼</span>실적 관리<span class="nav-group-new" id="nav-group-sales-new" style="display:none;">NEW</span></div>
+        <div class="nav-group-body">
+          <div class="nav-item" id="nav-weekly" data-view="weekly" onclick="switchView('weekly')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><polyline points="7 16 10 13 13 15 17 11"></polyline></svg></span> 주간 실적</div>
+        </div>
+      </div>
       <div class="nav-group collapsed" id="nav-group-hr" data-group="hr" style="display:none;">
         <div class="nav-group-head" onclick="toggleNavGroup_('hr')"><span class="nav-group-caret">▼</span>인사평가<span class="nav-group-new" id="nav-group-hr-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
@@ -1087,6 +1141,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="comp-team-view" style="display:none;"></div>
 <div id="perf-view" style="display:none;"></div>
 <div id="perf-criteria-view" style="display:none;"></div>
+<div id="weekly-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -1511,6 +1566,7 @@ document.getElementById('comp-mine-view').style.display = view === 'comp-mine' ?
 document.getElementById('comp-team-view').style.display = view === 'comp-team' ? 'block' : 'none';
 document.getElementById('perf-view').style.display = view === 'perf' ? 'block' : 'none';
 document.getElementById('perf-criteria-view').style.display = view === 'perf-criteria' ? 'block' : 'none';
+document.getElementById('weekly-view').style.display = view === 'weekly' ? 'block' : 'none';
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1560,6 +1616,9 @@ loadPerfPage();
 }
 if (view === 'perf-criteria') {
 loadPerfCriteriaPage();
+}
+if (view === 'weekly') {
+loadWeeklyPage();
 }
 toggleDrawer(false);
 }
@@ -1826,6 +1885,11 @@ if (['일반', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-comp-mine').style.display = 'flex';
 // 1단계-라-다-나 (설계서 2-1 v1.9): 회신 대기 배지 — 일반·담당만 앱 시작 때 view=mine 1번, 기다리지 않음
 loadCompBadge_();
+}
+// 실적 관리 › 주간 실적 1-나: 관리자·임원·팀장만(서버도 같은 사람만 허용). 앱 시작 때 서버를 부르지 않음.
+if (session.email === ADMIN_EMAIL || ['임원', '팀장'].indexOf(session.role) >= 0) {
+document.getElementById('nav-group-sales').style.display = '';
+document.getElementById('nav-weekly').style.display = 'flex';
 }
 restoreNavGroups_();
 setupTeamLabelControl();
@@ -7774,6 +7838,142 @@ function doLogout() {
     if (navigator.clearAppBadge) navigator.clearAppBadge();
   } catch (e) {}
   window.location.href = 'index.html';
+}
+
+// =====================================================================
+// 실적 관리 › 주간 실적 1-나 (2026-11-17 재홍님 승인) — 조회 화면. 쓰기 없음.
+// 서버 getWeeklySalesTest(view=report)가 계산한 값(lib/weeklySales.js buildReportView)만 그린다.
+// - 볼 수 있는 사람: 관리자 + 임원·팀장 (메뉴도 같은 사람에게만 보임)
+// - [우리 팀 입력] 탭은 자리만(2단계). 숫자 모양은 성과평가와 같은 perfNum_·perfPct_를 쓴다.
+// =====================================================================
+const CLOUD_RUN_GET_WEEKLY_SALES_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getWeeklySalesTest';
+let wkReq_ = 0, wkSel_ = {}, wkRes_ = null, wkTab_ = 'all';
+async function wkFetch_(body) {
+try {
+const controller = new AbortController();
+const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+const res = await fetch(CLOUD_RUN_GET_WEEKLY_SALES_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
+clearTimeout(timeoutId);
+return compRateLimit_(res);
+} catch (e) { return null; }
+}
+function wkErrorText_(res) {
+if (res && res.error === 'SALES_FILE_MISSING') return (res.year || '올해') + '년 실적관리 파일이 아직 등록되지 않았어요. 관리자에게 알려 주세요.';
+if (res && res.error === 'NO_REPORT_YET') return '아직 보고할 주차가 없어요.';
+if (res && res.error === 'FORBIDDEN') return '주간 실적은 임원·팀장만 볼 수 있어요.';
+if (res && res.error === 'SHEET_ACCESS_FAILED') return '실적관리 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
+return compErrorText_(res, '주간 실적');
+}
+async function loadWeeklyPage() {
+const root = document.getElementById('weekly-view');
+const reqNo = ++wkReq_;
+if (!wkRes_) root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const res = await wkFetch_(Object.assign({ view: 'report' }, wkSel_));
+if (reqNo !== wkReq_) return; // 그 사이 다시 눌렀으면 늦게 온 응답은 버린다
+if (!res || !res.ok) {
+if (res && (res.error === 'SALES_FILE_MISSING' || res.error === 'NO_REPORT_YET') && (wkSel_.year || wkSel_.month || wkSel_.week)) wkSel_ = {}; // 다시 열면 지금 보고
+wkRes_ = null;
+root.innerHTML = `<div class="feed-empty">${escapeHtml(wkErrorText_(res))}</div>`;
+return;
+}
+wkRes_ = res;
+wkRender_(res);
+}
+function wkPick_(o) { wkSel_ = Object.assign({}, wkSel_, o); loadWeeklyPage(); }
+function wkSetTab_(t) { wkTab_ = t; if (wkRes_) wkRender_(wkRes_); }
+const WK_DOW_ = ['일', '월', '화', '수', '목', '금', '토'];
+function wkMd_(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); if (!m) return ''; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return Number(m[2]) + '/' + Number(m[3]) + '(' + WK_DOW_[d.getUTCDay()] + ')'; }
+function wkMd2_(iso) { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
+function wkDiff_(d) { if (d === null || d === undefined || !isFinite(d)) return ''; const v = Math.round(d * 1000) / 10; return `<span class="${v >= 0 ? 'wk-up' : 'wk-down'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%p</span>`; }
+// 마감 배지: 마감 전 = 남은 시간, 4팀 다 끝남 = 보고 끝, 마감 지남 = 마감 지남
+function wkDue_(res) {
+const all = res.teams.length > 0 && res.doneCount === res.teams.length;
+if (all) return `<span class="wk-due wk-due-ok">✓ 보고 끝 (${res.teams.length}팀 완료)</span>`;
+const h = Number(res.deadline.hour);
+const dueMs = Date.parse(res.deadline.date + 'T' + String(h).padStart(2, '0') + ':00:00+09:00');
+const left = dueMs - Date.now();
+const when = (res.deadline.date === res.today ? '오늘' : wkMd_(res.deadline.date)) + ' ' + String(h).padStart(2, '0') + ':00';
+if (left <= 0) return `<span class="wk-due wk-due-late">마감 지남 · ${when}</span>`;
+const mins = Math.floor(left / 60000), hh = Math.floor(mins / 60), mm = mins % 60;
+return `<span class="wk-due">⏰ 마감 ${when} · ${hh > 0 ? hh + '시간 ' : ''}${mm}분 남음</span>`;
+}
+function wkHeader_(res) {
+const st = res.steps || [];
+const idx = st.findIndex(function (s) { return s.inputDate === res.inputDate && s.label === res.label; });
+const prev = idx > 0 ? st[idx - 1] : null, next = idx >= 0 && idx < st.length - 1 && st[idx + 1].open ? st[idx + 1] : null;
+const wkArg = function (s) { return s.gamagam ? "'가마감'" : String(s.week); };
+const ys = Array.isArray(res.years) ? res.years : [];
+const yearSel = ys.length >= 2 ? `<select class="cy-sel" aria-label="연도" onchange="wkSel_={};wkPick_({year:Number(this.value)})">${ys.map(function (y) { return `<option value="${y}" ${Number(y) === Number(res.year) ? 'selected' : ''}>${y}년</option>`; }).join('')}</select>` : '';
+let months = '';
+for (let m = 1; m <= Number(res.maxMonth || res.month); m++) months += `<option value="${m}" ${m === res.month ? 'selected' : ''}>${m}월</option>`;
+const monthSel = `<select class="cy-sel" aria-label="월" onchange="wkPick_({year:${res.year},month:Number(this.value),week:''})">${months}</select>`;
+const steps = st.map(function (s) {
+const cls = s.inputDate === res.inputDate && s.label === res.label ? 'cur' : (s.open ? 'past' : 'fut');
+return `<button class="wk-step ${cls}" ${s.open ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(s)}})"` : 'disabled'}><i></i><b>${escapeHtml(s.label)}</b><span>입력 ${wkMd_(s.inputDate)}</span><br><span>${s.gamagam ? '예상 마감' : wkMd2_(s.from) + '~' + wkMd2_(s.to) + ' 누적'}</span><br><span>${s.gamagam ? '<em class="wk-gm">가마감</em>' : (s.now ? '지금 보고' : (s.open ? '' : '예정'))}</span></button>`;
+}).join('');
+const n = res.teams.length, done = res.doneCount, ing = res.teams.filter(function (t) { return t.status === 'ing'; }).length;
+const cards = res.teams.map(function (t) {
+const ic = { done: '✓', ing: '✎', none: '—' }[t.status], word = { done: '입력 완료', ing: '입력 중', none: '미입력' }[t.status];
+const sub = t.status === 'done' ? escapeHtml(String(t.at || '').slice(5).replace('-', '/')) + ' · ' + (t.proxy ? '관리자 대리' : escapeHtml(t.byName || '')) : (t.status === 'ing' ? '저장됨 · 완료 전' : '');
+return `<div class="wk-team ${t.status}"><span class="ico">${ic}</span><div style="min-width:0"><b>${escapeHtml(t.team)}</b><em>${word}</em><small>${sub}</small></div></div>`;
+}).join('');
+return `<div class="wk-card">
+<div class="wk-top"><button class="wk-nav" ${prev ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(prev)}})"` : 'disabled'} aria-label="이전 주차">‹</button>
+<div class="wk-title">${res.year}년 ${res.month}월 ${escapeHtml(res.label)}<small>입력일 ${wkMd_(res.inputDate)} · ${res.gamagam ? res.month + '월 예상 마감 실적' : wkMd2_(res.from) + ' ~ ' + wkMd2_(res.to) + ' 누적 실적'}</small></div>
+<button class="wk-nav" ${next ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(next)}})"` : 'disabled'} aria-label="다음 주차">›</button>
+<span class="wk-sel">${yearSel}${monthSel}</span>${wkDue_(res)}</div>
+<div class="wk-steps">${steps}</div>
+<hr class="wk-hr">
+<div class="wk-ph"><span>팀 입력 현황</span><span style="color:var(--accent)">${done} / ${n}팀 완료</span><span class="bar"><i style="width:${n ? done / n * 100 : 0}%;background:#2e8b57"></i><i style="width:${n ? ing / n * 100 : 0}%;background:#d9a21b"></i></span></div>
+<div class="wk-teams">${cards}</div></div>`;
+}
+function wkSummary_(res) {
+const t = res.total;
+const bars = res.subtotals.map(function (s) { const p = s.salesRate === null ? 0 : s.salesRate * 100; return `<div class="pf-bar ${res.viewer && s.team === res.viewer.team ? 'on' : ''}"><span>${escapeHtml(s.team)}</span><i style="width:${Math.max(4, Math.min(p, 120) * 1.4)}px"></i><b>${s.salesRate === null ? '—' : Math.floor(p) + '%'}</b></div>`; }).join('');
+return `<div class="pf-mycard"><div><div class="pf-mut">전사 매출 누적 (천원)</div><div class="pf-big">${perfNum_(t.sales)}</div><div class="pf-mut">계획 ${perfNum_(t.planSales)}</div></div>
+<div><div class="pf-mut">매출 달성률</div><div class="pf-big2">${t.salesRate === null ? '—' : perfPct_(t.salesRate).replace('%', '')}<span>${t.salesRate === null ? '' : '%'}</span></div></div>
+<div><div class="pf-mut">매출이익 누적 · 달성률</div><div class="pf-big">${perfNum_(t.profit)}</div><div class="pf-mut">${perfPct_(t.profitRate)} · 이익률 ${perfPct_(t.marginActual)}</div></div>
+<div class="pf-bars"><div class="pf-mut" style="margin-bottom:4px">팀별 매출 달성률</div>${bars}</div></div>`;
+}
+function wkLine_(cls, first, r, note) {
+const c = cls ? ` class="${cls}"` : '';
+return `<tr>${first}<td${c}>${perfNum_(r.planSales)}</td><td${c}>${r.entered === false && r.sales === null ? '—' : perfNum_(r.sales)}</td><td${c}>${perfPct_(r.salesRate)}</td><td${c}>${perfNum_(r.planProfit)}</td><td${c}>${r.entered === false && r.profit === null ? '—' : perfNum_(r.profit)}</td><td${c}>${perfPct_(r.profitRate)}</td><td${c}>${perfPct_(r.marginPlan)}</td><td${c}>${perfPct_(r.marginActual)}</td><td${c}>${wkDiff_(r.marginDiff)}</td>${note}</tr>`;
+}
+function wkTable_(res) {
+const wl = res.gamagam ? '가마감' : escapeHtml(res.label) + ' 누적';
+let h = `<div class="pf-tablewrap"><table class="pf-t wk-t"><tr><th class="sticky" rowspan="2">구매사명</th><th rowspan="2">사무소</th><th colspan="3" class="grp">매출액 (천원)</th><th colspan="3" class="grp">매출이익 (천원)</th><th colspan="3" class="grp">이익률</th><th rowspan="2">비고</th></tr>
+<tr><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>실적</th><th>차이</th></tr>`;
+res.subtotals.forEach(function (s) {
+const teamDone = (res.teams.find(function (t) { return t.team === s.team; }) || {}).status;
+res.rows.filter(function (r) { return r.team === s.team; }).forEach(function (r) {
+const gray = teamDone === 'none' ? 'na' : '';
+const sub = [r.series, r.orderType].filter(Boolean).map(escapeHtml).join(' · ');
+h += wkLine_(gray, `<td class="l sticky ${gray}">${escapeHtml(r.name)}${sub ? `<span class="wk-sub">${sub}</span>` : ''}</td><td class="c ${gray}">${escapeHtml(r.office)}</td>`, r, `<td class="l ${gray}">${escapeHtml(r.note || '')}</td>`);
+});
+h += wkLine_('sub', `<td class="l sub sticky">${escapeHtml(s.team)} 소계</td><td class="sub"></td>`, s, '<td class="sub"></td>');
+});
+h += wkLine_('tot', `<td class="l tot sticky">전사 합계</td><td class="tot"></td>`, res.total, '<td class="tot"></td>');
+return h + '</table></div>';
+}
+function wkRender_(res) {
+const root = document.getElementById('weekly-view');
+const canInput = res.viewer && (res.viewer.isAdmin || res.viewer.role === '팀장');
+if (!canInput) wkTab_ = 'all';
+let h = `<div class="pf-wrap"><div class="pf-head"><div class="settings-row-title" style="font-size:16px;">주간 실적</div></div>` + wkHeader_(res);
+h += canInput ? `<div class="pf-tabs"><button class="${wkTab_ === 'all' ? 'on' : ''}" onclick="wkSetTab_('all')">전사 보기</button><button class="${wkTab_ === 'in' ? 'on' : ''}" onclick="wkSetTab_('in')">우리 팀 입력</button></div>` : '';
+if (wkTab_ === 'in') {
+h += `<div class="feed-empty">입력은 2단계에서 열려요. 지금은 [전사 보기]로 계획과 실적을 볼 수 있어요.</div>`;
+} else {
+h += wkSummary_(res);
+const w = res.warnings || {};
+const notes = [];
+if (w.noPlan) notes.push(`계획이 없는 고객사 ${w.noPlan}곳은 계획·달성률이 “—”로 보여요.`);
+if (w.planOnly && w.planOnly.length) notes.push(`실적-고객사 탭에 없는 계획 줄 ${w.planOnly.length}개(${w.planOnly.map(escapeHtml).join(', ')})는 표에 넣지 않았어요.`);
+h += `<h4 class="pf-h4">고객사별 실적 <small class="pf-mut">· 그 달 1일부터 누적 · 미입력 팀은 회색, 합계에는 0으로 더함</small></h4>`;
+if (notes.length) h += `<div class="pf-hint">${notes.join('<br>')}</div>`;
+h += wkTable_(res);
+}
+root.innerHTML = h + '</div>';
 }
 </script>
 </body>

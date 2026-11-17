@@ -158,7 +158,127 @@ function crossCheck(customerRows, planRows, year) {
   };
 }
 
+// =====================================================================
+// 1-나 (2026-11-17 재홍님 승인): 조회 화면용 순수 함수. 계산은 여기서, 화면은 그리기만(성과평가 buildView와 같은 원칙).
+// =====================================================================
+const STAGE_DONE = ['입력 완료', '팀 확정']; // 실적-진행 '단계' 값 중 "그 팀 끝남"으로 보는 것(2단계에서 씀)
+
+// '설정' 탭에서 실적관리파일_{연도}가 있는 해(maxYear 이하, 큰 해부터) — 화면 연도 칸
+function yearsFromSettings(settingRows, maxYear) {
+  const out = [];
+  (settingRows || []).forEach(function (r) {
+    const k = cell(r && r[0]), v = cell(r && r[1]);
+    if (k.indexOf(FILE_KEY_PREFIX) !== 0 || !v) return;
+    const y = Number(k.slice(FILE_KEY_PREFIX.length));
+    if (Number.isInteger(y) && y <= maxYear && out.indexOf(y) < 0) out.push(y);
+  });
+  return out.sort(function (a, b) { return b - a; });
+}
+
+// 칸 값 → 숫자(빈칸·글자는 null). 시트 서식 없는 값(숫자) 또는 "1,234" 글자 모두 처리
+function num(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  const s = cell(v).replace(/,/g, '');
+  if (s === '') return null;
+  const n = Number(s);
+  return isFinite(n) ? n : null;
+}
+function weekKey(v) { const s = cell(v); return s === GAMAGAM ? GAMAGAM : (/^\d+$/.test(s) ? String(Number(s)) : s); }
+function ratio(a, b) { return (a === null || b === null || !(b > 0)) ? null : a / b; }
+
+// 고른 달의 주차 막대: 오늘 이전·오늘 입력일은 고를 수 있음(open), 뒤는 예정(future). now = 오늘 기준 '지금 보고'
+function steps(plan, today, nowEntry) {
+  return plan.map(function (w) {
+    return { label: w.label, week: w.week, gamagam: w.gamagam, inputDate: w.inputDate, from: w.from, to: w.to,
+      open: w.inputDate <= today, now: !!(nowEntry && nowEntry.inputDate === w.inputDate && nowEntry.label === w.label) };
+  });
+}
+
+// 조회 응답 본문. p = { year, month, entry, plan, today, nowEntry, settings, customers(실적-고객사 A2:K), planRows(실적-연간계획 A2:AO),
+//   weeklyRows(실적-주간 A2:L), progressRows(실적-진행 A2:I), names({이메일(소문자): 이름}), adminEmail, adminTeam }
+// 관리자가 자기 팀이 아닌 팀을 완료 처리했으면 proxy = true (화면 '관리자 대리', 2026-11-17 확인 4 확정)
+function buildReportView(p) {
+  const year = p.year, month = p.month, wk = p.entry.gamagam ? GAMAGAM : String(p.entry.week);
+  // 1) 고객사(사용 중만, 순서 칸 → 시트 줄 순서). 팀 순서 = 시트에 처음 나온 순서
+  const cust = [], known = {};
+  (p.customers || []).forEach(function (r, i) {
+    const name = cell(r && r[2]); if (!name) return;
+    known[normTeam(r[0]) + '/' + name] = true; // 사용 끔(FALSE) 고객사도 '계획에만 있는 줄'로 세지 않음
+    if (cell(r[6]).toUpperCase() === 'FALSE') return;
+    const ord = num(r[7]);
+    cust.push({ team: normTeam(r[0]), series: cell(r[1]), name: name, orderType: cell(r[3]), office: cell(r[4]), custNote: cell(r[8]), ord: ord === null ? 1e9 : ord, i: i });
+  });
+  cust.sort(function (a, b) { return a.ord - b.ord || a.i - b.i; });
+  const teams = [];
+  cust.forEach(function (c) { if (teams.indexOf(c.team) < 0) teams.push(c.team); });
+  // 2) 그 달 계획 (연도 일치 줄만, 키 = 팀/구매사명)
+  const plan = {};
+  (p.planRows || []).forEach(function (r) {
+    if (num(r && r[0]) !== year) return;
+    const k = normTeam(r[1]) + '/' + cell(r[2]);
+    plan[k] = { sales: num(r[3 + (month - 1) * 3]), profit: num(r[4 + (month - 1) * 3]) };
+  });
+  // 3) 그 주차 실적 (같은 고객사가 여러 줄이면 아래 줄 = 나중 저장이 이김)
+  const wkly = {}, teamTouched = {};
+  (p.weeklyRows || []).forEach(function (r) {
+    if (num(r && r[0]) !== year || num(r[1]) !== month || weekKey(r[2]) !== wk) return;
+    const team = normTeam(r[3]), k = team + '/' + cell(r[4]);
+    wkly[k] = { sales: num(r[5]), profit: num(r[6]), note: cell(r[7]) };
+    teamTouched[team] = true;
+  });
+  // 4) 팀 진행 상태 (실적-진행: 같은 연·월·주차·팀의 마지막 '입력 완료'/'팀 확정' 줄)
+  const done = {};
+  (p.progressRows || []).forEach(function (r) {
+    if (num(r && r[0]) !== year || num(r[1]) !== month || weekKey(r[2]) !== wk) return;
+    if (STAGE_DONE.indexOf(cell(r[4])) < 0) return;
+    done[normTeam(r[3])] = { by: cell(r[6]).toLowerCase(), at: cell(r[7]) };
+  });
+  const names = p.names || {}, admin = cell(p.adminEmail).toLowerCase();
+  const teamStatus = teams.map(function (t) {
+    const d = done[t];
+    if (d) return { team: t, status: 'done', at: d.at, byName: names[d.by] || d.by, proxy: !!admin && d.by === admin && cell(p.adminTeam) !== t };
+    return { team: t, status: teamTouched[t] ? 'ing' : 'none' };
+  });
+  // 5) 줄 + 팀 소계 + 전사 합계
+  function blank() { return { planSales: null, planProfit: null, sales: 0, profit: 0 }; }
+  function addTo(s, r) {
+    if (r.planSales !== null) s.planSales = (s.planSales || 0) + r.planSales;
+    if (r.planProfit !== null) s.planProfit = (s.planProfit || 0) + r.planProfit;
+    s.sales += r.sales || 0; s.profit += r.profit || 0;
+  }
+  function rates(o) {
+    o.salesRate = ratio(o.sales, o.planSales); o.profitRate = ratio(o.profit, o.planProfit);
+    o.marginPlan = ratio(o.planProfit, o.planSales); o.marginActual = ratio(o.profit, o.sales);
+    o.marginDiff = (o.marginPlan === null || o.marginActual === null) ? null : o.marginActual - o.marginPlan;
+    return o;
+  }
+  const sub = {}, total = blank(); let noPlan = 0;
+  teams.forEach(function (t) { sub[t] = blank(); });
+  const rows = cust.map(function (c) {
+    const k = c.team + '/' + c.name, pl = plan[k], w = wkly[k];
+    if (!pl) noPlan++;
+    const r = { team: c.team, series: c.series, name: c.name, orderType: c.orderType, office: c.office,
+      note: (w && w.note) || c.custNote, hasPlan: !!pl,
+      planSales: pl ? pl.sales : null, planProfit: pl ? pl.profit : null,
+      entered: !!w, sales: w ? w.sales : null, profit: w ? w.profit : null };
+    addTo(sub[c.team], r); addTo(total, r);
+    return rates(r);
+  });
+  const subtotals = teams.map(function (t) { return rates(Object.assign({ team: t, entered: !!teamTouched[t] || !!done[t] }, sub[t])); });
+  const planOnly = Object.keys(plan).filter(function (k) { return !known[k]; });
+  return {
+    year: year, month: month, label: p.entry.label, gamagam: p.entry.gamagam,
+    inputDate: p.entry.inputDate, from: p.entry.from, to: p.entry.to,
+    deadline: { date: p.entry.inputDate, hour: p.settings.팀장마감시각 },
+    steps: steps(p.plan, p.today, p.nowEntry),
+    teams: teamStatus, doneCount: teamStatus.filter(function (t) { return t.status === 'done'; }).length,
+    rows: rows, subtotals: subtotals, total: rates(Object.assign({ team: '전사' }, total)),
+    warnings: { noPlan: noPlan, planOnly: planOnly }
+  };
+}
+
 module.exports = {
   FILE_KEY_PREFIX, TAB_CUSTOMERS, TAB_PLAN, TAB_WEEKLY, TAB_PROGRESS, TAB_SETTINGS, TABS, HEADERS, DEFAULTS, GAMAGAM,
-  findFileId, checkHeaders, normTeam, readSettings, weekPlan, currentReport, seoulToday, crossCheck
+  findFileId, checkHeaders, normTeam, readSettings, weekPlan, currentReport, seoulToday, crossCheck,
+  STAGE_DONE, yearsFromSettings, num, buildReportView
 };

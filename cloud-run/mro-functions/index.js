@@ -5227,6 +5227,11 @@ exports.getWeeklySalesTest = async (req, res) => {
       return;
     }
     const timings = Object.assign({}, auth.timings);
+    // 1-나: 조회 화면(임원·팀장·관리자) — 아래 weeklySalesReport_
+    if (view === 'report') {
+      await weeklySalesReport_(req, res, auth, t0, timings);
+      return;
+    }
     if (view !== 'ping') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
@@ -5276,3 +5281,86 @@ exports.getWeeklySalesTest = async (req, res) => {
     res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
   }
 };
+
+// 1-나 (2026-11-17 재홍님 승인): view=report — 주간 실적 조회. 읽기 전용, 쓰기 없음.
+// - 볼 수 있는 사람: 관리자 + 활성 임원·팀장 (처음 결정: "팀장 작성 → 임원·팀장(전사) 열람"). 그 밖은 FORBIDDEN.
+// - 요청: { year?, month?, week? } — 없으면 서울 오늘 기준 '지금 보고'(currentReport). week = 1.. 또는 '가마감'.
+// - 읽기: MRO 본 시트(사용자팀마스터 A2:J + '설정') 1번 + 그해 실적 파일(설정·고객사·계획·주간·진행) 1번.
+async function weeklySalesReport_(req, res, auth, t0, timings) {
+  const body = req.body || {};
+  const client = await getSheetsClient();
+  const m0 = Date.now();
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  timings.mroSheetMs = Date.now() - m0;
+  const userRows = (mro[0] && mro[0].values) || [];
+  const settingRows = (mro[1] && mro[1].values) || [];
+  const email = String(auth.email || '').trim().toLowerCase();
+  const isAdmin = email === ADMIN_EMAIL;
+  const names = {};
+  let me = null;
+  userRows.forEach(function (r) {
+    const e = String((r && r[0]) || '').trim().toLowerCase();
+    if (!e) return;
+    names[e] = String(r[1] || '').trim();
+    if (e === email) me = { role: String(r[2] || '').trim(), team: String(r[3] || '').trim(), active: String(r[4] || '').trim() === '활성' };
+  });
+  const canView = isAdmin || (me && me.active && (me.role === '임원' || me.role === '팀장'));
+  if (!canView) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'FORBIDDEN' });
+    return;
+  }
+  const nowMs = Date.now();
+  const today = weeklySales.seoulToday(nowMs);
+  const thisYear = Number(today.slice(0, 4));
+  const years = weeklySales.yearsFromSettings(settingRows, thisYear);
+  // 연도: 요청 값 → 없으면 오늘 '지금 보고'의 해(기본 규칙으로 먼저 계산, 파일 설정을 읽은 뒤 다시 계산)
+  const guess = weeklySales.currentReport(nowMs).current;
+  const reqYear = Number(body.year);
+  const year = Number.isInteger(reqYear) ? reqYear : (guess ? guess.year : thisYear);
+  if (years.indexOf(year) < 0) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SALES_FILE_MISSING', year: year, years: years });
+    return;
+  }
+  const fileId = weeklySales.findFileId(settingRows, year);
+  const q = competency.quoteTab;
+  const ranges = [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K', q(weeklySales.TAB_PLAN) + '!A2:AO',
+    q(weeklySales.TAB_WEEKLY) + '!A2:L', q(weeklySales.TAB_PROGRESS) + '!A2:I'].map(encodeURIComponent);
+  const s0 = Date.now();
+  let vr;
+  try {
+    vr = await batchGetValues(client, fileId, ranges, { unformatted: true });
+  } catch (e) {
+    const httpStatus = (e && e.response && e.response.status) || (e && e.code) || null;
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'SHEET_ACCESS_FAILED', httpStatus: httpStatus, year: year });
+    return;
+  }
+  timings.salesSheetMs = Date.now() - s0;
+  const settings = weeklySales.readSettings((vr[0] && vr[0].values) || []);
+  const nowRep = weeklySales.currentReport(nowMs, settings);
+  // 달: 요청 값(1~12) → 없으면 '지금 보고'의 달(그해가 아니면 12월). 그해 올해면 '지금 보고' 달까지만
+  const maxMonth = (nowRep.current && nowRep.current.year === year) ? nowRep.current.month : (year < thisYear ? 12 : 0);
+  const reqMonth = Number(body.month);
+  let month = Number.isInteger(reqMonth) && reqMonth >= 1 && reqMonth <= 12 ? reqMonth : maxMonth;
+  if (month < 1 || month > maxMonth) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'NO_REPORT_YET', year: year, years: years });
+    return;
+  }
+  const plan = weeklySales.weekPlan(year, month, settings);
+  const opened = plan.filter(function (w) { return w.inputDate <= today; });
+  const reqWeek = String(body.week === undefined || body.week === null ? '' : body.week).trim();
+  let entry = reqWeek ? opened.find(function (w) { return reqWeek === weeklySales.GAMAGAM ? w.gamagam : (!w.gamagam && String(w.week) === reqWeek); }) : null;
+  if (!entry) entry = opened[opened.length - 1] || null;
+  if (!entry) {
+    res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'NO_REPORT_YET', year: year, month: month, years: years });
+    return;
+  }
+  const adminRow = userRows.find(function (r) { return String((r && r[0]) || '').trim().toLowerCase() === ADMIN_EMAIL; });
+  const view = weeklySales.buildReportView({
+    year: year, month: month, entry: entry, plan: plan, today: today, nowEntry: nowRep.current, settings: settings,
+    customers: (vr[1] && vr[1].values) || [], planRows: (vr[2] && vr[2].values) || [],
+    weeklyRows: (vr[3] && vr[3].values) || [], progressRows: (vr[4] && vr[4].values) || [],
+    names: names, adminEmail: ADMIN_EMAIL, adminTeam: adminRow ? String(adminRow[3] || '').trim() : ''
+  });
+  res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'report', years: years, maxMonth: maxMonth, today: today,
+    viewer: { role: isAdmin ? '관리자' : me.role, team: me ? me.team : '', isAdmin: isAdmin, settingsBad: settings.bad.length } }, view));
+}
