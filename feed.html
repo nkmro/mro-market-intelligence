@@ -819,6 +819,15 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wi-addg label { font-size: 11.5px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
 .wi-addg .pf-in { text-align: left; min-width: 0; }
 @media (max-width: 768px) { .wi-addg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 고객사 정보 고치기 (2026-11-17 시안 승인) */
+.wi-addrow { display: flex; gap: 8px; flex-wrap: wrap; } .wi-addrow .wi-add { flex: 1 1 200px; width: auto; }
+.wi-cebox { margin-top: 8px; border: 1px solid #d6d0e6; border-radius: 10px; background: #fff; padding: 12px 14px; }
+.wi-ce td { padding: 4px 5px; } .wi-ce .pf-in { text-align: left; min-width: 70px; } .wi-ce .wi-ord { width: 52px; min-width: 52px; text-align: center; }
+.wi-ce select.pf-in { min-width: 90px; } .wi-ce .pf-in.chg { background: #fff7d6; border-color: #e3c14a; }
+.wi-ce tr.off td { background: #faf9fb; color: var(--text-muted); } .wi-ce tr.off td.sticky { text-decoration: line-through; }
+.wi-cesub { text-align: left !important; font-size: 12px; font-weight: 700; color: var(--text-muted); background: #f6f4fa; }
+.wi-sw { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; padding: 2px 4px; border-radius: 6px; } .wi-sw.chg { background: #fff7d6; }
+.wi-cewarn { margin-top: 8px; background: #fff4e0; border: 1px solid #f0d199; color: #8a5a00; border-radius: 8px; padding: 7px 10px; font-size: 12px; }
 @media (max-width: 768px) { .wk-teams { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wk-due { margin-left: 0; } }
 .pf-t td.tot { font-weight: 700; color: var(--accent); }
 .pf-t td.b { font-weight: 600; }
@@ -8005,6 +8014,7 @@ wkMarkSeen_(res); // 2단계: 4팀 완료 주차를 열면 이 기기의 NEW 해
 // ---------------------------------------------------------------------
 const CLOUD_RUN_SAVE_WEEKLY_SALES_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/saveWeeklySalesTest';
 let wkIn_ = null, wkInTeam_ = '', wkInReq_ = 0, wkAddOpen_ = false, wkBusy_ = false, wkInMsg_ = '', wkBadgeKey_ = null;
+let wkEditOpen_ = false, wkCe_ = {}, wkInRendered_ = null; // 고객사 정보 고치기: 창 열림 · 바꾼 칸 {구매사명: {칸: 값}} · 마지막으로 그린 입력 데이터(같은 데이터를 다시 그릴 때 입력 중인 숫자 유지)
 const WK_SEEN_KEY_ = 'mro_weekly_seen';
 function wkWeekArg_(res) { return res.gamagam ? '가마감' : String(res.label || '').replace('주차', ''); }
 function wkKeyOfRes_(res) { return res.year + '-' + res.month + '-' + wkWeekArg_(res); }
@@ -8023,6 +8033,8 @@ ALREADY_DONE: '이미 입력 완료된 주차예요. [완료 취소] 뒤에 고�
 BAD_NUMBER: '숫자 칸에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LONG: '비고는 200자까지예요.', UNKNOWN_CUSTOMER: '목록에 없는 고객사예요. 새로고침 후 다시 해 주세요.',
 DUPLICATE_CUSTOMER: '같은 팀에 같은 이름의 고객사가 이미 있어요.', BAD_NAME: '구매사명을 1~60자로 넣어 주세요.', FIELD_TOO_LONG: '계열·발주 형태·사무소는 40자까지예요.',
 BAD_TEAM: '없는 팀이에요. 새로고침 후 다시 골라 주세요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
+LOCKED_FIELD: '구매사명·팀은 바꿀 수 없어요.', BAD_FIELD: '바꿀 수 없는 칸이에요.', BAD_ORDER: '순서는 1~9999 숫자로 넣어 주세요.', NO_CHANGES: '바꾼 칸이 없어요.',
+BAD_MANAGER: '이 팀 활성 담당 목록에 없는 이름이에요. 새로고침 후 다시 골라 주세요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 새로고침해서 확인해 주세요.' };
 function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (res.field ? ' (' + res.field + ')' : '') : wkErrorText_(res); }
 async function loadWeeklyInput_() {
@@ -8039,10 +8051,11 @@ function wkFmtIn_(n) { return (n === null || n === undefined) ? '' : Math.round(
 function wkRenderInput_() {
 const d = wkIn_, box = document.getElementById('wk-in');
 if (!d || !box) return;
+const keep = (wkInRendered_ === d && document.getElementById('wi-s-0')) ? wkInEntries_() : null; // 같은 데이터를 다시 그릴 때(창 열기·처리 중 표시) 입력 중인 숫자를 지키기
 const prevL = d.prevLabel ? escapeHtml(d.prevLabel) : '지난 주차';
 const curL = d.gamagam ? '가마감(예상 마감)' : escapeHtml(d.label);
 let x = `<div class="wi-bar">`;
-if (d.isAdmin) x += `<span style="font-size:13px;font-weight:700">입력할 팀</span><select class="cy-sel" aria-label="입력할 팀" onchange="wkInTeam_=this.value;wkAddOpen_=false;wkInMsg_='';loadWeeklyInput_()">${d.teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === d.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
+if (d.isAdmin) x += `<span style="font-size:13px;font-weight:700">입력할 팀</span><select class="cy-sel" aria-label="입력할 팀" onchange="wkInTeam_=this.value;wkAddOpen_=false;wkEditOpen_=false;wkCe_={};wkInMsg_='';loadWeeklyInput_()">${d.teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === d.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
 x += `<span class="wi-mode">입력 방식: <b>${escapeHtml(d.mode || '2단계')}</b> (팀장 입력 → 임원·팀장 열람) · 시트 실적-설정에서 바꿔요</span></div>`;
 const myTeam = session && session.team ? String(session.team).replace(/(지역팀|팀)$/, '') : '';
 if (d.isAdmin && d.team !== myTeam) x += `<div class="wi-proxy">👤 관리자 대리 입력 — <b>${escapeHtml(d.team)}</b> 팀 숫자를 대신 넣고 있어요. 저장·완료 기록에 관리자 이메일이 남고, 화면에는 ‘관리자 대리’로 보여요.</div>`;
@@ -8057,21 +8070,98 @@ x += `<tr><td class="l sticky">${escapeHtml(r.name)}</td><td class="c">${escapeH
 <td><input class="pf-in pf-note" id="wi-n-${i}" maxlength="200" ${dis} value="${escapeHtml(r.note || '')}" placeholder="특이사항(선택)"></td></tr>`;
 });
 x += `</table></div>`;
+const editBtn = d.edit && !wkEditOpen_ ? `<button class="wi-add" onclick="wkEditOpen_=true;wkCe_={};wkInMsg_='';wkRenderInput_()">✎ 고객사 정보 고치기</button>` : '';
+const editBox = d.edit && wkEditOpen_ ? wkCeHtml_(d) : '';
 if (d.canEdit) {
 x += wkAddOpen_ ? `<div class="wi-addbox"><div class="wi-addh">새 고객사 추가 <span class="pf-mut" style="font-weight:400;font-size:11.5px">· [추가]를 누르면 실적 시트 ‘실적-고객사’ 탭에 한 줄이 생기고 이 표에 바로 나타나요</span></div>
 <div class="wi-addg"><label>팀<input class="pf-in" value="${escapeHtml(d.team)}" disabled></label><label>구매사명 *<input class="pf-in" id="wa-name" maxlength="60"></label><label>계열<input class="pf-in" id="wa-series" maxlength="40" placeholder="미계열"></label>
 <label>발주 형태<input class="pf-in" id="wa-order" maxlength="40" placeholder="오프라인"></label><label>사무소<input class="pf-in" id="wa-office" maxlength="40"></label><label>비고<input class="pf-in" id="wa-note" maxlength="200"></label></div>
 <div class="pf-mut" style="font-size:11.5px;margin-top:6px">계획은 자동으로 만들지 않아요(계획·달성률 “—”) · 같은 팀에 같은 이름이 있으면 추가되지 않아요</div>
-<div class="pf-btns" style="margin-top:8px"><button class="pf-btn" onclick="wkAddOpen_=false;wkRenderInput_()">취소</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInAdd_()">추가</button></div></div>`
-: `<button class="wi-add" onclick="wkAddOpen_=true;wkRenderInput_()">＋ 고객사 추가</button>`;
+<div class="pf-btns" style="margin-top:8px"><button class="pf-btn" onclick="wkAddOpen_=false;wkRenderInput_()">취소</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInAdd_()">추가</button></div></div>${editBtn ? `<div class="wi-addrow">${editBtn}</div>` : ''}`
+: `<div class="wi-addrow"><button class="wi-add" onclick="wkAddOpen_=true;wkRenderInput_()">＋ 고객사 추가</button>${editBtn}</div>`;
+x += editBox;
 const st = d.savedCount ? `저장 ${d.savedCount}곳 · ${escapeHtml(wkMd2_(d.lastSavedAt))} ${escapeHtml(String(d.lastSavedAt).slice(11))} 저장${d.lastSavedProxy ? ' (관리자 대리)' : ''} · 아직 [입력 완료] 전` : '아직 저장한 숫자가 없어요';
 x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(false)">저장</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(true)">입력 완료</button><span class="wi-st">${st}</span></div>`;
 } else if (d.canReopen) {
+x += (editBtn ? `<div class="wi-addrow">${editBtn}</div>` : '') + editBox;
 x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInReopen_()">완료 취소</button><span class="wi-st">완료 뒤에는 칸이 잠겨요. 고치려면 [완료 취소] → 고친 뒤 다시 [입력 완료]</span></div>`;
+} else {
+x += (editBtn ? `<div class="wi-addrow">${editBtn}</div>` : '') + editBox; // 완료·잠긴 주차에도 고객사 정보는 고칠 수 있음
 }
 if (wkInMsg_) x += `<div class="${/^✓/.test(wkInMsg_) ? 'wi-st' : 'wi-err'}" style="margin-top:6px">${escapeHtml(wkInMsg_)}</div>`;
 box.innerHTML = x;
+if (keep) keep.forEach(function (e, i) { [['wi-s-', e.sales], ['wi-p-', e.profit], ['wi-n-', e.note]].forEach(function (z) { const el = document.getElementById(z[0] + i); if (el && !el.disabled) el.value = z[1]; }); });
+wkInRendered_ = d;
+if (d.edit && wkEditOpen_) wkCeStatus_();
 }
+// ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 이 팀 활성 '담당' 이름 목록, 사용 끄기 = 경고만, 구매사명·팀 잠금) ----
+const WK_CE_LABEL_ = { ord: '순서', series: '계열', orderType: '발주 형태', office: '사무소', manager: '담당', note: '비고', active: '사용' };
+function wkCeVal_(c, f) { const e = wkCe_[c.name]; return e && Object.prototype.hasOwnProperty.call(e, f) ? e[f] : (f === 'active' ? c.active : String(c[f] === undefined || c[f] === null ? '' : c[f])); }
+function wkCeIsChg_(c, f) { const e = wkCe_[c.name]; return !!e && Object.prototype.hasOwnProperty.call(e, f); }
+function wkCeHtml_(d) {
+const list = d.edit.customers || [], mgrs = d.edit.managers || [];
+const inp = function (c, n, f, max, cls) { return `<input class="pf-in ${cls || ''} ${wkCeIsChg_(c, f) ? 'chg' : ''}" data-n="${n}" data-f="${f}" maxlength="${max}" value="${escapeHtml(wkCeVal_(c, f))}" oninput="wkCeSet_(this)" ${wkBusy_ ? 'disabled' : ''}>`; };
+const row = function (c, n) {
+const mv = wkCeVal_(c, 'manager');
+const opts = [''].concat(mgrs); if (mv && opts.indexOf(mv) < 0) opts.push(mv);
+const sel = `<select class="pf-in ${wkCeIsChg_(c, 'manager') ? 'chg' : ''}" data-n="${n}" data-f="manager" onchange="wkCeSet_(this)" ${wkBusy_ ? 'disabled' : ''}>${opts.map(function (o) { return `<option value="${escapeHtml(o)}" ${o === mv ? 'selected' : ''}>${o === '' ? '(없음)' : escapeHtml(o) + (mgrs.indexOf(o) < 0 ? ' (목록에 없음)' : '')}</option>`; }).join('')}</select>`;
+const on = wkCeVal_(c, 'active');
+return `<tr class="${c.active ? '' : 'off'}"><td>${inp(c, n, 'ord', 4, 'wi-ord')}</td><td class="l sticky">${escapeHtml(c.name)}</td><td>${inp(c, n, 'series', 40)}</td><td>${inp(c, n, 'orderType', 40)}</td><td>${inp(c, n, 'office', 40)}</td>
+<td>${sel}</td><td>${inp(c, n, 'note', 200)}</td><td><label class="wi-sw ${wkCeIsChg_(c, 'active') ? 'chg' : ''}"><input type="checkbox" data-n="${n}" data-f="active" ${on ? 'checked' : ''} onchange="wkCeSet_(this)" ${wkBusy_ ? 'disabled' : ''}><span>${on ? '사용' : '안 씀'}</span></label></td></tr>`;
+};
+let h = `<div class="wi-cebox"><div class="wi-addh">고객사 정보 고치기 · ${escapeHtml(d.team)} <span class="pf-mut" style="font-weight:400;font-size:11.5px">· [변경 저장]을 누르면 실적 시트 ‘실적-고객사’ 탭의 바뀐 칸만 고쳐요 · 주차 입력 완료와 상관없이 언제든 고칠 수 있어요</span></div>
+<div class="pf-tablewrap"><table class="pf-t wi-ce"><tr><th>순서</th><th class="sticky">구매사명 🔒</th><th>계열</th><th>발주 형태</th><th>사무소</th><th>담당</th><th>비고</th><th>사용</th></tr>`;
+const offN = list.filter(function (c) { return !c.active; }).length;
+list.forEach(function (c, n) {
+if (!c.active && (n === 0 || list[n - 1].active)) h += `<tr><td colspan="8" class="wi-cesub">사용 안 함 ${offN}곳 · 다시 쓰려면 ‘사용’을 켜세요</td></tr>`;
+h += row(c, n);
+});
+h += `</table></div><div id="wi-ce-warn" class="wi-cewarn" style="display:none"></div>
+<div class="pf-mut" style="font-size:11.5px;margin-top:8px">🔒 구매사명·팀은 여기서 못 바꿔요(주간 실적·연간계획과 이름으로 이어져 있어요) · 담당 목록 = 사용자팀마스터의 이 팀 활성 ‘담당’</div>
+<div class="pf-btns" style="margin-top:8px"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkEditOpen_=false;wkCe_={};wkRenderInput_()">닫기</button><button class="pf-btn pri" id="wi-ce-save" disabled onclick="wkCeSave_()">변경 저장</button><span class="wi-st" id="wi-ce-st"></span></div></div>`;
+return h;
+}
+function wkCeSet_(el) {
+const c = wkIn_ && wkIn_.edit && wkIn_.edit.customers[Number(el.dataset.n)], f = el.dataset.f;
+if (!c) return;
+const v = f === 'active' ? el.checked : (f === 'manager' ? el.value : el.value.trim());
+const orig = f === 'active' ? c.active : String(c[f] === undefined || c[f] === null ? '' : c[f]);
+const e = wkCe_[c.name] || (wkCe_[c.name] = {});
+if (v === orig) delete e[f]; else e[f] = v;
+if (!Object.keys(e).length) delete wkCe_[c.name];
+const chg = wkCeIsChg_(c, f);
+if (f === 'active') { const lb = el.parentNode; lb.classList.toggle('chg', chg); lb.querySelector('span').textContent = el.checked ? '사용' : '안 씀'; } else el.classList.toggle('chg', chg);
+wkCeStatus_();
+}
+function wkCeChanges_() {
+return Object.keys(wkCe_).map(function (name) { return { name: name, fields: Object.assign({}, wkCe_[name]) }; });
+}
+function wkCeStatus_() {
+const ch = wkCeChanges_(), btn = document.getElementById('wi-ce-save'), st = document.getElementById('wi-ce-st'), warn = document.getElementById('wi-ce-warn');
+if (!btn || !st) return;
+btn.disabled = !ch.length || wkBusy_;
+btn.textContent = wkBusy_ ? '저장 중...' : '변경 저장' + (ch.length ? ' (' + ch.length + '곳)' : '');
+st.textContent = ch.length ? '바뀐 칸: ' + ch.map(function (x) { return x.name + ' ' + Object.keys(x.fields).map(function (f) { return WK_CE_LABEL_[f]; }).join('·'); }).join(' · ') : '바꾼 칸이 없어요';
+const off = (wkIn_.edit.customers || []).filter(function (c) { return c.active && c.monthHas && wkCe_[c.name] && wkCe_[c.name].active === false; }).map(function (c) { return c.name; });
+if (warn) { warn.style.display = off.length ? '' : 'none'; warn.textContent = off.length ? '⚠ ' + off.join(', ') + ': 이번 달 숫자가 있어요. 사용을 끄면 이번 달 합계에서 빠져요.' : ''; }
+}
+async function wkCeSave_() {
+if (wkBusy_ || !wkIn_) return;
+const changes = wkCeChanges_();
+if (!changes.length) return;
+const entries = wkIn_.canEdit ? wkInEntries_() : null; // 다시 그리기 전에 먼저 읽기
+wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
+// 이미 넣은 숫자가 사라지지 않게 먼저 저장(입력 가능할 때만 — [고객사 추가]와 같음)
+if (entries) {
+const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_()));
+if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '고치기 전에 숫자를 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; }
+}
+const r = await wkPost_({ action: 'updateCustomers', year: wkIn_.year, month: wkIn_.month, team: wkIn_.team, changes: changes });
+if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '고객사 정보를 고치지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
+wkEditOpen_ = false; wkCe_ = {};
+await wkAfter_('✓ 고객사 ' + (r.rows || 0) + '곳 정보를 고쳤어요.' + (r.warnings && r.warnings.length ? ' 사용을 끈 ' + r.warnings.join(', ') + '은(는) 이번 달 합계에서 빠져요.' : ''));
+}
+
 function wkInEntries_() {
 return wkIn_.rows.map(function (r, i) {
 const g = function (id) { const el = document.getElementById(id); return el ? el.value : ''; };

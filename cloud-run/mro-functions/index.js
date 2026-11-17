@@ -5384,7 +5384,7 @@ async function weeklySalesReport_(req, res, auth, t0, timings) {
 }
 
 // =====================================================================
-// 주간 실적 2단계 (2026-11-17 재홍님 승인): 입력 탭 조회 · saveWeeklySalesTest(save·complete·reopen·addCustomer) · 16시 알림·결과 메일
+// 주간 실적 2단계 (2026-11-17 재홍님 승인): 입력 탭 조회 · saveWeeklySalesTest(save·complete·reopen·addCustomer·updateCustomers) · 16시 알림·결과 메일
 // - 잠금: writeLocks/weeklySales (성과평가 performanceEval과 별도, 대기 10초·죽은 잠금 60초)
 // - 같은 요청 두 번 처리 방지: withIdempotency (성과평가 savePerformanceTest와 같음)
 // - NEW: weeklySalesState/latest = 가장 최근 4팀 완료 주차 키. 메일 1번만: weeklySalesMails/{remind_…|result_…}
@@ -5456,11 +5456,13 @@ async function weeklySalesInput_(req, res, auth, t0, timings) {
   if (!lead.ok) return fail(lead.error);
   const view = weeklySales.inputView({ year: en.year, month: en.month, entry: en.entry, plan: en.plan, team: lead.team, customers: f.customers,
     weeklyRows: f.weekly, progressRows: f.progress, names: mro.names, adminEmail: ADMIN_EMAIL, adminTeam: mro.adminTeam, isAdmin: isAdmin, isCurrent: en.isCurrent });
+  // 고객사 정보 고치기 창: 그 팀 고객사 전체(사용 끔 포함) + 그 팀 활성 '담당' 이름 목록
+  view.edit = { customers: weeklySales.customerEditList(f.customers, lead.team, f.weekly, en.year, en.month), managers: weeklySales.managersOf(mro.userRows, lead.team) };
   res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
     isCurrent: en.isCurrent, mode: f.settings.modes[lead.team] || '2단계' }, view));
 }
 
-// POST /saveWeeklySalesTest { sessionToken, idempotencyKey, action, year, month, week, team, entries | customer }
+// POST /saveWeeklySalesTest { sessionToken, idempotencyKey, action, year, month, week, team, entries | customer | changes }
 exports.saveWeeklySalesTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -5470,7 +5472,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['save', 'complete', 'reopen', 'addCustomer'].indexOf(b.action) < 0) {
+    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers'].indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -5512,6 +5514,20 @@ exports.saveWeeklySalesTest = async (req, res) => {
           timings.writeMs = Date.now() - w0;
           if (n !== weeklySales.CUSTOMER_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
           return { ok: true, team: lead.team, name: plan.values[2], row: plan.row };
+        }
+        // 고객사 정보 고치기: 주차·입력 완료와 무관. 팀장 자기 팀 / 관리자 고른 팀. 잠금 안에서 방금 읽은 시트로 '팀 + 구매사명' 줄을 찾아 바뀐 칸만 쓴다
+        if (b.action === 'updateCustomers') {
+          const lead = weeklyLeadTeam_(mro.me, isAdmin, b.team, teams);
+          if (!lead.ok) return lead;
+          const cur = weeklyEntry_(year, b.month, undefined, f.settings, nowMs);
+          const plan = weeklySales.planUpdateCustomers({ customers: f.customers, team: lead.team, changes: b.changes, managers: weeklySales.managersOf(mro.userRows, lead.team),
+            weeklyRows: f.weekly, year: cur.ok ? cur.year : year, month: cur.ok ? cur.month : 0 });
+          if (!plan.ok) return plan;
+          if (!plan.writes.length) return { ok: true, team: lead.team, updatedCells: 0, rows: 0, warnings: [] };
+          const n = await perfBatchWrite_(mro.fileId, plan.writes.map(function (w) { return { range: q(weeklySales.TAB_CUSTOMERS) + '!' + w.cell, values: [[w.value]] }; }));
+          timings.writeMs = Date.now() - w0;
+          if (n !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, team: lead.team, updatedCells: n, rows: plan.rows, warnings: plan.warnings };
         }
         const en = weeklyEntry_(year, b.month, b.week, f.settings, nowMs);
         if (!en.ok) return en;

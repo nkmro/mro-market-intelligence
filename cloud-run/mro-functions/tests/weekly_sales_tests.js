@@ -269,6 +269,82 @@ t('Q2 [입력 완료] 저장 먼저, 숫자 그대로', up[0].action === 'save' 
 up = await uiRun('wkInAdd_()');
 t('Q3 [고객사 추가] 전 저장에 숫자 그대로', up[0].action === 'save' && up[0].entries[0].sales === '1,234' && up[1].action === 'addCustomer');
 
+// 고객사 정보 고치기 (2026-11-17 재홍님 확정) — 가상의 값만
+const CEC = [
+  ['동부', '미계열', '가나정밀(주)', '오프라인', '창원', '김담당', true, 1, '', 'x', 'y'],
+  ['동부', '다라그룹', '다라금속(주)', '온라인', '포항', '', true, 2, '', 'x', 'y'],
+  ['서부', '미계열', '마바화학', '오프라인', '군산', '', true, 1, '', 'x', 'y'],
+  ['동부', '미계열', '사아플랜트(주)', '오프라인', '울산', '', false, 3, '거래 종료', 'x', 'y']
+];
+const CEU = [
+  ['a@nkmro.com', '김담당', '담당', '동부', '활성'], ['b@nkmro.com', '이담당', '담당', '동부지역팀', '활성'], ['c@nkmro.com', '박담당', '담당', '동부', '비활성'],
+  ['d@nkmro.com', '최담당', '담당', '서부', '활성'], ['e@nkmro.com', '정팀장', '팀장', '동부', '활성']
+];
+const CEW = [[2026, 11, 2, '동부', '가나정밀(주)', 100, 10, '', 'a', 't']];
+const CEM = ws.managersOf(CEU, '동부');
+t('E1 담당 목록 = 이 팀 활성 담당만(비활성·팀장·다른 팀 빼고)', JSON.stringify(CEM) === JSON.stringify(['김담당', '이담당']));
+const CEL = ws.customerEditList(CEC, '동부', CEW, 2026, 11);
+t('E2 고치기 목록: 그 팀 전체, 사용 중 먼저(순서), 사용 끔은 뒤 + 이번 달 숫자 표시',
+  CEL.map(function (c) { return c.name; }).join('|') === '가나정밀(주)|다라금속(주)|사아플랜트(주)' && CEL[2].active === false && CEL[0].monthHas === true && CEL[1].monthHas === false && CEL[0].manager === '김담당');
+function ceUp(changes, extra) { return ws.planUpdateCustomers(Object.assign({ customers: CEC, team: '동부', changes: changes, managers: CEM, weeklyRows: CEW, year: 2026, month: 11 }, extra || {})); }
+let ce = ceUp([{ name: '다라금속(주)', fields: { ord: '5', series: '새그룹', orderType: '오프라인', office: '경주', manager: '이담당', note: '메모', active: false } }]);
+t('E3 칸 7개 모두 바꾸기 → 줄 3(다라금속)의 H·B·D·E·F·I·G 칸, 값 그대로', ce.ok && ce.writes.length === 7 && ce.rows === 1 &&
+  ce.writes.map(function (w) { return w.cell + '=' + w.value; }).sort().join(',') === ['B3=새그룹', 'D3=오프라인', 'E3=경주', 'F3=이담당', 'G3=false', 'H3=5', 'I3=메모'].sort().join(','));
+ce = ceUp([{ name: '가나정밀(주)', fields: { office: '창원', series: '미계열', ord: '1', active: true, manager: '김담당' } }]);
+t('E4 지금 값과 같은 칸은 안 씀(0칸)', ce.ok && ce.writes.length === 0 && ce.rows === 0);
+ce = ceUp([{ name: '가나정밀(주)', fields: { active: false } }]);
+t('E5 이번 달 숫자 있는 고객사 사용 끄기 → 경고(쓰기는 함)', ce.ok && ce.writes.length === 1 && ce.writes[0].cell === 'G2' && ce.warnings[0] === '가나정밀(주)');
+ce = ceUp([{ name: '다라금속(주)', fields: { active: false } }]);
+t('E6 이번 달 숫자 없는 고객사 사용 끄기 → 경고 없음', ce.ok && ce.warnings.length === 0);
+ce = ceUp([{ name: '사아플랜트(주)', fields: { active: true } }]);
+t('E7 사용 끔 → 다시 켜기', ce.ok && ce.writes[0].cell === 'G5' && ce.writes[0].value === true);
+t('E8 담당: 목록에 없는 이름 BAD_MANAGER · 다른 팀 담당도 거절 · 빈칸(없음)은 허용',
+  ceUp([{ name: '다라금속(주)', fields: { manager: '홍길동' } }]).error === 'BAD_MANAGER' && ceUp([{ name: '다라금속(주)', fields: { manager: '최담당' } }]).error === 'BAD_MANAGER' &&
+  ceUp([{ name: '가나정밀(주)', fields: { manager: '' } }]).writes[0].cell === 'F2');
+const CEC2 = CEC.map(function (r) { return r.slice(); }); CEC2[1][5] = '퇴사담당';
+ce = ws.planUpdateCustomers({ customers: CEC2, team: '동부', changes: [{ name: '다라금속(주)', fields: { manager: '퇴사담당', office: '경주' } }], managers: CEM, weeklyRows: CEW, year: 2026, month: 11 });
+t('E9 담당을 안 바꾸면(목록에 없는 기존 이름 그대로) 다른 칸은 저장됨', ce.ok && ce.writes.length === 1 && ce.writes[0].cell === 'E3');
+t('E10 구매사명·팀 바꾸기 시도 → LOCKED_FIELD', ceUp([{ name: '가나정밀(주)', fields: { name: '새이름' } }]).error === 'LOCKED_FIELD' && ceUp([{ name: '가나정밀(주)', fields: { team: '서부' } }]).error === 'LOCKED_FIELD');
+t('E11 모르는 칸 BAD_FIELD · 사용 값이 참/거짓 아님 BAD_FIELD', ceUp([{ name: '가나정밀(주)', fields: { 등록자: 'x' } }]).error === 'BAD_FIELD' && ceUp([{ name: '가나정밀(주)', fields: { active: 'FALSE' } }]).error === 'BAD_FIELD');
+t('E12 순서 0·글자·10000 → BAD_ORDER, 빈칸 허용', ceUp([{ name: '가나정밀(주)', fields: { ord: '0' } }]).error === 'BAD_ORDER' && ceUp([{ name: '가나정밀(주)', fields: { ord: '가' } }]).error === 'BAD_ORDER' &&
+  ceUp([{ name: '가나정밀(주)', fields: { ord: '10000' } }]).error === 'BAD_ORDER' && ceUp([{ name: '가나정밀(주)', fields: { ord: '' } }]).writes[0].value === '');
+t('E13 40자 넘는 사무소 FIELD_TOO_LONG · 200자 넘는 비고 NOTE_TOO_LONG', ceUp([{ name: '가나정밀(주)', fields: { office: 'a'.repeat(41) } }]).error === 'FIELD_TOO_LONG' && ceUp([{ name: '가나정밀(주)', fields: { note: 'a'.repeat(201) } }]).error === 'NOTE_TOO_LONG');
+t('E14 다른 팀 고객사·없는 고객사 → UNKNOWN_CUSTOMER, 같은 이름 두 번 → DUPLICATE_CUSTOMER, 빈 요청 → NO_CHANGES',
+  ceUp([{ name: '마바화학', fields: { office: 'x' } }]).error === 'UNKNOWN_CUSTOMER' && ceUp([{ name: '없는회사', fields: { office: 'x' } }]).error === 'UNKNOWN_CUSTOMER' &&
+  ceUp([{ name: '가나정밀(주)', fields: { office: 'x' } }, { name: '가나정밀(주)', fields: { note: 'y' } }]).error === 'DUPLICATE_CUSTOMER' && ceUp([]).error === 'NO_CHANGES');
+ce = ceUp([{ name: '가나정밀(주)', fields: { office: '마산' } }, { name: '다라금속(주)', fields: { note: '메모' } }]);
+t('E15 두 곳 바꾸기 → 칸 2개, 곳 2', ce.ok && ce.writes.length === 2 && ce.rows === 2);
+t('E16 권한: 임원 → FORBIDDEN, 팀장 다른 팀 → FORBIDDEN_TEAM, 관리자 아무 팀', ws.leadTeam({ role: '임원', team: '본사', active: true }, false, '', T4).error === 'FORBIDDEN' &&
+  ws.leadTeam({ role: '팀장', team: '동부', active: true }, false, '서부', T4).error === 'FORBIDDEN_TEAM' && ws.leadTeam(meA, true, '영업지원', T4).team === '영업지원');
+// index.js 배선(정적): 잠금 안 · 쓰기 1번(batchUpdate) · 팀 고르기 · 담당/임원은 앞에서 FORBIDDEN
+const IX = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.js'), 'utf8');
+const sv = IX.slice(IX.indexOf('exports.saveWeeklySalesTest'), IX.indexOf('async function runWeeklySalesMail_'));
+const br = sv.slice(sv.indexOf("if (b.action === 'updateCustomers')"), sv.indexOf("const en = weeklyEntry_(year, b.month, b.week"));
+t('E17 updateCustomers: 잠금을 잡은 뒤·푼 앞, 시트 다시 읽은 뒤에 처리', sv.indexOf('acquireLock(') < sv.indexOf("if (b.action === 'updateCustomers')") && sv.indexOf("if (b.action === 'updateCustomers')") < sv.indexOf('releaseLock(') &&
+  sv.indexOf('weeklyFile_(client, mro.fileId)') < sv.indexOf("if (b.action === 'updateCustomers')"));
+t('E18 updateCustomers: 쓰기는 perfBatchWrite_ 1번(바뀐 칸만), 팀은 weeklyLeadTeam_, 담당 목록은 managersOf', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') && br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes("'!' + w.cell"));
+t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
+// 화면: 고치기 창 상태(바꾼 칸 모으기 · 되돌리면 빠짐 · [변경 저장]은 숫자 저장 먼저)
+async function ceRun(fn) {
+  const posts = [];
+  const ctx = { wkIn_: { year: 2026, month: 11, week: 2, team: '동부', canEdit: true, rows: [{ name: '가나정밀(주)' }], edit: { customers: CEL.map(function (c) { return Object.assign({}, c); }), managers: CEM } },
+    wkCe_: {}, wkBusy_: false, wkInMsg_: '', wkEditOpen_: true, document: { getElementById: function (id) { return { 'wi-s-0': { value: '1,000' }, 'wi-p-0': { value: '50' }, 'wi-n-0': { value: '' } }[id] || null; } },
+    wkRenderInput_: function () {}, wkPost_: async function (b) { posts.push(b); return { ok: true, rows: 1, warnings: [] }; }, wkErr_: function () { return ''; }, loadWeeklyPage: async function () {} };
+  require('vm').createContext(ctx);
+  require('vm').runInContext(['wkInEntries_', 'wkInBase_', 'wkAfter_', 'wkCeVal_', 'wkCeIsChg_', 'wkCeSet_', 'wkCeChanges_', 'wkCeStatus_', 'wkCeSave_'].map(uiGrab).join('\n') + '\nvar WK_CE_LABEL_ = {};', ctx);
+  return fn(ctx, posts);
+}
+const fakeEl = function (n, f, v) { return { dataset: { n: String(n), f: f }, value: v, checked: v, classList: { toggle: function () {} }, parentNode: { classList: { toggle: function () {} }, querySelector: function () { return {}; } } }; };
+await ceRun(async function (ctx, posts) {
+  ctx.wkCeSet_(fakeEl(1, 'office', '경주')); ctx.wkCeSet_(fakeEl(0, 'active', false)); ctx.wkCeSet_(fakeEl(1, 'manager', '이담당'));
+  const ch1 = JSON.stringify(ctx.wkCeChanges_());
+  ctx.wkCeSet_(fakeEl(1, 'manager', '')); // 원래 값(빈칸)으로 되돌림
+  const ch2 = ctx.wkCeChanges_();
+  t('Q4 [고치기] 바꾼 칸만 모으고, 원래 값으로 되돌리면 빠짐', ch1.includes('"office":"경주"') && ch1.includes('"manager":"이담당"') && ch2.length === 2 && !('manager' in ch2.find(function (x) { return x.name === '다라금속(주)'; }).fields));
+  await ctx.wkCeSave_();
+  t('Q5 [변경 저장] 숫자 저장 먼저 → updateCustomers(팀·바꾼 칸) 순서', posts[0].action === 'save' && posts[0].entries[0].sales === '1,000' && posts[1].action === 'updateCustomers' && posts[1].team === '동부' && posts[1].changes.length === 2);
+});
+
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();

@@ -519,11 +519,94 @@ function leadTeam(me, isAdmin, reqTeam, teams) {
   return { ok: true, team: own };
 }
 
+// ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 활성 '담당' 이름, 사용 끄기 = 경고만, 수정 기록 없음, 구매사명·팀 변경 없음) ----
+// 고칠 수 있는 칸 → 실적-고객사 열 (A 팀 · B 계열 · C 구매사명 · D 발주형태 · E 사무소 · F 담당 · G 사용 · H 순서 · I 비고)
+const CUSTOMER_EDIT_COLS = { series: 'B', orderType: 'D', office: 'E', manager: 'F', active: 'G', ord: 'H', note: 'I' };
+const CUSTOMER_LOCKED = ['name', 'team']; // 🔒 주간 실적·연간계획과 '팀 + 구매사명'으로 이어져 있어 바꾸지 않음
+const ORD_MAX = 9999;
+function isOff(v) { return cell(v).toUpperCase() === 'FALSE'; }
+
+// 그 팀 활성 '담당' 이름 목록(사용자팀마스터 줄 순서, 같은 이름은 한 번)
+function managersOf(userRows, team) {
+  const t = normTeam(team), out = [];
+  usersOf(userRows).forEach(function (u) { if (u.active && u.role === '담당' && normTeam(u.team) === t && u.name && out.indexOf(u.name) < 0) out.push(u.name); });
+  return out;
+}
+
+// 고치기 창 목록: 그 팀 고객사 전체(사용 끔 포함). 사용 중 먼저(순서 칸 → 시트 줄 순서), 사용 끔은 뒤.
+// monthHas = 그 연·월에 실적-주간 숫자 줄이 있는지(사용 끌 때 경고용)
+function customerEditList(customers, team, weeklyRows, year, month) {
+  const t = normTeam(team), has = {};
+  (weeklyRows || []).forEach(function (r) { if (num(r && r[0]) === year && num(r[1]) === month && normTeam(r[3]) === t) has[cell(r[4])] = true; });
+  const list = [];
+  (customers || []).forEach(function (r, i) {
+    const name = cell(r && r[2]); if (!name || normTeam(r[0]) !== t) return;
+    const o = num(r[7]);
+    list.push({ name: name, series: cell(r[1]), orderType: cell(r[3]), office: cell(r[4]), manager: cell(r[5]), active: !isOff(r[6]),
+      ord: o === null ? '' : o, note: cell(r[8]), monthHas: !!has[name], i: i });
+  });
+  list.sort(function (a, b) { return (b.active - a.active) || ((a.ord === '' ? 1e9 : a.ord) - (b.ord === '' ? 1e9 : b.ord)) || a.i - b.i; });
+  return list.map(function (x) { delete x.i; return x; });
+}
+
+// [변경 저장] 쓰기 계획. p = { customers(A2:K), team, changes:[{ name, fields:{ series, orderType, office, manager, active, ord, note } }], managers, weeklyRows, year, month }
+// 바뀐 칸만(시트 지금 값과 다른 칸만) 한 칸씩. 담당은 바꿀 때만 활성 담당 목록과 대조(빈칸 = 담당 없음 허용).
+function planUpdateCustomers(p) {
+  const team = normTeam(p.team), rows = {}, dup = {};
+  (p.customers || []).forEach(function (r, i) {
+    const name = cell(r && r[2]); if (!name || normTeam(r[0]) !== team) return;
+    if (rows[name]) dup[name] = true;
+    rows[name] = { row: i + 2, r: r || [] };
+  });
+  const changes = p.changes || [];
+  if (!changes.length) return { ok: false, error: 'NO_CHANGES' };
+  const managers = p.managers || [];
+  const list = customerEditList(p.customers, team, p.weeklyRows, p.year, p.month), monthHas = {};
+  list.forEach(function (c) { monthHas[c.name] = c.monthHas; });
+  const seen = {}, writes = [], warnings = [];
+  for (let k = 0; k < changes.length; k++) {
+    const ch = changes[k] || {}, name = cell(ch.name), f = ch.fields || {};
+    const keys = Object.keys(f);
+    for (let j = 0; j < keys.length; j++) {
+      if (CUSTOMER_LOCKED.indexOf(keys[j]) >= 0) return { ok: false, error: 'LOCKED_FIELD', field: name + ' ' + keys[j] };
+      if (!CUSTOMER_EDIT_COLS[keys[j]]) return { ok: false, error: 'BAD_FIELD', field: keys[j] };
+    }
+    if (!rows[name]) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
+    if (dup[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
+    if (seen[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
+    seen[name] = true;
+    const at = rows[name], cur = at.r;
+    const want = {};
+    if ('series' in f) want.series = cell(f.series);
+    if ('orderType' in f) want.orderType = cell(f.orderType);
+    if ('office' in f) want.office = cell(f.office);
+    if (['series', 'orderType', 'office'].some(function (x) { return (want[x] || '').length > FIELD_MAX; })) return { ok: false, error: 'FIELD_TOO_LONG', field: name };
+    if ('note' in f) { want.note = cell(f.note); if (want.note.length > NOTE_MAX) return { ok: false, error: 'NOTE_TOO_LONG', field: name }; }
+    if ('manager' in f) want.manager = cell(f.manager);
+    if ('active' in f) { if (typeof f.active !== 'boolean') return { ok: false, error: 'BAD_FIELD', field: name + ' active' }; want.active = f.active; }
+    if ('ord' in f) {
+      const s = cell(f.ord);
+      if (s === '') want.ord = '';
+      else if (/^\d+$/.test(s) && Number(s) >= 1 && Number(s) <= ORD_MAX) want.ord = Number(s);
+      else return { ok: false, error: 'BAD_ORDER', field: name };
+    }
+    const now = { series: cell(cur[1]), orderType: cell(cur[3]), office: cell(cur[4]), manager: cell(cur[5]), active: !isOff(cur[6]), ord: num(cur[7]) === null ? '' : num(cur[7]), note: cell(cur[8]) };
+    Object.keys(want).forEach(function (x) {
+      if (want[x] === now[x]) return; // 같은 값은 쓰지 않음
+      writes.push({ name: name, field: x, cell: CUSTOMER_EDIT_COLS[x] + at.row, value: want[x] });
+    });
+    if ('manager' in want && want.manager !== now.manager && want.manager !== '' && managers.indexOf(want.manager) < 0) return { ok: false, error: 'BAD_MANAGER', field: name + ' ' + want.manager };
+    if (want.active === false && now.active && monthHas[name]) warnings.push(name);
+  }
+  return { ok: true, writes: writes, rows: Object.keys(seen).filter(function (n) { return writes.some(function (w) { return w.name === n; }); }).length, warnings: warnings };
+}
+
 module.exports = {
   FILE_KEY_PREFIX, TAB_CUSTOMERS, TAB_PLAN, TAB_WEEKLY, TAB_PROGRESS, TAB_SETTINGS, TABS, HEADERS, DEFAULTS, GAMAGAM,
   findFileId, checkHeaders, normTeam, readSettings, weekPlan, currentReport, seoulToday, crossCheck,
   STAGE_DONE, yearsFromSettings, num, buildReportView,
   STAGE_REOPEN, STAGE_MAIL_REMIND, STAGE_MAIL_RESULT, WEEKLY_WRITE_COLS, PROGRESS_COLS, CUSTOMER_COLS,
   seoulStamp, seoulHour, weekCellOf, weekKeyOf, reportKey, teamDoneMap, teamsOf, allDoneOf, checkNum,
-  inputView, planWeekWrite, planProgress, planAddCustomer, usersOf, reminderJobs, resultRecipients, reminderParts, resultParts, leadTeam
+  inputView, planWeekWrite, planProgress, planAddCustomer, usersOf, reminderJobs, resultRecipients, reminderParts, resultParts, leadTeam,
+  CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers
 };
