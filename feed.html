@@ -807,6 +807,11 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wk-scroll tr.wk-h1 th { position: sticky; top: 0; z-index: 2; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
 .wk-scroll tr.wk-h2 th { position: sticky; top: 32px; z-index: 2; box-shadow: 0 1px 0 var(--border); }
 .wk-scroll tr.wk-h1 th.sticky { left: 0; z-index: 3; } /* 왼쪽 위 '구매사명' 칸은 두 방향 모두 고정 */
+/* 위쪽 가로 스크롤 막대 (2026-11-17 재홍님 요청): 표 바로 위에 같은 너비의 빈 상자를 두고 표와 서로 따라 움직이게 함. 표가 화면보다 넓을 때만 보임 */
+.wk-topscroll { overflow-x: auto; overflow-y: hidden; height: 14px; margin-bottom: 2px; } .wk-topscroll > div { height: 1px; }
+.wk-topscroll::-webkit-scrollbar, .wk-scroll::-webkit-scrollbar { height: 10px; width: 10px; } /* 막대가 숨는 기기(맥·휴대폰)에서도 보이게 */
+.wk-topscroll::-webkit-scrollbar-thumb, .wk-scroll::-webkit-scrollbar-thumb { background: #c9c3dc; border-radius: 5px; }
+.wk-topscroll::-webkit-scrollbar-track, .wk-scroll::-webkit-scrollbar-track { background: #f1eff6; border-radius: 5px; }
 .wk-t td.sticky { background: var(--card); min-width: 150px; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wk-t td.sub.sticky { background: #f4f2f8; } .wk-t td.tot.sticky { background: var(--accent-soft); }
 .wk-sub { display: block; font-size: 10.5px; color: var(--text-muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
@@ -7990,9 +7995,19 @@ function wkLine_(cls, first, r, note) {
 const c = cls ? ` class="${cls}"` : '';
 return `<tr>${first}<td${c}>${perfNum_(r.planSales)}</td><td${c}>${r.entered === false && r.sales === null ? '—' : perfNum_(r.sales)}</td><td${c}>${perfPct_(r.salesRate)}</td><td${c}>${perfNum_(r.planProfit)}</td><td${c}>${r.entered === false && r.profit === null ? '—' : perfNum_(r.profit)}</td><td${c}>${perfPct_(r.profitRate)}</td><td${c}>${perfPct_(r.marginPlan)}</td><td${c}>${perfPct_(r.marginActual)}</td><td${c}>${wkDiff_(r.marginDiff)}</td>${note}</tr>`;
 }
+// 위쪽 가로 스크롤 막대: 표 너비만큼 빈 상자를 만들고 두 막대가 서로 따라 움직임(표가 안 넘치면 숨김). 창 크기가 바뀌면 다시 맞춤
+function wkTopScroll_() {
+const top = document.getElementById('wk-topscroll'), box = document.getElementById('wk-scroll');
+if (!top || !box) return;
+const fit = function () { top.style.display = box.scrollWidth > box.clientWidth + 1 ? '' : 'none'; top.firstChild.style.width = (box.scrollWidth + top.clientWidth - box.clientWidth) + 'px'; }; // 표 세로 막대 폭만큼 보정 → 두 막대 끝이 같게
+fit();
+top.onscroll = function () { if (box.scrollLeft !== top.scrollLeft) box.scrollLeft = top.scrollLeft; }; // 값이 같으면 멈춤(서로 무한 반복 없음)
+box.onscroll = function () { if (top.scrollLeft !== box.scrollLeft) top.scrollLeft = box.scrollLeft; };
+if (!window.__wkTopFit) { window.__wkTopFit = true; window.addEventListener('resize', function () { const t = document.getElementById('wk-topscroll'); if (t) wkTopScroll_(); }); }
+}
 function wkTable_(res) {
 const wl = res.gamagam ? '가마감' : escapeHtml(res.label) + ' 누적';
-let h = `<div class="pf-tablewrap wk-scroll"><table class="pf-t wk-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th rowspan="2">사무소</th><th colspan="3" class="grp">매출액 (천원)</th><th colspan="3" class="grp">매출이익 (천원)</th><th colspan="3" class="grp">이익률</th><th rowspan="2">비고</th></tr>
+let h = `<div class="wk-topscroll" id="wk-topscroll"><div></div></div><div class="pf-tablewrap wk-scroll" id="wk-scroll"><table class="pf-t wk-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th rowspan="2">사무소</th><th colspan="3" class="grp">매출액 (천원)</th><th colspan="3" class="grp">매출이익 (천원)</th><th colspan="3" class="grp">이익률</th><th rowspan="2">비고</th></tr>
 <tr class="wk-h2"><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>실적</th><th>차이</th></tr>`;
 res.subtotals.forEach(function (s) {
 const teamDone = (res.teams.find(function (t) { return t.team === s.team; }) || {}).status;
@@ -8025,6 +8040,7 @@ if (notes.length) h += `<div class="pf-hint">${notes.join('<br>')}</div>`;
 h += wkTable_(res);
 }
 root.innerHTML = h + '</div>';
+if (wkTab_ !== 'in') wkTopScroll_();
 if (wkTab_ === 'in') loadWeeklyInput_();
 wkMarkSeen_(res); // 2단계: 4팀 완료 주차를 열면 이 기기의 NEW 해제
 }

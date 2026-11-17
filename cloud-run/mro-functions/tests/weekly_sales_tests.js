@@ -409,6 +409,10 @@ t('Q7 모바일 정렬: 제목 줄 wk-meta, 주차 "~끝날 누적", 요약 wk-s
 const wt = uiGrab('wkTable_');
 t('Q9 고객사별 실적 표: wk-scroll 상자 · 제목 줄 wk-h1/wk-h2 · CSS 고정(top 0 / 32px)', wt.includes('pf-tablewrap wk-scroll') && wt.includes('<tr class="wk-h1">') && wt.includes('<tr class="wk-h2">') &&
   uiHtml.includes('.wk-scroll tr.wk-h1 th { position: sticky; top: 0;') && uiHtml.includes('.wk-scroll tr.wk-h2 th { position: sticky; top: 32px;'));
+// 위쪽 가로 스크롤 막대(2026-11-17): 표 위 wk-topscroll + 두 막대가 서로 따라 움직임
+const wts = uiGrab('wkTopScroll_'), wrn = uiGrab('wkRender_');
+t('Q10 위쪽 가로 막대: 표 위 상자, 서로 따라 움직임(값이 같으면 멈춤), 전사 보기를 그린 뒤 맞춤', uiGrab('wkTable_').includes('<div class="wk-topscroll" id="wk-topscroll"><div></div></div><div class="pf-tablewrap wk-scroll" id="wk-scroll">') &&
+  wts.includes('box.scrollLeft = top.scrollLeft') && wts.includes('top.scrollLeft = box.scrollLeft') && wrn.indexOf("if (wkTab_ !== 'in') wkTopScroll_();") > wrn.indexOf('root.innerHTML = h'));
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();
