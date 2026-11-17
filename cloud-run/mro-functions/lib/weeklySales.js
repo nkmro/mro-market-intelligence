@@ -21,7 +21,7 @@ for (let m = 1; m <= 12; m++) PLAN_HEADERS.push(m + '월 매출', m + '월 이�
 PLAN_HEADERS.push('연간 매출', '연간 이익');
 
 const HEADERS = {};
-HEADERS[TAB_CUSTOMERS] = ['팀', '계열', '구매사명', '발주형태', '사무소', '담당', '사용', '순서', '비고', '등록자', '등록일시'];
+HEADERS[TAB_CUSTOMERS] = ['팀', '계열', '구매사명', '발주형태', '사무소', '담당', '사용', '순서', '비고', '등록자', '등록일시', '적용월']; // 적용월: 2026-11-17 고객사 정보 이력(빈칸 = 1월부터)
 HEADERS[TAB_PLAN] = PLAN_HEADERS;
 HEADERS[TAB_WEEKLY] = ['연도', '월', '주차', '팀', '구매사명', '매출누적', '이익누적', '비고', '입력자', '입력일시', '담당원래매출', '담당원래이익'];
 HEADERS[TAB_PROGRESS] = ['연도', '월', '주차', '팀', '단계', '담당', '처리자', '일시', '메일'];
@@ -30,7 +30,7 @@ HEADERS[TAB_SETTINGS] = ['키', '값', '설명'];
 // 실적-설정 키와 기본값(시트에 줄이 없을 때만 쓴다 — 시트 우선)
 const MODE_KEY_PREFIX = '입력방식_';
 const MODES = ['2단계', '3단계'];
-const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5 };
+const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5, 결과메일대기분: 60 }; // 결과메일대기분: 2026-11-17 재홍님 요청(4팀 완료 1시간 뒤)
 const GAMAGAM = '가마감';
 
 function cell(v) { return String(v === undefined || v === null ? '' : v).trim(); }
@@ -57,6 +57,28 @@ function checkHeaders(tab, row) {
 
 // 엑셀 팀명 → 앱 팀명 ("서부지역팀" → "서부", "영업지원팀" → "영업지원", "동부" → "동부")
 function normTeam(t) { return cell(t).replace(/(지역팀|팀)$/, ''); }
+
+// ---- 고객사 정보 이력 (2026-11-17 재홍님 확정: 탭을 늘리지 않고 실적-고객사 L열 '적용월') ----
+// 같은 팀 + 구매사명 줄이 여러 개면 '그 달 이하에서 가장 늦은 적용월' 줄을 쓴다(같은 적용월이면 아래쪽 줄). 빈칸 = 1월부터.
+// 순서(H)는 그 고객사의 첫 줄(가장 이른 적용월) 값만 쓴다. 그 달에 아직 없는 고객사(첫 적용월 > 달)는 빠진다.
+function applyMonth(r) { const s = cell(r && r[11]); return /^\d+$/.test(s) && Number(s) >= 1 && Number(s) <= 12 ? Number(s) : 0; }
+function customersAt(rows, month) {
+  const m = Number(month) || 12, groups = {}, order = [];
+  (rows || []).forEach(function (r, i) {
+    const name = cell(r && r[2]); if (!name) return;
+    const k = normTeam(r[0]) + '/' + name, am = applyMonth(r);
+    const g = groups[k] || (groups[k] = { first: null, firstAm: 99, pick: null, pickAm: -1 });
+    if (g.first === null) order.push(k);
+    if (am < g.firstAm) { g.first = r; g.firstAm = am; }
+    if (am <= m && am >= g.pickAm) { g.pick = r; g.pickAm = am; }
+  });
+  const out = [];
+  order.forEach(function (k) {
+    const g = groups[k]; if (!g.pick) return;
+    const r = g.pick.slice(); r[7] = g.first[7]; out.push(r);
+  });
+  return out;
+}
 
 function intIn(v, lo, hi) { const s = cell(v); if (!/^\d+$/.test(s)) return null; const n = Number(s); return n >= lo && n <= hi ? n : null; }
 
@@ -87,6 +109,7 @@ function readSettings(rows) {
   take('메일사용', function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, 'TRUE 또는 FALSE');
   take('첫주합침일수', function (v) { return intIn(v, 0, 6); }, '0~6 정수');
   take('가마감이월일수', function (v) { return intIn(v, 1, 8); }, '1~8 정수 (8 = 넘기지 않음)');
+  take('결과메일대기분', function (v) { return intIn(v, 0, 1440); }, '0~1440 정수(분)');
   return out;
 }
 
@@ -137,13 +160,14 @@ function currentReport(nowMs, s) {
 
 // 실적-고객사 / 실적-연간계획 연결 점검 (키 = 팀 + 구매사명)
 function crossCheck(customerRows, planRows, year) {
-  const cust = {}, plan = {}, dup = [];
+  const cust = {}, plan = {}, dup = [], seenM = {};
   (customerRows || []).forEach(function (r) {
     const name = cell(r && r[2]); if (!name) return;
-    const k = normTeam(r[0]) + '/' + name;
-    if (cust[k]) dup.push(k);
-    cust[k] = { active: cell(r[6]).toUpperCase() !== 'FALSE' };
+    const k = normTeam(r[0]) + '/' + name, km = k + '@' + applyMonth(r);
+    if (seenM[km]) dup.push(k + (applyMonth(r) ? ' (' + applyMonth(r) + '월)' : '')); // 같은 고객사·같은 적용월 줄이 두 개면 중복(이력 줄은 중복 아님)
+    seenM[km] = true;
   });
+  customersAt(customerRows, 12).forEach(function (r) { cust[normTeam(r[0]) + '/' + cell(r[2])] = { active: cell(r[6]).toUpperCase() !== 'FALSE' }; }); // 사용 여부 = 12월 기준(가장 최근 줄)
   (planRows || []).forEach(function (r) {
     const name = cell(r && r[2]); if (!name || Number(cell(r[0])) !== year) return;
     plan[normTeam(r[1]) + '/' + name] = true;
@@ -201,9 +225,9 @@ function buildReportView(p) {
   const year = p.year, month = p.month, wk = p.entry.gamagam ? GAMAGAM : String(p.entry.week);
   // 1) 고객사(사용 중만, 순서 칸 → 시트 줄 순서). 팀 순서 = 시트에 처음 나온 순서
   const cust = [], known = {};
-  (p.customers || []).forEach(function (r, i) {
+  (p.customers || []).forEach(function (r) { const name = cell(r && r[2]); if (name) known[normTeam(r[0]) + '/' + name] = true; }); // 사용 끔·다른 달 줄도 '계획에만 있는 줄'로 세지 않음
+  customersAt(p.customers, month).forEach(function (r, i) {
     const name = cell(r && r[2]); if (!name) return;
-    known[normTeam(r[0]) + '/' + name] = true; // 사용 끔(FALSE) 고객사도 '계획에만 있는 줄'로 세지 않음
     if (cell(r[6]).toUpperCase() === 'FALSE') return;
     const ord = num(r[7]);
     cust.push({ team: normTeam(r[0]), series: cell(r[1]), name: name, orderType: cell(r[3]), office: cell(r[4]), custNote: cell(r[8]), ord: ord === null ? 1e9 : ord, i: i });
@@ -284,7 +308,7 @@ const STAGE_MAIL_REMIND = '16시 알림';
 const STAGE_MAIL_RESULT = '결과 메일';
 const WEEKLY_WRITE_COLS = 10;  // 실적-주간 A~J (K·L 담당원래값은 3단계용 — 2단계 저장은 건드리지 않음)
 const PROGRESS_COLS = 9;       // 실적-진행 A~I
-const CUSTOMER_COLS = 11;      // 실적-고객사 A~K
+const CUSTOMER_COLS = 12;      // 실적-고객사 A~L (L = 적용월)
 const NOTE_MAX = 200, NAME_MAX = 60, FIELD_MAX = 40;
 const INPUT_MAX = 1e12;        // 천원 단위 숫자 상한(오타 방지, 성과평가와 같음)
 const MAIL_DOMAIN = '@nkmro.com'; // lib/mailer.js와 같은 제한(회사 메일 서버)
@@ -318,7 +342,7 @@ function teamsOf(customers) {
   return out;
 }
 function allDoneOf(customers, progressRows, year, month, entry) {
-  const teams = teamsOf(customers), done = teamDoneMap(progressRows, year, month, weekKeyOf(entry));
+  const teams = teamsOf(customersAt(customers, month)), done = teamDoneMap(progressRows, year, month, weekKeyOf(entry));
   return { teams: teams, done: done, all: teams.length > 0 && teams.every(function (t) { return !!done[t]; }) };
 }
 
@@ -346,7 +370,7 @@ function inputView(p) {
     else if (pk !== null && w === pk) prev[k] = { sales: num(r[5]), profit: num(r[6]) };
   });
   const rows = [];
-  (p.customers || []).map(function (r, i) { return { r: r, i: i }; }).filter(function (x) {
+  customersAt(p.customers, p.month).map(function (r, i) { return { r: r, i: i }; }).filter(function (x) {
     return cell(x.r && x.r[2]) && normTeam(x.r[0]) === team && cell(x.r[6]).toUpperCase() !== 'FALSE';
   }).sort(function (a, b) { const oa = num(a.r[7]), ob = num(b.r[7]); return (oa === null ? 1e9 : oa) - (ob === null ? 1e9 : ob) || a.i - b.i; }).forEach(function (x) {
     const name = cell(x.r[2]), c = cur[name], pv = prev[name];
@@ -375,7 +399,7 @@ function inputView(p) {
 function planWeekWrite(p) {
   const team = normTeam(p.team), wk = weekKeyOf(p.entry);
   const active = {};
-  (p.customers || []).forEach(function (r) { if (cell(r && r[2]) && normTeam(r[0]) === team && cell(r[6]).toUpperCase() !== 'FALSE') active[cell(r[2])] = true; });
+  customersAt(p.customers, p.month).forEach(function (r) { if (cell(r && r[2]) && normTeam(r[0]) === team && cell(r[6]).toUpperCase() !== 'FALSE') active[cell(r[2])] = true; });
   const seen = {}, clean = [];
   for (let i = 0; i < (p.entries || []).length; i++) {
     const e = p.entries[i] || {}, name = cell(e.name);
@@ -425,7 +449,7 @@ function planAddCustomer(p) {
   });
   if (dup) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
   const row = nextFreeRow(indexRows(p.customers));
-  return { ok: true, row: row, values: [team, fields[0], name, fields[1], fields[2], '', true, maxOrd + 1, cell(p.note), lcs(p.who), seoulStamp(p.nowMs)] };
+  return { ok: true, row: row, values: [team, fields[0], name, fields[1], fields[2], '', true, maxOrd + 1, cell(p.note), lcs(p.who), seoulStamp(p.nowMs), Number(p.month) || ''] }; // 적용월 = 이번 보고 달(지난달 표에는 안 나옴)
 }
 
 // 사용자팀마스터 A2:J 줄 → [{email, name, role, team, active}]
@@ -450,7 +474,7 @@ function reminderJobs(p) {
     if (st.done[t]) return;
     const leaders = users.filter(function (u) { return u.role === '팀장' && normTeam(u.team) === t && mailable(u); });
     const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
-    const total = (p.customers || []).filter(function (r) { return cell(r && r[2]) && normTeam(r[0]) === t && cell(r[6]).toUpperCase() !== 'FALSE'; }).length;
+    const total = customersAt(p.customers, cur.month).filter(function (r) { return cell(r && r[2]) && normTeam(r[0]) === t && cell(r[6]).toUpperCase() !== 'FALSE'; }).length; // 확인 1: 이력 줄은 한 곳으로(그 달 기준)
     const saved = {};
     (p.weeklyRows || []).forEach(function (r) { if (num(r && r[0]) === cur.year && num(r[1]) === cur.month && weekKey(r[2]) === weekKeyOf(cur) && normTeam(r[3]) === t) saved[cell(r[4])] = true; });
     jobs.push({ key: 'remind_' + cur.year + '_' + cur.month + '_' + weekKeyOf(cur) + '_' + t, kind: 'remind', team: t, year: cur.year, month: cur.month, entry: cur,
@@ -483,21 +507,59 @@ function reminderParts(job, r, appUrl) {
     button: '주간 실적 열기', link: appUrl + '?view=weekly', footer: FOOTER
   };
 }
+// 결과 메일을 지금 보내도 되나: 4팀 완료 시각(atMs)부터 결과메일대기분(기본 60분)이 지났는지. 시각이 없으면(예전 문서) 바로 보냄.
+// 확인은 issueMailBatchTest(매시 2분)에서만 하므로 실제 발송 = 완료 + 대기분이 지난 뒤 첫 정시 2분(1시간이면 1~2시간 사이)
+function resultDue(atMs, nowMs, s) {
+  const wait = (s && s.결과메일대기분 !== undefined ? s.결과메일대기분 : DEFAULTS.결과메일대기분) * 60000;
+  return !(typeof atMs === 'number' && isFinite(atMs)) || nowMs - atMs >= wait;
+}
 // 결과 메일 본문 parts. view = buildReportView 결과(4팀 완료 상태)
+// 2026-11-17 재홍님 확정(시안 C-1): 실적 숫자(금액·달성률)는 메일에 넣지 않음 → 주차 진행 막대 + 팀 입력 현황만, 상세는 앱에서
+function escH(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function resultSteps(view, entry) {
+  return (view.steps || []).map(function (s) {
+    const st = s.inputDate < entry.inputDate ? 'done' : (s.inputDate === entry.inputDate && s.label === entry.label ? 'cur' : 'fut');
+    return { label: s.label, state: st, sub: st === 'fut' ? fmtMd2(s.inputDate) + ' 입력' : (s.gamagam ? '예상 마감' : '~' + fmtMd2(s.to)) };
+  });
+}
+function resultCardHtml(job, view) {
+  const MC = { accent: '#3a2f6e', past: '#7a6bb0', fut: '#d9d5e6', muted: '#6b6f6a', light: '#a9a6a0', green: '#1d6b43', greenSoft: '#e3f3ea', line: '#eeece6', border: '#e2e0da' };
+  const F = "font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;";
+  const steps = resultSteps(view, job.entry).map(function (s) {
+    const cur = s.state === 'cur', size = cur ? 22 : 16, dot = cur ? MC.accent : (s.state === 'done' ? MC.past : MC.fut);
+    const col = cur ? MC.accent : (s.state === 'done' ? '#444' : MC.light);
+    return '<td width="25%" align="center" valign="top" style="padding:0 2px;' + F + '">' +
+      '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + dot + ';margin:0 auto 6px;' + (cur ? 'box-shadow:0 0 0 4px #e6e1f2;' : '') + '"></div>' +
+      '<div style="font-size:14px;font-weight:700;color:' + col + ';">' + escH(s.label) + (s.state === 'fut' ? '' : ' ✓') + '</div>' +
+      '<div style="font-size:11.5px;color:' + MC.muted + ';">' + escH(s.sub) + '</div>' +
+      (cur ? '<div style="display:inline-block;margin-top:3px;background:' + MC.accent + ';color:#ffffff;font-size:11px;padding:1px 8px;">이번 보고</div>' : '') + '</td>';
+  }).join('');
+  const chips = view.teams.map(function (x) {
+    return '<td align="center" bgcolor="' + MC.greenSoft + '" style="background:' + MC.greenSoft + ';padding:10px 4px;' + F + '">' +
+      '<div style="font-size:16px;font-weight:800;color:#2e8b57;">✓</div><div style="font-size:14px;font-weight:700;color:' + MC.green + ';">' + escH(x.team) + '</div>' +
+      '<div style="font-size:11px;color:#5b8a6e;">' + escH(String(x.at || '').slice(5).replace('-', '/')) + ' 완료</div></td>';
+  }).join('');
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid ' + MC.border + ';margin:0 0 16px;"><tr><td style="padding:18px 14px 14px;' + F + '">' +
+    '<div style="text-align:center;font-size:12px;color:#888;letter-spacing:1px;">' + job.month + '월 주간 실적</div>' +
+    '<div style="text-align:center;font-size:22px;font-weight:800;color:' + MC.accent + ';margin:2px 0 16px;">' + escH(job.entry.label) + ' 보고 완료</div>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' + steps + '</tr></table>' +
+    '<div style="border-top:1px solid ' + MC.line + ';margin:16px 0 8px;"></div>' +
+    '<div style="font-size:12.5px;color:' + MC.muted + ';margin:0 6px;">팀 입력 현황</div>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="table-layout:fixed;"><tr>' + chips + '</tr></table>' +
+    '<div style="text-align:center;font-size:12.5px;color:' + MC.muted + ';margin-top:8px;">고객사별 숫자·팀별 상세는 앱에서만 볼 수 있어요.</div>' +
+    '</td></tr></table>';
+}
 function resultParts(job, view, r, appUrl) {
-  const title = job.month + '월 ' + job.entry.label, t = view.total;
-  const teamLines = view.subtotals.map(function (s) { return '· ' + s.team + '  ' + fmtNum(s.sales) + ' / ' + fmtNum(s.planSales) + ' / ' + fmtPct(s.salesRate); });
-  const doneLines = view.teams.map(function (x) { return '· ' + x.team + ' ' + String(x.at || '').slice(5).replace('-', '/') + ' ' + (x.proxy ? '(관리자 대리)' : (x.byName || '')); });
+  const title = job.month + '월 ' + job.entry.label;
+  const stepLines = resultSteps(view, job.entry).map(function (s) { return '· ' + s.label + (s.state === 'fut' ? ' ' : ' ✓ ') + s.sub + (s.state === 'cur' ? ' (이번 보고)' : ''); });
+  const doneLines = view.teams.map(function (x) { return '· ' + x.team + ' ✓ ' + String(x.at || '').slice(5).replace('-', '/') + ' 완료'; });
   return {
     to: r.email,
-    subject: '[MRO 워크허브] ' + title + ' 주간 실적 보고 (' + view.teams.length + '팀 입력 완료)',
+    subject: '[MRO 워크허브] ' + title + ' 주간 실적이 도착했어요 (' + view.teams.length + '팀 완료)',
     hello: r.name ? r.name + '님,' : '',
-    lines: [title + ' 주간 실적(' + rangeText(job.year, job.month, job.entry) + ')이 ' + view.teams.length + '팀 모두 입력 완료됐어요.', '',
-      '■ 전사',
-      '· 매출 누적 ' + fmtNum(t.sales) + ' / 계획 ' + fmtNum(t.planSales) + ' (' + fmtPct(t.salesRate) + ')',
-      '· 매출이익 누적 ' + fmtNum(t.profit) + ' / 계획 ' + fmtNum(t.planProfit) + ' (' + fmtPct(t.profitRate) + ') · 이익률 ' + fmtPct(t.marginActual), '',
-      '■ 팀별 (매출 누적 / 계획 / 달성률)'].concat(teamLines),
-    period: { title: '■ 입력 완료', lines: doneLines.concat(['', '고객사별 자세한 숫자는 앱에서 볼 수 있어요.']) },
+    lines: [title + ' 주간 실적 보고가 ' + view.teams.length + '팀 모두 입력 완료됐어요.'],
+    bodyHtml: resultCardHtml(job, view), // perfCloseMail.buildHtml: lines 아래에 그대로 넣음(숫자 없음)
+    textBlock: ['■ ' + job.month + '월 주간 실적 · ' + job.entry.label + ' 보고 완료'].concat(stepLines, ['', '■ 팀 입력 현황'], doneLines, ['', '고객사별 숫자·팀별 상세는 앱에서만 볼 수 있어요.']),
     button: '주간 실적 열기', link: appUrl + '?view=weekly', footer: FOOTER
   };
 }
@@ -519,11 +581,11 @@ function leadTeam(me, isAdmin, reqTeam, teams) {
   return { ok: true, team: own };
 }
 
-// ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 활성 '담당' 이름, 사용 끄기 = 경고만, 수정 기록 없음, 구매사명·팀 변경 없음) ----
-// 고칠 수 있는 칸 → 실적-고객사 열 (A 팀 · B 계열 · C 구매사명 · D 발주형태 · E 사무소 · F 담당 · G 사용 · H 순서 · I 비고)
-const CUSTOMER_EDIT_COLS = { series: 'B', orderType: 'D', office: 'E', manager: 'F', active: 'G', ord: 'H', note: 'I' };
-const CUSTOMER_LOCKED = ['name', 'team']; // 🔒 주간 실적·연간계획과 '팀 + 구매사명'으로 이어져 있어 바꾸지 않음
-const ORD_MAX = 9999;
+// ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 활성 '담당' 이름, 사용 끄기 = 경고만, 구매사명·팀·순서 잠금,
+//      이력 = 실적-고객사 L열 '적용월'(탭 추가 없음), 적용 = 이번 보고 달부터만) ----
+// 고칠 수 있는 칸 → 실적-고객사 열 (A 팀 · B 계열 · C 구매사명 · D 발주형태 · E 사무소 · F 담당 · G 사용 · H 순서 · I 비고 · J 등록자 · K 등록일시 · L 적용월)
+const CUSTOMER_EDIT_COLS = { series: 'B', orderType: 'D', office: 'E', manager: 'F', active: 'G', note: 'I' };
+const CUSTOMER_LOCKED = ['name', 'team', 'ord']; // 🔒 구매사명·팀 = 주간 실적·연간계획과 이어진 이름, 순서 = 엑셀 보고서 순서(관리자가 시트에서)
 function isOff(v) { return cell(v).toUpperCase() === 'FALSE'; }
 
 // 그 팀 활성 '담당' 이름 목록(사용자팀마스터 줄 순서, 같은 이름은 한 번)
@@ -533,13 +595,13 @@ function managersOf(userRows, team) {
   return out;
 }
 
-// 고치기 창 목록: 그 팀 고객사 전체(사용 끔 포함). 사용 중 먼저(순서 칸 → 시트 줄 순서), 사용 끔은 뒤.
+// 고치기 창 목록: 그 달(이번 보고 달) 기준 그 팀 고객사 전체(사용 끔 포함). 사용 중 먼저(순서 → 시트 줄 순서), 사용 끔은 뒤.
 // monthHas = 그 연·월에 실적-주간 숫자 줄이 있는지(사용 끌 때 경고용)
 function customerEditList(customers, team, weeklyRows, year, month) {
   const t = normTeam(team), has = {};
   (weeklyRows || []).forEach(function (r) { if (num(r && r[0]) === year && num(r[1]) === month && normTeam(r[3]) === t) has[cell(r[4])] = true; });
   const list = [];
-  (customers || []).forEach(function (r, i) {
+  customersAt(customers, month).forEach(function (r, i) {
     const name = cell(r && r[2]); if (!name || normTeam(r[0]) !== t) return;
     const o = num(r[7]);
     list.push({ name: name, series: cell(r[1]), orderType: cell(r[3]), office: cell(r[4]), manager: cell(r[5]), active: !isOff(r[6]),
@@ -549,21 +611,26 @@ function customerEditList(customers, team, weeklyRows, year, month) {
   return list.map(function (x) { delete x.i; return x; });
 }
 
-// [변경 저장] 쓰기 계획. p = { customers(A2:K), team, changes:[{ name, fields:{ series, orderType, office, manager, active, ord, note } }], managers, weeklyRows, year, month }
-// 바뀐 칸만(시트 지금 값과 다른 칸만) 한 칸씩. 담당은 바꿀 때만 활성 담당 목록과 대조(빈칸 = 담당 없음 허용).
+// [변경 저장] 쓰기 계획. p = { customers(A2:L 전체), team, month(= 이번 보고 달 = 적용월), changes:[{ name, fields:{ series, orderType, office, manager, active, note } }],
+//   managers, weeklyRows, year, who, nowMs }
+// 그 고객사에 이미 '적용월 = 이번 달' 줄이 있으면 그 줄의 바뀐 칸 + 등록자·등록일시만 고친다.
+// 없으면 그 달 기준 줄을 복사해 바뀐 값을 넣은 새 줄(적용월 = 이번 달, 등록자·등록일시 = 고친 사람·시각)을 맨 아래에 붙인다 → 지난달 줄은 그대로.
 function planUpdateCustomers(p) {
-  const team = normTeam(p.team), rows = {}, dup = {};
-  (p.customers || []).forEach(function (r, i) {
-    const name = cell(r && r[2]); if (!name || normTeam(r[0]) !== team) return;
-    if (rows[name]) dup[name] = true;
-    rows[name] = { row: i + 2, r: r || [] };
-  });
+  const team = normTeam(p.team), month = Number(p.month);
+  if (!(month >= 1 && month <= 12)) return { ok: false, error: 'NO_REPORT_YET' };
   const changes = p.changes || [];
   if (!changes.length) return { ok: false, error: 'NO_CHANGES' };
-  const managers = p.managers || [];
-  const list = customerEditList(p.customers, team, p.weeklyRows, p.year, p.month), monthHas = {};
-  list.forEach(function (c) { monthHas[c.name] = c.monthHas; });
-  const seen = {}, writes = [], warnings = [];
+  const indexed = indexRows(p.customers), byKey = {};
+  indexed.forEach(function (x) {
+    const name = cell(x.v[2]); if (!name || normTeam(x.v[0]) !== team) return;
+    (byKey[name] || (byKey[name] = [])).push(x);
+  });
+  const at = {}; customersAt(p.customers, month).forEach(function (r) { if (normTeam(r[0]) === team) at[cell(r[2])] = r; });
+  const managers = p.managers || [], monthHas = {};
+  customerEditList(p.customers, team, p.weeklyRows, p.year, month).forEach(function (c) { monthHas[c.name] = c.monthHas; });
+  let next = nextFreeRow(indexed);
+  const stamp = seoulStamp(p.nowMs), who = lcs(p.who), seen = {}, writes = [], warnings = [];
+  let rows = 0;
   for (let k = 0; k < changes.length; k++) {
     const ch = changes[k] || {}, name = cell(ch.name), f = ch.fields || {};
     const keys = Object.keys(f);
@@ -571,12 +638,10 @@ function planUpdateCustomers(p) {
       if (CUSTOMER_LOCKED.indexOf(keys[j]) >= 0) return { ok: false, error: 'LOCKED_FIELD', field: name + ' ' + keys[j] };
       if (!CUSTOMER_EDIT_COLS[keys[j]]) return { ok: false, error: 'BAD_FIELD', field: keys[j] };
     }
-    if (!rows[name]) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
-    if (dup[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
+    if (!byKey[name] || !at[name]) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
     if (seen[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
     seen[name] = true;
-    const at = rows[name], cur = at.r;
-    const want = {};
+    const cur = at[name], want = {};
     if ('series' in f) want.series = cell(f.series);
     if ('orderType' in f) want.orderType = cell(f.orderType);
     if ('office' in f) want.office = cell(f.office);
@@ -584,21 +649,26 @@ function planUpdateCustomers(p) {
     if ('note' in f) { want.note = cell(f.note); if (want.note.length > NOTE_MAX) return { ok: false, error: 'NOTE_TOO_LONG', field: name }; }
     if ('manager' in f) want.manager = cell(f.manager);
     if ('active' in f) { if (typeof f.active !== 'boolean') return { ok: false, error: 'BAD_FIELD', field: name + ' active' }; want.active = f.active; }
-    if ('ord' in f) {
-      const s = cell(f.ord);
-      if (s === '') want.ord = '';
-      else if (/^\d+$/.test(s) && Number(s) >= 1 && Number(s) <= ORD_MAX) want.ord = Number(s);
-      else return { ok: false, error: 'BAD_ORDER', field: name };
-    }
-    const now = { series: cell(cur[1]), orderType: cell(cur[3]), office: cell(cur[4]), manager: cell(cur[5]), active: !isOff(cur[6]), ord: num(cur[7]) === null ? '' : num(cur[7]), note: cell(cur[8]) };
-    Object.keys(want).forEach(function (x) {
-      if (want[x] === now[x]) return; // 같은 값은 쓰지 않음
-      writes.push({ name: name, field: x, cell: CUSTOMER_EDIT_COLS[x] + at.row, value: want[x] });
-    });
+    const now = { series: cell(cur[1]), orderType: cell(cur[3]), office: cell(cur[4]), manager: cell(cur[5]), active: !isOff(cur[6]), note: cell(cur[8]) };
+    const diff = Object.keys(want).filter(function (x) { return want[x] !== now[x]; }); // 같은 값은 쓰지 않음
     if ('manager' in want && want.manager !== now.manager && want.manager !== '' && managers.indexOf(want.manager) < 0) return { ok: false, error: 'BAD_MANAGER', field: name + ' ' + want.manager };
+    if (!diff.length) continue;
+    rows++;
     if (want.active === false && now.active && monthHas[name]) warnings.push(name);
+    // 이번 달 줄(적용월 = 이번 달, 같은 달 줄이 둘이면 아래쪽 — customersAt과 같은 규칙)
+    const mine = byKey[name].filter(function (x) { return applyMonth(x.v) === month; }).pop();
+    if (mine) {
+      diff.forEach(function (x) { writes.push({ name: name, field: x, range: CUSTOMER_EDIT_COLS[x] + mine.row, values: [want[x]] }); });
+      writes.push({ name: name, field: 'by', range: 'J' + mine.row + ':K' + mine.row, values: [who, stamp] });
+    } else {
+      const v = [cell(cur[0]), now.series, name, now.orderType, now.office, now.manager, now.active, num(cur[7]) === null ? '' : num(cur[7]), now.note, who, stamp, month];
+      const pos = { series: 1, orderType: 3, office: 4, manager: 5, active: 6, note: 8 };
+      diff.forEach(function (x) { v[pos[x]] = want[x]; });
+      writes.push({ name: name, field: 'new', range: 'A' + next + ':L' + next, values: v, isNew: true });
+      next++;
+    }
   }
-  return { ok: true, writes: writes, rows: Object.keys(seen).filter(function (n) { return writes.some(function (w) { return w.name === n; }); }).length, warnings: warnings };
+  return { ok: true, writes: writes, rows: rows, warnings: warnings, month: month };
 }
 
 module.exports = {
@@ -608,5 +678,5 @@ module.exports = {
   STAGE_REOPEN, STAGE_MAIL_REMIND, STAGE_MAIL_RESULT, WEEKLY_WRITE_COLS, PROGRESS_COLS, CUSTOMER_COLS,
   seoulStamp, seoulHour, weekCellOf, weekKeyOf, reportKey, teamDoneMap, teamsOf, allDoneOf, checkNum,
   inputView, planWeekWrite, planProgress, planAddCustomer, usersOf, reminderJobs, resultRecipients, reminderParts, resultParts, leadTeam,
-  CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers
+  CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers, customersAt, resultDue
 };

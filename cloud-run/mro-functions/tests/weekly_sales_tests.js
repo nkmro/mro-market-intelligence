@@ -63,10 +63,13 @@ c = ws.currentReport(at('2028-01-03T09:00:00'));
 t('N5 2028-01-03 → 2027년 12월 가마감(해 넘김)', c.current.year === 2027 && c.current.month === 12 && c.current.gamagam);
 
 // 3) 설정 읽기
-let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5]]);
+let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5], ['결과메일대기분', 60]]);
 t('S1 정상 값', s.bad.length === 0 && s.modes.동부 === '2단계' && s.modes.서부 === '3단계' && s.팀장마감시각 === 16 && s.메일사용 === true && s.usedDefault.length === 0);
 s = ws.readSettings([]);
-t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 6 && s.bad.length === 0);
+t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 7 && s.결과메일대기분 === 60 && s.bad.length === 0);
+t('S5 결과메일대기분: 0~1440, 잘못되면 기본 60', ws.readSettings([['결과메일대기분', 0]]).결과메일대기분 === 0 && ws.readSettings([['결과메일대기분', '90']]).결과메일대기분 === 90 && ws.readSettings([['결과메일대기분', '2000']]).결과메일대기분 === 60 && ws.readSettings([['결과메일대기분', '2000']]).bad.length === 1);
+const H1MS = Date.parse('2026-11-17T16:09:00+09:00');
+t('S6 결과 메일 때: 완료 16:09 → 17:02 기다림, 18:02 보냄, 대기 0분이면 17:02 보냄, 완료 시각 없으면 바로', !ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T18:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([['결과메일대기분', 0]])) && ws.resultDue(null, H1MS, ws.readSettings([])));
 s = ws.readSettings([['입력방식_중부', '4단계'], ['팀장마감시각', '25'], ['메일사용', '네'], ['입력요일', '화']]);
 t('S3 잘못된 값 4개 잡힘', s.bad.length === 4 && s.팀장마감시각 === 16);
 s = ws.readSettings([['메일사용', 'FALSE']]);
@@ -191,7 +194,7 @@ t('W7 숫자 읽기', ws.checkNum(' 1,234 ') === 1234 && ws.checkNum('') === nul
 const pp = ws.planProgress({ progressRows: [[2026, 11, 1, '동부', '입력 완료']], year: 2026, month: 11, entry: N2, team: '동부', stage: '입력 완료', who: 'B@x', nowMs: Date.parse('2026-11-16T14:05:00+09:00'), mail: '' });
 t('G1 진행 줄 덧붙이기(3행)', pp.row === 3 && pp.values.join('|') === '2026|11|2|동부|입력 완료||b@x|2026-11-16 14:05|');
 let pa = ws.planAddCustomer({ customers: C, team: '동부지역팀', name: '새빛산업(주)', series: '미계열', orderType: '오프라인', office: '창원', note: '신규', who: 'b@x', nowMs: Date.parse('2026-11-16T15:00:00+09:00') });
-t('A1 고객사 추가: 다음 줄·순서 최대+1·사용 TRUE', pa.ok && pa.row === 8 && pa.values.join('|') === '동부|미계열|새빛산업(주)|오프라인|창원||true|7|신규|b@x|2026-11-16 15:00');
+t('A1 고객사 추가: 다음 줄·순서 최대+1·사용 TRUE·적용월(달 없으면 빈칸)', pa.ok && pa.row === 8 && pa.values.join('|') === '동부|미계열|새빛산업(주)|오프라인|창원||true|7|신규|b@x|2026-11-16 15:00|');
 t('A2 같은 팀 같은 이름(사용 끔 포함) 거절, 다른 팀은 허용', ws.planAddCustomer({ customers: C, team: '동부', name: '거래끝' }).error === 'DUPLICATE_CUSTOMER' && ws.planAddCustomer({ customers: C, team: '서부', name: '한빛정밀' }).ok);
 t('A3 이름 비었거나 61자 거절', ws.planAddCustomer({ customers: C, team: '동부', name: '' }).error === 'BAD_NAME' && ws.planAddCustomer({ customers: C, team: '동부', name: 'x'.repeat(61) }).error === 'BAD_NAME');
 
@@ -219,7 +222,7 @@ t('B1 알림 제목·본문', ws.reminderParts(jobs[0], RR[1], pcm.APP_URL).subj
 t('B2 대리 알림 문구', pcm.buildText(ws.reminderParts(jobs[1], RR[0], pcm.APP_URL)).indexOf('팀장 계정이 아직 없어 관리자에게 보냈어요') > 0);
 const vAll = view(W, ALL);
 const rp = ws.resultParts({ year: 2026, month: 11, entry: N2 }, vAll, RR[2], pcm.APP_URL), rt = pcm.buildText(rp);
-t('B3 결과 메일 제목·전사·팀별', rp.subject === '[MRO 워크허브] 11월 2주차 주간 실적 보고 (3팀 입력 완료)' && rt.indexOf('· 매출 누적 400,000 / 계획 900,000 (44.4%)') > 0 && rt.indexOf('· 동부  250,000 / 400,000 / 62.5%') > 0);
+t('B3 결과 메일(시안 C-1) 제목·글 버전: 숫자 없이 주차 진행·팀 완료만', rp.subject === '[MRO 워크허브] 11월 2주차 주간 실적이 도착했어요 (3팀 완료)' && rt.indexOf('· 2주차 ✓ ~11/15 (이번 보고)') > 0 && rt.indexOf('400,000') < 0 && rt.indexOf('%') < 0);
 t('B4 HTML도 만들어짐(버튼 주소)', pcm.buildHtml(rp).indexOf('feed.html?view=weekly') > 0);
 
 // 팀 고르기 (확인 3)
@@ -269,12 +272,14 @@ t('Q2 [입력 완료] 저장 먼저, 숫자 그대로', up[0].action === 'save' 
 up = await uiRun('wkInAdd_()');
 t('Q3 [고객사 추가] 전 저장에 숫자 그대로', up[0].action === 'save' && up[0].entries[0].sales === '1,234' && up[1].action === 'addCustomer');
 
-// 고객사 정보 고치기 (2026-11-17 재홍님 확정) — 가상의 값만
-const CEC = [
+// 고객사 정보 고치기 + 이력(적용월) (2026-11-17 재홍님 확정) — 가상의 값만
+const CEC = [ // A 팀, B 계열, C 구매사명, D 발주형태, E 사무소, F 담당, G 사용, H 순서, I 비고, J 등록자, K 등록일시, L 적용월
   ['동부', '미계열', '가나정밀(주)', '오프라인', '창원', '김담당', true, 1, '', 'x', 'y'],
   ['동부', '다라그룹', '다라금속(주)', '온라인', '포항', '', true, 2, '', 'x', 'y'],
   ['서부', '미계열', '마바화학', '오프라인', '군산', '', true, 1, '', 'x', 'y'],
-  ['동부', '미계열', '사아플랜트(주)', '오프라인', '울산', '', false, 3, '거래 종료', 'x', 'y']
+  ['동부', '미계열', '사아플랜트(주)', '오프라인', '울산', '', false, 3, '거래 종료', 'x', 'y'],
+  ['동부', '미계열', '가나정밀(주)', '온라인', '달성', '이담당', true, 9, '', 'x', 'y', 11],   // 6행: 11월부터 바뀐 정보(순서 9는 무시 — 첫 줄 1)
+  ['동부', '미계열', '자차신규(주)', '오프라인', '양산', '', true, 4, '', 'x', 'y', 11]           // 7행: 11월에 새로 추가된 고객사
 ];
 const CEU = [
   ['a@nkmro.com', '김담당', '담당', '동부', '활성'], ['b@nkmro.com', '이담당', '담당', '동부지역팀', '활성'], ['c@nkmro.com', '박담당', '담당', '동부', '비활성'],
@@ -283,53 +288,101 @@ const CEU = [
 const CEW = [[2026, 11, 2, '동부', '가나정밀(주)', 100, 10, '', 'a', 't']];
 const CEM = ws.managersOf(CEU, '동부');
 t('E1 담당 목록 = 이 팀 활성 담당만(비활성·팀장·다른 팀 빼고)', JSON.stringify(CEM) === JSON.stringify(['김담당', '이담당']));
+// 이력: 그 달 이하에서 가장 늦은 적용월 줄
+const at10 = ws.customersAt(CEC, 10), at11 = ws.customersAt(CEC, 11);
+const ga = function (rows) { return rows.find(function (r) { return r[2] === '가나정밀(주)'; }); };
+t('H4 10월 = 원래 줄(창원·김담당), 11월 = 11월 줄(달성·이담당)', ga(at10)[4] === '창원' && ga(at10)[5] === '김담당' && ga(at11)[4] === '달성' && ga(at11)[5] === '이담당');
+t('H5 순서는 첫 줄 값(11월 줄의 9가 아니라 1)', ga(at11)[7] === 1 && ga(at10)[7] === 1);
+t('H6 11월에 추가된 고객사는 10월에 없음, 11월부터 있음', !at10.some(function (r) { return r[2] === '자차신규(주)'; }) && at11.some(function (r) { return r[2] === '자차신규(주)'; }));
+t('H7 고객사마다 한 줄(가나정밀 2줄 → 1줄)', at11.filter(function (r) { return r[2] === '가나정밀(주)'; }).length === 1 && at11.length === 5);
+t('H8 같은 적용월 줄이 둘이면 아래쪽', ws.customersAt(CEC.concat([['동부', '미계열', '가나정밀(주)', '온라인', '경주', '', true, 1, '', 'x', 'y', 11]]), 11).find(function (r) { return r[2] === '가나정밀(주)'; })[4] === '경주');
+t('H9 실적-고객사 머리글 12칸(L = 적용월)', ws.HEADERS[ws.TAB_CUSTOMERS].length === 12 && ws.HEADERS[ws.TAB_CUSTOMERS][11] === '적용월' && ws.CUSTOMER_COLS === 12);
+const ccx = ws.crossCheck(CEC, [], 2026);
+t('H10 연결 점검: 이력 줄은 중복 아님, 같은 적용월 두 줄만 중복', ccx.duplicates.length === 0 && ws.crossCheck(CEC.concat([CEC[4].slice()]), [], 2026).duplicates[0] === '동부/가나정밀(주) (11월)');
+// 사용 끄기는 적용월부터만
+const OFF = CEC.concat([['동부', '다라그룹', '다라금속(주)', '온라인', '포항', '', false, 2, '', 'x', 'y', 11]]);
+const WOFF = [[2026, 10, '가마감', '동부', '다라금속(주)', 500, 50, '', 'a', 't'], [2026, 11, 2, '동부', '다라금속(주)', 70, 7, '', 'a', 't']];
+const octG = ws.weekPlan(2026, 10).slice(-1)[0];
+const vOct = ws.buildReportView({ year: 2026, month: 10, entry: octG, plan: ws.weekPlan(2026, 10), today: '2026-11-17', nowEntry: nov2, settings: ws.readSettings([]), customers: OFF, planRows: [], weeklyRows: WOFF, progressRows: [], names: {}, adminEmail: '', adminTeam: '' });
+const vNov = ws.buildReportView({ year: 2026, month: 11, entry: nov2, plan: ws.weekPlan(2026, 11), today: '2026-11-17', nowEntry: nov2, settings: ws.readSettings([]), customers: OFF, planRows: [], weeklyRows: WOFF, progressRows: [], names: {}, adminEmail: '', adminTeam: '' });
+t('H11 11월에 사용 끈 고객사: 10월 합계에는 그대로, 11월부터 빠짐', vOct.rows.some(function (r) { return r.name === '다라금속(주)'; }) && !vNov.rows.some(function (r) { return r.name === '다라금속(주)'; }));
+t('H12 지난달 화면은 그때 사무소(10월 창원 / 11월 달성)', vOct.rows.find(function (r) { return r.name === '가나정밀(주)'; }).office === '창원' && vNov.rows.find(function (r) { return r.name === '가나정밀(주)'; }).office === '달성');
 const CEL = ws.customerEditList(CEC, '동부', CEW, 2026, 11);
-t('E2 고치기 목록: 그 팀 전체, 사용 중 먼저(순서), 사용 끔은 뒤 + 이번 달 숫자 표시',
-  CEL.map(function (c) { return c.name; }).join('|') === '가나정밀(주)|다라금속(주)|사아플랜트(주)' && CEL[2].active === false && CEL[0].monthHas === true && CEL[1].monthHas === false && CEL[0].manager === '김담당');
-function ceUp(changes, extra) { return ws.planUpdateCustomers(Object.assign({ customers: CEC, team: '동부', changes: changes, managers: CEM, weeklyRows: CEW, year: 2026, month: 11 }, extra || {})); }
-let ce = ceUp([{ name: '다라금속(주)', fields: { ord: '5', series: '새그룹', orderType: '오프라인', office: '경주', manager: '이담당', note: '메모', active: false } }]);
-t('E3 칸 7개 모두 바꾸기 → 줄 3(다라금속)의 H·B·D·E·F·I·G 칸, 값 그대로', ce.ok && ce.writes.length === 7 && ce.rows === 1 &&
-  ce.writes.map(function (w) { return w.cell + '=' + w.value; }).sort().join(',') === ['B3=새그룹', 'D3=오프라인', 'E3=경주', 'F3=이담당', 'G3=false', 'H3=5', 'I3=메모'].sort().join(','));
-ce = ceUp([{ name: '가나정밀(주)', fields: { office: '창원', series: '미계열', ord: '1', active: true, manager: '김담당' } }]);
-t('E4 지금 값과 같은 칸은 안 씀(0칸)', ce.ok && ce.writes.length === 0 && ce.rows === 0);
+t('E2 고치기 목록: 11월 기준 그 팀 전체, 사용 중 먼저(순서), 사용 끔은 뒤 + 이번 달 숫자 표시',
+  CEL.map(function (c) { return c.name; }).join('|') === '가나정밀(주)|다라금속(주)|자차신규(주)|사아플랜트(주)' && CEL[3].active === false && CEL[0].monthHas === true && CEL[0].office === '달성');
+const NOW = Date.parse('2026-11-17T17:20:00+09:00');
+function ceUp(changes, extra) { return ws.planUpdateCustomers(Object.assign({ customers: CEC, team: '동부', month: 11, changes: changes, managers: CEM, weeklyRows: CEW, year: 2026, who: 'JH@nkmro.com', nowMs: NOW }, extra || {})); }
+let ce = ceUp([{ name: '다라금속(주)', fields: { series: '새그룹', orderType: '오프라인', office: '경주', manager: '이담당', note: '메모', active: false } }]);
+t('E3 이번 달 줄이 없으면 새 줄(8행 A:L): 바뀐 칸 6개 + 나머지 그대로 + 고친 사람·시각 + 적용월 11, 원래 줄(3행)은 안 건드림',
+  ce.ok && ce.writes.length === 1 && ce.writes[0].range === 'A8:L8' && ce.rows === 1 &&
+  ce.writes[0].values.join('|') === '동부|새그룹|다라금속(주)|오프라인|경주|이담당|false|2|메모|jh@nkmro.com|2026-11-17 17:20|11');
+ce = ceUp([{ name: '가나정밀(주)', fields: { office: '마산', note: '메모' } }]);
+t('E3b 이번 달 줄(6행)이 있으면 그 줄의 바뀐 칸 + 등록자·등록일시만 고침(새 줄 없음)',
+  ce.ok && ce.writes.map(function (w) { return w.range + '=' + w.values.join('/'); }).join(',') === 'E6=마산,I6=메모,J6:K6=jh@nkmro.com/2026-11-17 17:20');
+ce = ceUp([{ name: '가나정밀(주)', fields: { office: '달성', series: '미계열', active: true, manager: '이담당' } }]);
+t('E4 지금(11월) 값과 같은 칸은 안 씀(0칸)', ce.ok && ce.writes.length === 0 && ce.rows === 0);
 ce = ceUp([{ name: '가나정밀(주)', fields: { active: false } }]);
-t('E5 이번 달 숫자 있는 고객사 사용 끄기 → 경고(쓰기는 함)', ce.ok && ce.writes.length === 1 && ce.writes[0].cell === 'G2' && ce.warnings[0] === '가나정밀(주)');
+t('E5 이번 달 숫자 있는 고객사 사용 끄기 → 경고(쓰기는 함)', ce.ok && ce.writes[0].range === 'G6' && ce.writes[0].values[0] === false && ce.warnings[0] === '가나정밀(주)');
 ce = ceUp([{ name: '다라금속(주)', fields: { active: false } }]);
 t('E6 이번 달 숫자 없는 고객사 사용 끄기 → 경고 없음', ce.ok && ce.warnings.length === 0);
 ce = ceUp([{ name: '사아플랜트(주)', fields: { active: true } }]);
-t('E7 사용 끔 → 다시 켜기', ce.ok && ce.writes[0].cell === 'G5' && ce.writes[0].value === true);
+t('E7 사용 끔 → 다시 켜기(11월 새 줄, 사용 true)', ce.ok && ce.writes[0].range === 'A8:L8' && ce.writes[0].values[6] === true && ce.writes[0].values[11] === 11);
 t('E8 담당: 목록에 없는 이름 BAD_MANAGER · 다른 팀 담당도 거절 · 빈칸(없음)은 허용',
   ceUp([{ name: '다라금속(주)', fields: { manager: '홍길동' } }]).error === 'BAD_MANAGER' && ceUp([{ name: '다라금속(주)', fields: { manager: '최담당' } }]).error === 'BAD_MANAGER' &&
-  ceUp([{ name: '가나정밀(주)', fields: { manager: '' } }]).writes[0].cell === 'F2');
+  ceUp([{ name: '가나정밀(주)', fields: { manager: '' } }]).writes[0].range === 'F6');
 const CEC2 = CEC.map(function (r) { return r.slice(); }); CEC2[1][5] = '퇴사담당';
-ce = ws.planUpdateCustomers({ customers: CEC2, team: '동부', changes: [{ name: '다라금속(주)', fields: { manager: '퇴사담당', office: '경주' } }], managers: CEM, weeklyRows: CEW, year: 2026, month: 11 });
-t('E9 담당을 안 바꾸면(목록에 없는 기존 이름 그대로) 다른 칸은 저장됨', ce.ok && ce.writes.length === 1 && ce.writes[0].cell === 'E3');
-t('E10 구매사명·팀 바꾸기 시도 → LOCKED_FIELD', ceUp([{ name: '가나정밀(주)', fields: { name: '새이름' } }]).error === 'LOCKED_FIELD' && ceUp([{ name: '가나정밀(주)', fields: { team: '서부' } }]).error === 'LOCKED_FIELD');
+ce = ws.planUpdateCustomers({ customers: CEC2, team: '동부', month: 11, changes: [{ name: '다라금속(주)', fields: { manager: '퇴사담당', office: '경주' } }], managers: CEM, weeklyRows: CEW, year: 2026, who: 'a', nowMs: NOW });
+t('E9 담당을 안 바꾸면(목록에 없는 기존 이름 그대로) 다른 칸은 저장됨', ce.ok && ce.writes[0].values[4] === '경주' && ce.writes[0].values[5] === '퇴사담당');
+t('E10 구매사명·팀·순서 바꾸기 시도 → LOCKED_FIELD', ceUp([{ name: '가나정밀(주)', fields: { name: '새이름' } }]).error === 'LOCKED_FIELD' && ceUp([{ name: '가나정밀(주)', fields: { team: '서부' } }]).error === 'LOCKED_FIELD' &&
+  ceUp([{ name: '가나정밀(주)', fields: { ord: '5' } }]).error === 'LOCKED_FIELD');
 t('E11 모르는 칸 BAD_FIELD · 사용 값이 참/거짓 아님 BAD_FIELD', ceUp([{ name: '가나정밀(주)', fields: { 등록자: 'x' } }]).error === 'BAD_FIELD' && ceUp([{ name: '가나정밀(주)', fields: { active: 'FALSE' } }]).error === 'BAD_FIELD');
-t('E12 순서 0·글자·10000 → BAD_ORDER, 빈칸 허용', ceUp([{ name: '가나정밀(주)', fields: { ord: '0' } }]).error === 'BAD_ORDER' && ceUp([{ name: '가나정밀(주)', fields: { ord: '가' } }]).error === 'BAD_ORDER' &&
-  ceUp([{ name: '가나정밀(주)', fields: { ord: '10000' } }]).error === 'BAD_ORDER' && ceUp([{ name: '가나정밀(주)', fields: { ord: '' } }]).writes[0].value === '');
+t('E12 이번 보고 달이 없으면(달 0) NO_REPORT_YET', ceUp([{ name: '가나정밀(주)', fields: { office: 'x' } }], { month: 0 }).error === 'NO_REPORT_YET');
 t('E13 40자 넘는 사무소 FIELD_TOO_LONG · 200자 넘는 비고 NOTE_TOO_LONG', ceUp([{ name: '가나정밀(주)', fields: { office: 'a'.repeat(41) } }]).error === 'FIELD_TOO_LONG' && ceUp([{ name: '가나정밀(주)', fields: { note: 'a'.repeat(201) } }]).error === 'NOTE_TOO_LONG');
 t('E14 다른 팀 고객사·없는 고객사 → UNKNOWN_CUSTOMER, 같은 이름 두 번 → DUPLICATE_CUSTOMER, 빈 요청 → NO_CHANGES',
   ceUp([{ name: '마바화학', fields: { office: 'x' } }]).error === 'UNKNOWN_CUSTOMER' && ceUp([{ name: '없는회사', fields: { office: 'x' } }]).error === 'UNKNOWN_CUSTOMER' &&
   ceUp([{ name: '가나정밀(주)', fields: { office: 'x' } }, { name: '가나정밀(주)', fields: { note: 'y' } }]).error === 'DUPLICATE_CUSTOMER' && ceUp([]).error === 'NO_CHANGES');
-ce = ceUp([{ name: '가나정밀(주)', fields: { office: '마산' } }, { name: '다라금속(주)', fields: { note: '메모' } }]);
-t('E15 두 곳 바꾸기 → 칸 2개, 곳 2', ce.ok && ce.writes.length === 2 && ce.rows === 2);
+ce = ceUp([{ name: '다라금속(주)', fields: { office: '마산' } }, { name: '사아플랜트(주)', fields: { note: '메모' } }]);
+t('E15 두 곳 새 줄 → 8행·9행 차례로, 곳 2', ce.ok && ce.writes.length === 2 && ce.writes[0].range === 'A8:L8' && ce.writes[1].range === 'A9:L9' && ce.rows === 2);
+ce = ceUp([{ name: '자차신규(주)', fields: { office: '부산' } }], { month: 10 });
+t('E15b 그 달에 아직 없는 고객사(11월 추가를 10월에) → UNKNOWN_CUSTOMER', ce.error === 'UNKNOWN_CUSTOMER');
 t('E16 권한: 임원 → FORBIDDEN, 팀장 다른 팀 → FORBIDDEN_TEAM, 관리자 아무 팀', ws.leadTeam({ role: '임원', team: '본사', active: true }, false, '', T4).error === 'FORBIDDEN' &&
   ws.leadTeam({ role: '팀장', team: '동부', active: true }, false, '서부', T4).error === 'FORBIDDEN_TEAM' && ws.leadTeam(meA, true, '영업지원', T4).team === '영업지원');
-// index.js 배선(정적): 잠금 안 · 쓰기 1번(batchUpdate) · 팀 고르기 · 담당/임원은 앞에서 FORBIDDEN
+const pa11 = ws.planAddCustomer({ customers: CEC, team: '동부', name: '새빛산업(주)', who: 'b@x', nowMs: NOW, month: 11 });
+t('E16b 고객사 추가: 적용월 = 이번 보고 달(11), 순서 = 최대+1(이력 줄 포함 최대 9 → 10)', pa11.ok && pa11.values.length === 12 && pa11.values[11] === 11 && pa11.values[7] === 10);
+// index.js 배선(정적): 잠금 안 · 쓰기 1번(batchUpdate) · 팀 고르기 · 담당/임원은 앞에서 FORBIDDEN · 적용월 = 이번 보고 달
 const IX = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.js'), 'utf8');
 const sv = IX.slice(IX.indexOf('exports.saveWeeklySalesTest'), IX.indexOf('async function runWeeklySalesMail_'));
 const br = sv.slice(sv.indexOf("if (b.action === 'updateCustomers')"), sv.indexOf("const en = weeklyEntry_(year, b.month, b.week"));
 t('E17 updateCustomers: 잠금을 잡은 뒤·푼 앞, 시트 다시 읽은 뒤에 처리', sv.indexOf('acquireLock(') < sv.indexOf("if (b.action === 'updateCustomers')") && sv.indexOf("if (b.action === 'updateCustomers')") < sv.indexOf('releaseLock(') &&
   sv.indexOf('weeklyFile_(client, mro.fileId)') < sv.indexOf("if (b.action === 'updateCustomers')"));
-t('E18 updateCustomers: 쓰기는 perfBatchWrite_ 1번(바뀐 칸만), 팀은 weeklyLeadTeam_, 담당 목록은 managersOf', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') && br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes("'!' + w.cell"));
+t('E18 updateCustomers: 쓰기 perfBatchWrite_ 1번, 팀 weeklyLeadTeam_, 담당 managersOf, 적용월 = 이번 보고 달(weeklyEntry_ 월 없이)', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') &&
+  br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes('weeklyEntry_(year, undefined, undefined, f.settings, nowMs)') && br.includes('month: nowEn.month'));
 t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
+t('E20 실적-고객사 읽기 범위 3곳 모두 A2:L, 고객사 추가 쓰기 A:L', (IX.match(/TAB_CUSTOMERS\) \+ '!A2:L'/g) || []).length === 3 && !IX.includes("TAB_CUSTOMERS) + '!A2:K'") && IX.includes("'!A' + plan.row + ':L' + plan.row"));
+// 확인 1: 16시 알림의 '고객사 N곳'은 이력 줄을 한 곳으로 셈(11월 기준 동부 사용 중 = 가나정밀·다라금속·자차신규 3곳, 원본 줄로 세면 4)
+const RJ = ws.reminderJobs({ nowMs: Date.parse('2026-11-16T16:05:00+09:00'), settings: ws.readSettings([]), customers: CEC, progressRows: [], weeklyRows: [], users: CEU.concat([['e2@nkmro.com', '동팀장', '팀장', '동부', '활성']]), adminEmail: '' });
+t('R12 16시 알림 고객사 수 = 그 달 기준 한 곳씩(동부 3곳)', RJ.find(function (j) { return j.team === '동부'; }).total === 3);
+// 확인 3: 잠금 안내 문구에 순서 포함
+t('Q8 LOCKED_FIELD 문구에 순서', uiHtml.indexOf("LOCKED_FIELD: '구매사명·팀·순서는 바꿀 수 없어요") > 0);
+// 결과 메일(시안 C-1): 실적 숫자 없음
+const MV = vAll;
+const mj = { key: 'result_2026-11-2', kind: 'result', year: 2026, month: 11, entry: nov2 };
+const mp = ws.resultParts(mj, MV, { email: 'x@nkmro.com', name: '김대표' }, 'https://app');
+const allText = [mp.subject].concat(mp.lines, mp.textBlock).join('\n') + mp.bodyHtml.replace(/<[^>]*>/g, ' '); // 보이는 글자만(태그 속 width="25%" 같은 모양 값 제외)
+const amounts = [MV.total.sales, MV.total.planSales, MV.total.profit].concat(MV.subtotals.map(function (s) { return s.sales; })).filter(function (n) { return n !== null && n > 999; })
+  .map(function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); });
+t('M10 결과 메일: 금액·달성률(%)이 제목·본문·카드 어디에도 없음', amounts.length > 0 && amounts.every(function (a) { return allText.indexOf(a) < 0; }) && allText.indexOf('%') < 0);
+t('M11 결과 메일: 제목 "11월 2주차 주간 실적이 도착했어요 (4팀 완료)", 주차 막대(이번 보고)·팀 칩 4개', mp.subject === '[MRO 워크허브] 11월 2주차 주간 실적이 도착했어요 (' + MV.teams.length + '팀 완료)' &&
+  mp.bodyHtml.includes('2주차 보고 완료') && mp.bodyHtml.includes('이번 보고') && (mp.bodyHtml.match(/ 완료<\/div><\/td>/g) || []).length === MV.teams.length && mp.textBlock.some(function (l) { return l.includes('(이번 보고)'); }));
+const pcm2 = pcm;
+t('M12 메일 틀: bodyHtml은 HTML에, textBlock은 글 버전에 들어감(없으면 예전 그대로)', pcm2.buildHtml(mp).includes('2주차 보고 완료') && pcm2.buildText(mp).includes('■ 팀 입력 현황') &&
+  pcm2.buildHtml({ hello: 'a', lines: ['b'], button: 'c', link: 'd', footer: 'e' }).indexOf('undefined') < 0 && pcm2.buildText({ hello: 'a', lines: ['b'], button: 'c', link: 'd', footer: 'e' }).indexOf('undefined') < 0);
 // 화면: 고치기 창 상태(바꾼 칸 모으기 · 되돌리면 빠짐 · [변경 저장]은 숫자 저장 먼저)
 async function ceRun(fn) {
   const posts = [];
-  const ctx = { wkIn_: { year: 2026, month: 11, week: 2, team: '동부', canEdit: true, rows: [{ name: '가나정밀(주)' }], edit: { customers: CEL.map(function (c) { return Object.assign({}, c); }), managers: CEM } },
+  const ctx = { wkIn_: { year: 2026, month: 11, week: 2, team: '동부', canEdit: true, rows: [{ name: '가나정밀(주)' }], edit: { month: 11, customers: CEL.map(function (c) { return Object.assign({}, c); }), managers: CEM } },
     wkCe_: {}, wkBusy_: false, wkInMsg_: '', wkEditOpen_: true, document: { getElementById: function (id) { return { 'wi-s-0': { value: '1,000' }, 'wi-p-0': { value: '50' }, 'wi-n-0': { value: '' } }[id] || null; } },
-    wkRenderInput_: function () {}, wkPost_: async function (b) { posts.push(b); return { ok: true, rows: 1, warnings: [] }; }, wkErr_: function () { return ''; }, loadWeeklyPage: async function () {} };
+    wkRenderInput_: function () {}, wkPost_: async function (b) { posts.push(b); return { ok: true, rows: 1, warnings: [], month: 11 }; }, wkErr_: function () { return ''; }, loadWeeklyPage: async function () {} };
   require('vm').createContext(ctx);
   require('vm').runInContext(['wkInEntries_', 'wkInBase_', 'wkAfter_', 'wkCeVal_', 'wkCeIsChg_', 'wkCeSet_', 'wkCeChanges_', 'wkCeStatus_', 'wkCeSave_'].map(uiGrab).join('\n') + '\nvar WK_CE_LABEL_ = {};', ctx);
   return fn(ctx, posts);
@@ -342,8 +395,15 @@ await ceRun(async function (ctx, posts) {
   const ch2 = ctx.wkCeChanges_();
   t('Q4 [고치기] 바꾼 칸만 모으고, 원래 값으로 되돌리면 빠짐', ch1.includes('"office":"경주"') && ch1.includes('"manager":"이담당"') && ch2.length === 2 && !('manager' in ch2.find(function (x) { return x.name === '다라금속(주)'; }).fields));
   await ctx.wkCeSave_();
-  t('Q5 [변경 저장] 숫자 저장 먼저 → updateCustomers(팀·바꾼 칸) 순서', posts[0].action === 'save' && posts[0].entries[0].sales === '1,000' && posts[1].action === 'updateCustomers' && posts[1].team === '동부' && posts[1].changes.length === 2);
+  t('Q5 [변경 저장] 숫자 저장 먼저 → updateCustomers(팀·바꾼 칸) 순서, 결과 문구에 적용월', posts[0].action === 'save' && posts[0].entries[0].sales === '1,000' && posts[1].action === 'updateCustomers' && posts[1].team === '동부' && posts[1].changes.length === 2 &&
+    ctx.wkInMsg_.includes('11월부터 적용'));
 });
+// 화면: 순서 잠금 · 모바일 정렬(정적)
+const FH = require('fs').readFileSync(require('path').join(__dirname, '..', '..', '..', 'feed.html'), 'utf8');
+const ceh = uiGrab('wkCeHtml_');
+t('Q6 고치기 창: 순서는 글자만(입력칸 없음)·🔒, "이번 보고 달부터 적용" 안내', !ceh.includes("'ord'") && ceh.includes('순서 🔒') && ceh.includes('월(이번 보고 달)부터 적용돼요'));
+t('Q7 모바일 정렬: 제목 줄 wk-meta, 주차 "~끝날 누적", 요약 wk-sum', FH.includes('<div class="wk-meta">') && uiGrab('wkHeader_').includes("'~' + wkMd2_(s.to) + ' 누적'") && uiGrab('wkSummary_').includes('pf-mycard wk-sum') &&
+  FH.includes('.wk-meta { display: contents; }'));
 
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

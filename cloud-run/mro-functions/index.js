@@ -5271,7 +5271,7 @@ exports.getWeeklySalesTest = async (req, res) => {
     }
     const q = competency.quoteTab;
     const ranges = weeklySales.TABS.map(function (t) { return q(t) + '!1:1'; })
-      .concat([q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K', q(weeklySales.TAB_PLAN) + '!A2:C'])
+      .concat([q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:L', q(weeklySales.TAB_PLAN) + '!A2:C'])
       .map(encodeURIComponent);
     const s0 = Date.now();
     let vr;
@@ -5341,7 +5341,7 @@ async function weeklySalesReport_(req, res, auth, t0, timings) {
   }
   const fileId = weeklySales.findFileId(settingRows, year);
   const q = competency.quoteTab;
-  const ranges = [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K', q(weeklySales.TAB_PLAN) + '!A2:AO',
+  const ranges = [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:L', q(weeklySales.TAB_PLAN) + '!A2:AO',
     q(weeklySales.TAB_WEEKLY) + '!A2:L', q(weeklySales.TAB_PROGRESS) + '!A2:I'].map(encodeURIComponent);
   const s0 = Date.now();
   let vr;
@@ -5409,7 +5409,7 @@ async function weeklyMro_(client, email, year) {
 // 실적 파일 한 번 읽기 (설정·고객사·주간·진행 — 계획은 조회 화면만 쓰므로 여기선 안 읽음)
 async function weeklyFile_(client, fileId) {
   const q = competency.quoteTab;
-  const vr = await batchGetValues(client, fileId, [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K',
+  const vr = await batchGetValues(client, fileId, [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:L',
     q(weeklySales.TAB_WEEKLY) + '!A2:L', q(weeklySales.TAB_PROGRESS) + '!A2:I'].map(encodeURIComponent), { unformatted: true });
   return { settings: weeklySales.readSettings((vr[0] && vr[0].values) || []), customers: (vr[1] && vr[1].values) || [],
     weekly: (vr[2] && vr[2].values) || [], progress: (vr[3] && vr[3].values) || [] };
@@ -5457,7 +5457,9 @@ async function weeklySalesInput_(req, res, auth, t0, timings) {
   const view = weeklySales.inputView({ year: en.year, month: en.month, entry: en.entry, plan: en.plan, team: lead.team, customers: f.customers,
     weeklyRows: f.weekly, progressRows: f.progress, names: mro.names, adminEmail: ADMIN_EMAIL, adminTeam: mro.adminTeam, isAdmin: isAdmin, isCurrent: en.isCurrent });
   // 고객사 정보 고치기 창: 그 팀 고객사 전체(사용 끔 포함) + 그 팀 활성 '담당' 이름 목록
-  view.edit = { customers: weeklySales.customerEditList(f.customers, lead.team, f.weekly, en.year, en.month), managers: weeklySales.managersOf(mro.userRows, lead.team) };
+  // 고치면 '이번 보고 달'부터 적용 → 창도 이번 보고 달 기준 값으로 보여 줌. 이번 보고 달이 이 파일(연도)에 없으면(지난해 파일) 고치기 없음
+  const nowEn = weeklyEntry_(en.year, undefined, undefined, f.settings, nowMs);
+  view.edit = nowEn.ok ? { month: nowEn.month, customers: weeklySales.customerEditList(f.customers, lead.team, f.weekly, nowEn.year, nowEn.month), managers: weeklySales.managersOf(mro.userRows, lead.team) } : null;
   res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
     isCurrent: en.isCurrent, mode: f.settings.modes[lead.team] || '2단계' }, view));
 }
@@ -5508,26 +5510,31 @@ exports.saveWeeklySalesTest = async (req, res) => {
             const cur = weeklyEntry_(year, undefined, undefined, f.settings, nowMs);
             if (cur.ok && weeklySales.teamDoneMap(f.progress, cur.year, cur.month, weeklySales.weekKeyOf(cur.entry))[lead.team]) return { ok: false, error: 'ALREADY_DONE' };
           }
-          const plan = weeklySales.planAddCustomer({ customers: f.customers, team: lead.team, name: c.name, series: c.series, orderType: c.orderType, office: c.office, note: c.note, who: email, nowMs: nowMs });
+          const nowEn = weeklyEntry_(year, undefined, undefined, f.settings, nowMs);
+          if (!nowEn.ok) return nowEn; // 적용월 = 이번 보고 달
+          const plan = weeklySales.planAddCustomer({ customers: f.customers, team: lead.team, name: c.name, series: c.series, orderType: c.orderType, office: c.office, note: c.note, who: email, nowMs: nowMs, month: nowEn.month });
           if (!plan.ok) return plan;
-          const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_CUSTOMERS) + '!A' + plan.row + ':K' + plan.row, values: [plan.values] }]);
+          const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_CUSTOMERS) + '!A' + plan.row + ':L' + plan.row, values: [plan.values] }]);
           timings.writeMs = Date.now() - w0;
           if (n !== weeklySales.CUSTOMER_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
           return { ok: true, team: lead.team, name: plan.values[2], row: plan.row };
         }
-        // 고객사 정보 고치기: 주차·입력 완료와 무관. 팀장 자기 팀 / 관리자 고른 팀. 잠금 안에서 방금 읽은 시트로 '팀 + 구매사명' 줄을 찾아 바뀐 칸만 쓴다
+        // 고객사 정보 고치기: 주차·입력 완료와 무관. 팀장 자기 팀 / 관리자 고른 팀. 적용월 = 이번 보고 달(화면이 보는 달과 무관).
+        // 잠금 안에서 방금 읽은 시트로 '팀 + 구매사명' 줄을 찾아, 이번 달 줄이 있으면 그 줄의 바뀐 칸만, 없으면 이번 달 줄을 새로 붙인다(지난달 줄은 그대로)
         if (b.action === 'updateCustomers') {
           const lead = weeklyLeadTeam_(mro.me, isAdmin, b.team, teams);
           if (!lead.ok) return lead;
-          const cur = weeklyEntry_(year, b.month, undefined, f.settings, nowMs);
-          const plan = weeklySales.planUpdateCustomers({ customers: f.customers, team: lead.team, changes: b.changes, managers: weeklySales.managersOf(mro.userRows, lead.team),
-            weeklyRows: f.weekly, year: cur.ok ? cur.year : year, month: cur.ok ? cur.month : 0 });
+          const nowEn = weeklyEntry_(year, undefined, undefined, f.settings, nowMs);
+          if (!nowEn.ok) return nowEn;
+          const plan = weeklySales.planUpdateCustomers({ customers: f.customers, team: lead.team, month: nowEn.month, changes: b.changes, managers: weeklySales.managersOf(mro.userRows, lead.team),
+            weeklyRows: f.weekly, year: nowEn.year, who: email, nowMs: nowMs });
           if (!plan.ok) return plan;
-          if (!plan.writes.length) return { ok: true, team: lead.team, updatedCells: 0, rows: 0, warnings: [] };
-          const n = await perfBatchWrite_(mro.fileId, plan.writes.map(function (w) { return { range: q(weeklySales.TAB_CUSTOMERS) + '!' + w.cell, values: [[w.value]] }; }));
+          if (!plan.writes.length) return { ok: true, team: lead.team, month: plan.month, updatedCells: 0, rows: 0, warnings: [] };
+          const n = await perfBatchWrite_(mro.fileId, plan.writes.map(function (w) { return { range: q(weeklySales.TAB_CUSTOMERS) + '!' + w.range, values: [w.values] }; }));
           timings.writeMs = Date.now() - w0;
-          if (n !== plan.writes.length) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
-          return { ok: true, team: lead.team, updatedCells: n, rows: plan.rows, warnings: plan.warnings };
+          const want = plan.writes.reduce(function (a, w) { return a + w.values.length; }, 0);
+          if (n !== want) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, team: lead.team, month: plan.month, updatedCells: n, rows: plan.rows, warnings: plan.warnings };
         }
         const en = weeklyEntry_(year, b.month, b.week, f.settings, nowMs);
         if (!en.ok) return en;
@@ -5567,7 +5574,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
           const cur = await ref.get();
           if (cur.exists && cur.data().key === key) await ref.delete();
         }
-        return { ok: true, updatedCells: n, team: lead.team, stage: stage, allDone: after.all };
+        return { ok: true, updatedCells: n, team: lead.team, stage: stage, allDone: after.all, mailWaitMin: f.settings.결과메일대기분 };
       } finally {
         await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId);
       }
@@ -5618,7 +5625,11 @@ async function runWeeklySalesMail_(nowMs) {
   const jobs = [];
   if (resultPending) {
     const en = weeklyEntry_(latest.year, latest.month, latest.week, f.settings, nowMs);
-    if (en.ok && weeklySales.allDoneOf(f.customers, f.progress, en.year, en.month, en.entry).all) {
+    const allDone = en.ok && weeklySales.allDoneOf(f.customers, f.progress, en.year, en.month, en.entry).all;
+    const atMs = latest.at && typeof latest.at.toMillis === 'function' ? latest.at.toMillis() : null; // 4팀 완료 시각(다시 완료하면 새 시각)
+    if (allDone && !weeklySales.resultDue(atMs, nowMs, f.settings)) {
+      summary.result = 'WAITING'; // 2026-11-17 재홍님 요청: 4팀 완료 뒤 결과메일대기분(실적-설정, 기본 60분)이 지나야 보냄
+    } else if (allDone) {
       jobs.push({ key: 'result_' + latest.key, kind: 'result', team: '전사', year: en.year, month: en.month, entry: en.entry, recipients: weeklySales.resultRecipients(mro.userRows) });
     } else summary.result = 'NOT_ALL_DONE';
   }

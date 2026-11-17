@@ -131,6 +131,7 @@ function mailParts(job, r, o) {
 
 function buildText(parts, testNote) {
   return (testNote ? testNote + '\n\n' : '') + parts.hello + '\n\n' + parts.lines.join('\n') + '\n\n' +
+    (parts.textBlock ? parts.textBlock.join('\n') + '\n\n' : '') + // 선택: 주간 실적 결과 메일(2026-11-17)
     (parts.period ? (parts.period.title ? parts.period.title + '\n' : '') + parts.period.lines.join('\n') + '\n\n' : '') +
     parts.button + ': ' + parts.link + '\n\n' + parts.footer;
 }
@@ -148,6 +149,7 @@ function buildHtml(parts, testNote) {
     (testNote ? '<div style="font-size:12px;color:' + C.danger + ';background:' + C.dangerSoft + ';padding:8px 10px;margin:0 0 12px;">' + esc(testNote) + '</div>' : '') +
     '<div style="font-size:14px;color:' + C.text + ';margin:0 0 10px;line-height:1.6;">' + esc(parts.hello) + '</div>' +
     '<div style="font-size:14px;color:' + C.text + ';line-height:1.7;margin:0 0 14px;">' + parts.lines.map(esc).join('<br>') + '</div>' +
+    (parts.bodyHtml || '') + // 선택: 주간 실적 결과 메일 카드(만드는 쪽에서 escape 끝낸 HTML, 2026-11-17)
     (parts.period ? '<div style="font-size:13px;color:' + C.green + ';background:' + C.greenSoft + ';line-height:1.7;padding:10px 12px;margin:0 0 16px;">' +
       (parts.period.title ? '<b>' + esc(parts.period.title) + '</b><br>' : '') + parts.period.lines.map(esc).join('<br>') + '</div>' : '') +
     btn +
