@@ -329,6 +329,7 @@ function teamDoneMap(progressRows, year, month, wk) {
   const done = {};
   (progressRows || []).forEach(function (r) {
     if (num(r && r[0]) !== year || num(r[1]) !== month || weekKey(r[2]) !== wk) return;
+    if (cell(r[5])) return; // 3단계: 담당 칸이 있는 줄 = 담당 한 사람의 완료·취소(팀 완료와 따로 — managerDoneMap)
     const st = cell(r[4]), t = normTeam(r[3]);
     if (STAGE_DONE.indexOf(st) >= 0) done[t] = { by: cell(r[6]).toLowerCase(), at: cell(r[7]) };
     else if (st === STAGE_REOPEN) delete done[t];
@@ -356,54 +357,101 @@ function checkNum(v) {
   return Math.abs(n) < INPUT_MAX ? n : NaN;
 }
 
-// 입력 탭 응답. p = { year, month, entry, plan, team, customers, weeklyRows, progressRows, names, adminEmail, adminTeam, isAdmin, isCurrent }
+// 입력 탭 응답. p = { year, month, entry, plan, team, customers, weeklyRows, progressRows, names, adminEmail, adminTeam, isAdmin, isCurrent,
+//   mode('2단계'|'3단계' — 그 주차에 적용되는 방식, modeAt), nextMode(시트 값이 다르면 = 다음 보고부터), managerUsers(managerUsersOf), meManager(담당이 볼 때 자기 이름) }
 function inputView(p) {
-  const wk = weekKeyOf(p.entry), team = normTeam(p.team);
+  const wk = weekKeyOf(p.entry), team = normTeam(p.team), three = p.mode === '3단계';
   const idx = p.plan.findIndex(function (w) { return w.inputDate === p.entry.inputDate && w.label === p.entry.label; });
   const prevEntry = idx > 0 ? p.plan[idx - 1] : null, pk = prevEntry ? weekKeyOf(prevEntry) : null;
   const cur = {}, prev = {};
-  let lastAt = '', lastBy = '';
   (p.weeklyRows || []).forEach(function (r) {
     if (num(r && r[0]) !== p.year || num(r[1]) !== p.month || normTeam(r[3]) !== team) return;
     const k = cell(r[4]), w = weekKey(r[2]);
-    if (w === wk) { cur[k] = { sales: num(r[5]), profit: num(r[6]), note: cell(r[7]) }; if (cell(r[9]) > lastAt) { lastAt = cell(r[9]); lastBy = lcs(r[8]); } }
+    if (w === wk) cur[k] = { sales: num(r[5]), profit: num(r[6]), note: cell(r[7]), by: lcs(r[8]), at: cell(r[9]),
+      orig: (cell(r[10]) !== '' || cell(r[11]) !== '') ? { sales: num(r[10]), profit: num(r[11]) } : null };
     else if (pk !== null && w === pk) prev[k] = { sales: num(r[5]), profit: num(r[6]) };
   });
-  const rows = [];
+  const mgrNames = (p.managerUsers || []).map(function (u) { return u.name; });
+  const all = [];
   customersAt(p.customers, p.month).map(function (r, i) { return { r: r, i: i }; }).filter(function (x) {
     return cell(x.r && x.r[2]) && normTeam(x.r[0]) === team && cell(x.r[6]).toUpperCase() !== 'FALSE';
   }).sort(function (a, b) { const oa = num(a.r[7]), ob = num(b.r[7]); return (oa === null ? 1e9 : oa) - (ob === null ? 1e9 : ob) || a.i - b.i; }).forEach(function (x) {
-    const name = cell(x.r[2]), c = cur[name], pv = prev[name];
-    rows.push({ name: name, office: cell(x.r[4]), series: cell(x.r[1]), orderType: cell(x.r[3]),
+    const name = cell(x.r[2]), c = cur[name], pv = prev[name], f = cell(x.r[5]);
+    const row = { name: name, office: cell(x.r[4]), series: cell(x.r[1]), orderType: cell(x.r[3]),
       prevSales: pv ? pv.sales : null, prevProfit: pv ? pv.profit : null,
-      sales: c ? c.sales : null, profit: c ? c.profit : null, note: c ? c.note : '', saved: !!c });
+      sales: c ? c.sales : null, profit: c ? c.profit : null, note: c ? c.note : '', saved: !!c };
+    if (three) {
+      row.manager = mgrNames.indexOf(f) >= 0 ? f : ''; // 활성 '담당'이 아니면(빈칸·퇴사 등) 팀장 입력 줄
+      row.managerRaw = f;
+      row.orig = c && c.orig && (c.orig.sales !== c.sales || c.orig.profit !== c.profit) ? c.orig : null; // 팀장이 고친 줄: 담당이 넣은 원래 값
+    }
+    all.push({ row: row, at: c ? c.at : '', by: c ? c.by : '' });
   });
   const st = allDoneOf(p.customers, p.progressRows, p.year, p.month, p.entry);
   const d = st.done[team] || null, admin = lcs(p.adminEmail), names = p.names || {};
   const proxyOf = function (by) { return !!admin && by === admin && cell(p.adminTeam) !== team; };
-  const canEdit = !d && (p.isAdmin || p.isCurrent);
-  return {
+  const asManager = three && !!p.meManager;
+  const vis = asManager ? all.filter(function (x) { return x.row.manager === p.meManager; }) : all;
+  let lastAt = '', lastBy = '';
+  (asManager ? vis : Object.keys(cur).map(function (k) { return cur[k]; })).forEach(function (x) { if (x.at > lastAt) { lastAt = x.at; lastBy = x.by; } }); // 팀장 = 그 팀 전체(예전과 같음), 담당 = 자기 줄만
+  const rows = vis.map(function (x) { return x.row; });
+  const out = {
     team: team, teams: st.teams, isAdmin: !!p.isAdmin, gamagam: p.entry.gamagam, label: p.entry.label,
     from: p.entry.from, to: p.entry.to, inputDate: p.entry.inputDate, prevLabel: prevEntry ? prevEntry.label : null,
     rows: rows, savedCount: rows.filter(function (r) { return r.saved; }).length,
     lastSavedAt: lastAt, lastSavedBy: lastBy ? (names[lastBy] || lastBy) : '', lastSavedProxy: proxyOf(lastBy),
     done: d ? { at: d.at, byName: names[d.by] || d.by, proxy: proxyOf(d.by) } : null, allDone: st.all,
-    canEdit: canEdit, canComplete: canEdit,
+    canEdit: !d && (p.isAdmin || p.isCurrent), canComplete: !d && (p.isAdmin || p.isCurrent),
     canReopen: !!d && (p.isAdmin || (p.isCurrent && !st.all)),
-    lockedReason: d ? 'DONE' : (canEdit ? '' : 'PAST_WEEK')
+    lockedReason: d ? 'DONE' : ((p.isAdmin || p.isCurrent) ? '' : 'PAST_WEEK'),
+    mode: three ? '3단계' : '2단계', nextMode: p.nextMode && p.nextMode !== p.mode ? p.nextMode : null
   };
+  if (!three) return out;
+  // ---- 3단계: 담당별 현황(시안 B) · 담당은 자기 줄만(시안 A) ----
+  const mdone = managerDoneMap(p.progressRows, p.year, p.month, wk, team);
+  const byEmail = {}; (p.managerUsers || []).forEach(function (u) { byEmail[u.name] = u.email; });
+  const mgr = [];
+  all.forEach(function (x) {
+    const m = x.row.manager; if (!m) return;
+    let g = mgr.find(function (z) { return z.name === m; });
+    if (!g) { const md = mdone[m]; g = { name: m, total: 0, saved: 0, done: md ? { at: md.at, byName: names[md.by] || md.by, proxy: md.by !== lcs(byEmail[m]) } : null }; mgr.push(g); }
+    g.total++; if (x.row.saved) g.saved++;
+  });
+  out.managers = mgr;
+  out.managersAllDone = mgr.every(function (g) { return !!g.done; });
+  out.leadRows = all.filter(function (x) { return !x.row.manager; }).length; // 담당 없는 줄(팀장 입력)
+  if (asManager) {
+    const mine = mgr.find(function (g) { return g.name === p.meManager; }) || null;
+    out.role = 'manager'; out.me = p.meManager; out.myDone = mine ? mine.done : null;
+    out.canEdit = !d && !!p.isCurrent && !out.myDone && rows.length > 0;
+    out.canComplete = out.canEdit;
+    out.canReopen = !d && !!p.isCurrent && !!out.myDone; // 팀 확정 전까지만
+    out.lockedReason = d ? 'DONE' : (!p.isCurrent ? 'PAST_WEEK' : (out.myDone ? 'MY_DONE' : (rows.length ? '' : 'NO_ROWS')));
+  } else {
+    out.role = 'lead';
+    out.canComplete = out.canEdit && out.managersAllDone; // [팀 확정]: 담당이 모두 [입력 완료](대신 완료 포함)해야
+    out.canProxy = out.canEdit; // [대신 입력 완료]: 2026-11-17 재홍님 확정 ⑧
+  }
+  return out;
 }
 
 // [저장] 쓰기 계획. 같은 키(연도·월·주차·팀·구매사명) 줄이 있으면 그 줄 A~J 덮어쓰기, 없으면 다음 빈 줄(planMonthWrite 관례)
-// p = { weeklyRows, customers, year, month, entry, team, entries:[{name, sales, profit, note}], who, nowMs }
+// p = { weeklyRows, customers, year, month, entry, team, entries:[{name, sales, profit, note}], who, nowMs,
+//       mode, onlyManager(3단계 담당이 저장할 때 자기 이름), managerEmails({담당 이메일: true}) }
+// 3단계: A~L(12칸)을 쓰고, 값이 그대로인 줄은 쓰지 않는다(입력자가 바뀌지 않게).
+//   담당 저장 → K·L 비움. 팀장 저장 → 담당이 넣은 줄(입력자 = 담당)을 처음 고칠 때 그 값을 K·L(담당원래매출·이익)에 남기고, 이미 있으면 그대로.
 function planWeekWrite(p) {
-  const team = normTeam(p.team), wk = weekKeyOf(p.entry);
+  const team = normTeam(p.team), wk = weekKeyOf(p.entry), three = p.mode === '3단계';
   const active = {};
-  customersAt(p.customers, p.month).forEach(function (r) { if (cell(r && r[2]) && normTeam(r[0]) === team && cell(r[6]).toUpperCase() !== 'FALSE') active[cell(r[2])] = true; });
+  customersAt(p.customers, p.month).forEach(function (r) {
+    if (!cell(r && r[2]) || normTeam(r[0]) !== team || cell(r[6]).toUpperCase() === 'FALSE') return;
+    active[cell(r[2])] = cell(r[5]);
+  });
   const seen = {}, clean = [];
   for (let i = 0; i < (p.entries || []).length; i++) {
     const e = p.entries[i] || {}, name = cell(e.name);
-    if (!active[name]) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
+    if (!(name in active)) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
+    if (three && p.onlyManager && active[name] !== p.onlyManager) return { ok: false, error: 'NOT_MY_CUSTOMER', field: name };
     if (seen[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
     seen[name] = true;
     const sales = checkNum(e.sales), profit = checkNum(e.profit), note = cell(e.note);
@@ -413,15 +461,24 @@ function planWeekWrite(p) {
   }
   const indexed = indexRows(p.weeklyRows), found = {};
   indexed.forEach(function (x) {
-    if (num(x.v[0]) === p.year && num(x.v[1]) === p.month && weekKey(x.v[2]) === wk && normTeam(x.v[3]) === team) found[cell(x.v[4])] = x.row;
+    if (num(x.v[0]) === p.year && num(x.v[1]) === p.month && weekKey(x.v[2]) === wk && normTeam(x.v[3]) === team) found[cell(x.v[4])] = x;
   });
   let next = nextFreeRow(indexed);
-  const stamp = seoulStamp(p.nowMs), who = lcs(p.who), writes = [];
+  const stamp = seoulStamp(p.nowMs), who = lcs(p.who), writes = [], memails = p.managerEmails || {};
   clean.forEach(function (e) {
-    const row = found[e.name];
+    const x = found[e.name], row = x ? x.row : 0;
     const empty = e.sales === null && e.profit === null && e.note === '';
     if (!row && empty) return; // 처음부터 빈칸이면 줄을 만들지 않음
     const values = [p.year, p.month, weekCellOf(p.entry), team, e.name, e.sales === null ? '' : e.sales, e.profit === null ? '' : e.profit, e.note, who, stamp];
+    if (three) {
+      if (x && num(x.v[5]) === e.sales && num(x.v[6]) === e.profit && cell(x.v[7]) === e.note) return; // 그대로면 쓰지 않음
+      let k = '', l = '';
+      if (!p.onlyManager && x) {
+        if (cell(x.v[10]) !== '' || cell(x.v[11]) !== '') { k = cell(x.v[10]) === '' ? '' : num(x.v[10]); l = cell(x.v[11]) === '' ? '' : num(x.v[11]); }
+        else if (memails[lcs(x.v[8])] && (num(x.v[5]) !== e.sales || num(x.v[6]) !== e.profit)) { k = cell(x.v[5]) === '' ? '' : num(x.v[5]); l = cell(x.v[6]) === '' ? '' : num(x.v[6]); }
+      }
+      values.push(k, l);
+    }
     writes.push({ row: row || next++, values: values, isNew: !row });
   });
   return { ok: true, writes: writes };
@@ -430,7 +487,7 @@ function planWeekWrite(p) {
 // 실적-진행에 이력 한 줄 덧붙이기 (입력 완료 / 완료 취소 / 16시 알림 / 결과 메일)
 function planProgress(p) {
   const row = nextFreeRow(indexRows(p.progressRows));
-  return { row: row, values: [p.year, p.month, weekCellOf(p.entry), cell(p.team), p.stage, '', lcs(p.who), seoulStamp(p.nowMs), cell(p.mail)] };
+  return { row: row, values: [p.year, p.month, weekCellOf(p.entry), cell(p.team), p.stage, cell(p.manager), lcs(p.who), seoulStamp(p.nowMs), cell(p.mail)] }; // 담당 = 3단계 담당 한 사람 기록일 때만
 }
 
 // [+ 고객사 추가] 쓰기 계획. 같은 팀에 같은 이름(사용 끔 포함)이 있으면 거절. 순서 = 지금 가장 큰 순서 + 1
@@ -478,7 +535,7 @@ function reminderJobs(p) {
     const saved = {};
     (p.weeklyRows || []).forEach(function (r) { if (num(r && r[0]) === cur.year && num(r[1]) === cur.month && weekKey(r[2]) === weekKeyOf(cur) && normTeam(r[3]) === t) saved[cell(r[4])] = true; });
     jobs.push({ key: 'remind_' + cur.year + '_' + cur.month + '_' + weekKeyOf(cur) + '_' + t, kind: 'remind', team: t, year: cur.year, month: cur.month, entry: cur,
-      hour: s.팀장마감시각, total: total, savedCount: Object.keys(saved).length, proxy: !leaders.length, recipients: to });
+      hour: s.팀장마감시각, total: total, savedCount: Object.keys(saved).length, proxy: !leaders.length, recipients: to, mode: modeAt(s, p.progressRows, t, cur) });
   });
   return jobs;
 }
@@ -502,8 +559,8 @@ function reminderParts(job, r, appUrl) {
     to: r.email,
     subject: '[MRO 워크허브] ' + title + ' 주간 실적 입력 마감 알림 (' + label + ')',
     hello: job.proxy ? (r.name ? r.name + '님,' : '') : (r.name ? r.name + ' 팀장님,' : '팀장님,'),
-    lines: [title + ' 주간 실적(' + rangeText(job.year, job.month, job.entry) + ')이 아직 [입력 완료]되지 않았어요.'].concat(job.proxy ? ['(' + label + '은 팀장 계정이 아직 없어 관리자에게 보냈어요 — 대리 입력이 필요해요.)'] : []),
-    period: { title: null, lines: ['· 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00', '· 지금 상태: 고객사 ' + job.total + '곳 중 ' + job.savedCount + '곳 저장됨, 입력 완료 전', '', '아래 버튼을 눌러 숫자를 확인하고 [입력 완료]를 눌러 주세요.'] },
+    lines: [title + ' 주간 실적(' + rangeText(job.year, job.month, job.entry) + ')이 아직 ' + (job.mode === '3단계' ? '[팀 확정]' : '[입력 완료]') + '되지 않았어요.'].concat(job.proxy ? ['(' + label + '은 팀장 계정이 아직 없어 관리자에게 보냈어요 — 대리 입력이 필요해요.)'] : []),
+    period: { title: null, lines: ['· 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00', '· 지금 상태: 고객사 ' + job.total + '곳 중 ' + job.savedCount + '곳 저장됨, ' + (job.mode === '3단계' ? '팀 확정 전' : '입력 완료 전'), '', '아래 버튼을 눌러 숫자를 확인하고 ' + (job.mode === '3단계' ? '[팀 확정]' : '[입력 완료]') + '을 눌러 주세요.'] },
     button: '주간 실적 열기', link: appUrl + '?view=weekly', footer: FOOTER
   };
 }
@@ -671,6 +728,142 @@ function planUpdateCustomers(p) {
   return { ok: true, writes: writes, rows: rows, warnings: warnings, month: month };
 }
 
+// =====================================================================
+// 3단계 (2026-11-17 재홍님 확정 ①~⑨): 담당 입력 → 팀장 확정 → 임원·팀장 열람
+// ① 입력 방식은 팀장이 화면에서 고름 → 실적-설정 '입력방식_{팀}' 값을 바꿈(시트 우선)
+// ② 담당 = 실적-고객사 F열(그 달 기준)이 자기 이름인 고객사만 보고 입력, 마감 = 담당마감시각
+// ③ 담당 [입력 완료] 뒤에도 팀 확정 전이면 [완료 취소] 가능
+// ④ 팀장은 모든 줄을 고칠 수 있고, 담당 값을 고치면 원래 값은 실적-주간 K·L열에 남김(planWeekWrite)
+// ⑤ F열이 활성 '담당'이 아닌 줄(빈칸 등)은 팀장이 입력
+// ⑥ 담당이 모두 [입력 완료]해야 [팀 확정]   ⑦ 담당 마감 알림 메일 · 팀장 확정 요청 메일
+// ⑧ 팀장 [대신 입력 완료]   ⑨ 방식을 바꾸면 다음 보고 주차부터(그 주차 입력일 0시 이후에 바꾼 기록이 있으면 그 주차는 바꾸기 전 방식)
+// 실적-진행: 담당 한 사람 기록 = F열(담당)에 이름, 팀 기록 = F열 빈칸. 방식 변경 = 단계 '입력방식 2단계→3단계'
+// =====================================================================
+const STAGE_CONFIRM = '팀 확정';
+const STAGE_MODE = '입력방식 ';
+const STAGE_MAIL_MREMIND = '담당 마감 알림', STAGE_MAIL_CONFIRM = '확정 요청 메일';
+const MODE_NOTE = '팀 입력 방식(2단계 = 팀장 입력, 3단계 = 담당 입력 → 팀장 확정). 앱에서 바꾸면 다음 보고 주차부터 적용';
+
+// 그 팀 활성 '담당' [{name, email}] (사용자팀마스터 줄 순서, 같은 이름은 처음 한 명)
+function managerUsersOf(userRows, team) {
+  const t = normTeam(team), out = [];
+  usersOf(userRows).forEach(function (u) { if (u.active && u.role === '담당' && normTeam(u.team) === t && u.name && !out.some(function (z) { return z.name === u.name; })) out.push({ name: u.name, email: u.email }); });
+  return out;
+}
+// 그 연·월·주차·팀의 담당별 완료(줄 순서대로 '입력 완료' → 완료, '완료 취소' → 지움). { 이름: { by, at } }
+function managerDoneMap(progressRows, year, month, wk, team) {
+  const done = {}, t = normTeam(team);
+  (progressRows || []).forEach(function (r) {
+    if (num(r && r[0]) !== year || num(r[1]) !== month || weekKey(r[2]) !== wk || normTeam(r[3]) !== t) return;
+    const m = cell(r[5]); if (!m) return;
+    const st = cell(r[4]);
+    if (st === '입력 완료') done[m] = { by: lcs(r[6]), at: cell(r[7]) };
+    else if (st === STAGE_REOPEN) delete done[m];
+  });
+  return done;
+}
+// 그 담당들의 고객사 수(그 달 기준 사용 중 줄의 F열). 고객사가 하나도 없는 담당은 빠짐 → [팀 확정] 조건에도 안 들어감
+function managerCounts(customers, team, month, names) {
+  const t = normTeam(team), out = {};
+  customersAt(customers, month).forEach(function (r) {
+    if (!cell(r && r[2]) || normTeam(r[0]) !== t || cell(r[6]).toUpperCase() === 'FALSE') return;
+    const f = cell(r[5]); if (names.indexOf(f) >= 0) out[f] = (out[f] || 0) + 1;
+  });
+  return out;
+}
+function parseModeStage(st) {
+  const m = /^입력방식 (2단계|3단계)→(2단계|3단계)$/.exec(cell(st));
+  return m ? { from: m[1], to: m[2] } : null;
+}
+// ⑨ 그 주차에 적용되는 방식. 시트 값이 기본, 그 주차 입력일(서울) 0시 이후에 앱에서 바꾼 기록이 있으면 그중 가장 이른 기록의 '바꾸기 전' 값
+// (시트에서 직접 바꾸면 기록이 없으므로 바로 적용 — 시트 우선)
+function modeAt(settings, progressRows, team, entry) {
+  const t = normTeam(team), sheet = (settings && settings.modes && settings.modes[t]) || '2단계';
+  if (!entry) return sheet;
+  const hit = (progressRows || []).find(function (r) { return r && normTeam(r[3]) === t && parseModeStage(r[4]) && cell(r[7]).slice(0, 10) >= entry.inputDate; });
+  return hit ? parseModeStage(hit[4]).from : sheet;
+}
+// ① 방식 바꾸기 쓰기 계획. settingRows = 실적-설정 A2:C 그대로(줄 번호용). 같은 키 줄이 있으면 B칸만, 없으면 새 줄 A~C
+function planSetMode(p) {
+  const team = normTeam(p.team), mode = cell(p.mode);
+  if (MODES.indexOf(mode) < 0) return { ok: false, error: 'BAD_MODE' };
+  const key = MODE_KEY_PREFIX + team, indexed = indexRows(p.settingRows);
+  const hit = indexed.filter(function (x) { return cell(x.v[0]) === key; }).pop(); // readSettings와 같이 아래 줄이 이김
+  const from = (p.settings && p.settings.modes && p.settings.modes[team]) || '2단계';
+  if (from === mode) return { ok: false, error: 'NO_CHANGES' };
+  const write = hit ? { range: 'B' + hit.row, values: [mode] } : { range: 'A' + nextFreeRow(indexed) + ':C' + nextFreeRow(indexed), values: [key, mode, MODE_NOTE] };
+  return { ok: true, from: from, to: mode, write: write, stage: STAGE_MODE + from + '→' + mode };
+}
+
+// ⑦ 3단계 메일 일. p = reminderJobs와 같음. 오늘이 '지금 보고' 입력일일 때, 팀 확정 전인 3단계 팀마다:
+//   담당이 모두 완료 → 팀장 확정 요청 1건(팀장 없으면 관리자) / 아니면 서울 시각 ≥ 담당마감시각일 때 미완료 담당 본인에게 1건씩
+function stage3Jobs(p) {
+  const s = p.settings || DEFAULTS;
+  if (s.메일사용 === false) return [];
+  const rep = currentReport(p.nowMs, s), cur = rep.current;
+  if (!cur || cur.inputDate !== rep.today) return [];
+  const st = allDoneOf(p.customers, p.progressRows, cur.year, cur.month, cur), wk = weekKeyOf(cur);
+  const users = usersOf(p.users), admin = users.find(function (u) { return u.email === lcs(p.adminEmail); });
+  const hour = seoulHour(p.nowMs), jobs = [];
+  st.teams.forEach(function (t) {
+    if (st.done[t] || modeAt(s, p.progressRows, t, cur) !== '3단계') return;
+    const mus = managerUsersOf(p.users, t), counts = managerCounts(p.customers, t, cur.month, mus.map(function (u) { return u.name; }));
+    const names = mus.map(function (u) { return u.name; }).filter(function (n) { return counts[n]; });
+    if (!names.length) return; // 담당 줄이 없으면 2단계와 같음(16시 팀장 알림만)
+    const md = managerDoneMap(p.progressRows, cur.year, cur.month, wk, t);
+    const base = { team: t, year: cur.year, month: cur.month, entry: cur };
+    if (names.every(function (n) { return md[n]; })) {
+      const leaders = users.filter(function (u) { return u.role === '팀장' && normTeam(u.team) === t && mailable(u); });
+      const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
+      jobs.push(Object.assign({ key: 'confirm_' + cur.year + '_' + cur.month + '_' + wk + '_' + t, kind: 'confirm', hour: s.팀장마감시각, proxy: !leaders.length, recipients: to,
+        done: names.map(function (n) { return { name: n, at: md[n].at }; }) }, base));
+      return;
+    }
+    if (hour < s.담당마감시각) return;
+    const saved = {};
+    (p.weeklyRows || []).forEach(function (r) { if (num(r && r[0]) === cur.year && num(r[1]) === cur.month && weekKey(r[2]) === wk && normTeam(r[3]) === t) saved[cell(r[4])] = true; });
+    names.forEach(function (n) {
+      if (md[n]) return;
+      const u = users.find(function (x) { return x.email === lcs((mus.find(function (z) { return z.name === n; }) || {}).email); });
+      if (!mailable(u)) return;
+      let sv = 0;
+      customersAt(p.customers, cur.month).forEach(function (r) { if (cell(r && r[2]) && normTeam(r[0]) === t && cell(r[6]).toUpperCase() !== 'FALSE' && cell(r[5]) === n && saved[cell(r[2])]) sv++; });
+      jobs.push(Object.assign({ key: 'mremind_' + cur.year + '_' + cur.month + '_' + wk + '_' + t + '_' + n, kind: 'mremind', hour: s.담당마감시각, total: counts[n], savedCount: sv, recipients: [u] }, base));
+    });
+  });
+  return jobs;
+}
+// 시안 C: 담당 마감 알림
+function managerRemindParts(job, r, appUrl) {
+  const title = job.month + '월 ' + job.entry.label;
+  return {
+    to: r.email,
+    subject: '[MRO 워크허브] ' + title + ' 주간 실적 입력 마감 알림 (' + (r.name || '') + '님 담당)',
+    hello: r.name ? r.name + '님,' : '',
+    lines: [title + ' 주간 실적(' + rangeText(job.year, job.month, job.entry) + ')이 아직 [입력 완료]되지 않았어요.'],
+    period: { title: null, lines: ['· 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00 (담당)', '· 지금 상태: 담당 고객사 ' + job.total + '곳 중 ' + job.savedCount + '곳 저장됨, 입력 완료 전'] },
+    button: '주간 실적 열기', link: appUrl + '?view=weekly', footer: FOOTER
+  };
+}
+// 시안 D: 팀장 확정 요청 (숫자 없음 — 담당 이름·완료 시각만)
+function confirmParts(job, r, appUrl) {
+  const title = job.month + '월 ' + job.entry.label, n = job.done.length;
+  const at = function (x) { return String(x.at || '').slice(5).replace('-', '/'); };
+  const F = "font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;";
+  const box = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;"><tr><td bgcolor="#e3f3ea" style="background:#e3f3ea;padding:14px 18px;' + F + 'font-size:14px;color:#1d6b43;line-height:1.8;">' +
+    '<b>■ 담당 입력 완료</b><br>' + job.done.map(function (x) { return '· ' + escH(x.name) + ' ' + escH(at(x)); }).join('<br>') + '</td></tr></table>';
+  return {
+    to: r.email,
+    subject: '[MRO 워크허브] ' + title + ' 주간 실적 팀 확정 요청 (' + job.team + '팀 담당 ' + n + '명 완료)',
+    hello: job.proxy ? (r.name ? r.name + '님,' : '') : (r.name ? r.name + ' 팀장님,' : '팀장님,'),
+    lines: [job.team + '팀 담당 ' + n + '명이 모두 ' + title + ' 주간 실적을 [입력 완료]했어요.', '숫자를 확인하고 [팀 확정]을 눌러 주세요.'].concat(job.proxy ? ['(' + job.team + '팀은 팀장 계정이 아직 없어 관리자에게 보냈어요.)'] : []),
+    period: { title: null, lines: ['· 팀장 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00'] },
+    bodyHtml: box,
+    textBlock: ['■ 담당 입력 완료'].concat(job.done.map(function (x) { return '· ' + x.name + ' ' + at(x); })),
+    button: '팀 확정하러 가기', link: appUrl + '?view=weekly', footer: FOOTER
+  };
+}
+
 module.exports = {
   FILE_KEY_PREFIX, TAB_CUSTOMERS, TAB_PLAN, TAB_WEEKLY, TAB_PROGRESS, TAB_SETTINGS, TABS, HEADERS, DEFAULTS, GAMAGAM,
   findFileId, checkHeaders, normTeam, readSettings, weekPlan, currentReport, seoulToday, crossCheck,
@@ -678,5 +871,6 @@ module.exports = {
   STAGE_REOPEN, STAGE_MAIL_REMIND, STAGE_MAIL_RESULT, WEEKLY_WRITE_COLS, PROGRESS_COLS, CUSTOMER_COLS,
   seoulStamp, seoulHour, weekCellOf, weekKeyOf, reportKey, teamDoneMap, teamsOf, allDoneOf, checkNum,
   inputView, planWeekWrite, planProgress, planAddCustomer, usersOf, reminderJobs, resultRecipients, reminderParts, resultParts, leadTeam,
-  CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers, customersAt, resultDue
+  CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers, customersAt, resultDue,
+  STAGE_CONFIRM, STAGE_MAIL_MREMIND, STAGE_MAIL_CONFIRM, managerUsersOf, managerDoneMap, managerCounts, modeAt, planSetMode, stage3Jobs, managerRemindParts, confirmParts
 };

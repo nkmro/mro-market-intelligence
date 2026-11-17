@@ -824,6 +824,18 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wi-prev { color: var(--text-muted); font-size: 12px; text-align: right; line-height: 1.35; } .wi-prev b { font-weight: 400; color: var(--text); }
 .wi-st { font-size: 12px; color: var(--text-muted); }
 .wi-err { font-size: 12.5px; color: var(--danger); }
+/* 주간 실적 3단계 (2026-11-17): 입력 방식 고르기 · 담당 입력 현황 · 담당 원래 값 */
+.wi-seg { display: inline-flex; border: 1px solid #cfc8e2; border-radius: 8px; overflow: hidden; } .wi-seg button { border: 0; background: #fff; padding: 6px 12px; font: inherit; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
+.wi-seg button.on { background: var(--accent); color: #fff; font-weight: 700; } .wi-seg button:disabled { cursor: default; }
+.wi-mgr { border: 1px solid #e2dfec; border-radius: 10px; background: #fff; padding: 10px 14px; margin: 6px 0 8px; font-size: 13px; } .wi-mgr b.n { color: var(--accent); }
+.wi-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.wi-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 700; background: #f1f0ec; color: var(--text-muted); border: 1px solid #e2e0da; }
+.wi-chip.done { background: #e3f3ea; color: #1d6b43; border-color: #e3f3ea; } .wi-chip.ing { background: #fff7e0; color: #8a5a00; border-color: #f0d58a; }
+.wi-px { border: 1px solid #b9b2d3; background: #fff; color: var(--accent); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.wi-ms { font-size: 11.5px; font-weight: 700; } .wi-ms.done { color: #2e8b57; } .wi-ms.ing { color: #b07a00; } .wi-ms.none, .wi-ms.lead { color: var(--text-muted); font-weight: 400; }
+.wi-orig { font-size: 11px; color: #b07a00; text-align: right; margin-top: 2px; } .pf-in.wi-chgd { background: #fff7d6; border-color: #e6c55a; }
+.wi-me { background: #fff7e0; border: 1px solid #f0d58a; color: #6b4a00; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0; }
+.wi-info { background: #fff7e0; color: #8a5a00; border-radius: 8px; padding: 8px 12px; font-size: 12px; margin-top: 8px; }
 .wi-add { display: block; width: 100%; margin-top: 8px; padding: 9px; border: 1px dashed #b9b2d3; border-radius: 8px; background: #faf8fd; color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .wi-addbox { margin-top: 8px; border: 1px solid #d6d0e6; border-radius: 10px; background: #faf8fd; padding: 12px 14px; }
 .wi-addh { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: var(--accent); }
@@ -1937,10 +1949,11 @@ document.getElementById('nav-comp-mine').style.display = 'flex';
 loadCompBadge_();
 }
 // 실적 관리 › 주간 실적 1-나: 관리자·임원·팀장만(서버도 같은 사람만 허용). 앱 시작 때 서버를 부르지 않음.
-if (session.email === ADMIN_EMAIL || ['임원', '팀장'].indexOf(session.role) >= 0) {
+// 3단계(2026-11-17): 담당도 메뉴가 보임 — [우리 팀 입력]의 자기 고객사만(팀이 2단계면 안내 문구만). NEW 표시는 없음(전사 보기 없음)
+if (session.email === ADMIN_EMAIL || ['임원', '팀장', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-group-sales').style.display = '';
 document.getElementById('nav-weekly').style.display = 'flex';
-loadWeeklyBadge_(); // 2단계: 4팀 완료 주차 NEW — 기다리지 않음(Firestore 1개, 시트 안 읽음)
+if (!wkMgrOnly_()) loadWeeklyBadge_(); // 2단계: 4팀 완료 주차 NEW — 기다리지 않음(Firestore 1개, 시트 안 읽음)
 }
 restoreNavGroups_();
 setupTeamLabelControl();
@@ -7920,8 +7933,16 @@ if (res && res.error === 'FORBIDDEN') return '주간 실적은 임원·팀장만
 if (res && res.error === 'SHEET_ACCESS_FAILED') return '실적관리 파일을 읽지 못했어요. 잠시 후 다시 시도해 주세요.';
 return compErrorText_(res, '주간 실적');
 }
+// 3단계: 담당(관리자 아님)은 전사 보기 없이 [우리 팀 입력]만 — 지금 보고 주차의 자기 고객사
+function wkMgrOnly_() { return !!session && session.email !== ADMIN_EMAIL && session.role === '담당'; }
 async function loadWeeklyPage() {
 const root = document.getElementById('weekly-view');
+if (wkMgrOnly_()) {
+wkTab_ = 'in';
+if (!document.getElementById('wk-in')) root.innerHTML = `<div class="pf-wrap"><div class="pf-head"><div class="settings-row-title" style="font-size:16px;">주간 실적</div></div><div class="pf-tabs"><button class="on">우리 팀 입력</button></div><div id="wk-in"><div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div></div></div>`;
+await loadWeeklyInput_();
+return;
+}
 const reqNo = ++wkReq_;
 if (!wkRes_) root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
 const res = await wkFetch_(Object.assign({ view: 'report' }, wkSel_));
@@ -8065,7 +8086,10 @@ clearTimeout(timeoutId);
 return compRateLimit_(res);
 } catch (e) { return null; }
 }
-const WK_ERR_ = { FORBIDDEN: '입력 권한이 없어요(팀장·관리자만).', FORBIDDEN_TEAM: '자기 팀만 입력할 수 있어요.', PAST_WEEK: '지난 주차는 관리자만 고칠 수 있어요.', WEEK_NOT_OPEN: '아직 열리지 않은 주차예요.',
+const WK_ERR_ = { FORBIDDEN: '입력 권한이 없어요(팀장·관리자, 3단계 팀은 담당도).',
+MODE_2STEP: '우리 팀은 지금 2단계(팀장 입력) 방식이라 담당 입력 화면이 없어요. 숫자는 팀장이 넣어요.', MY_DONE: '이미 [입력 완료]했어요. [완료 취소] 뒤에 고쳐 주세요.',
+NOT_MY_CUSTOMER: '내 담당 고객사가 아니에요. 새로고침 후 다시 해 주세요.', NO_ROWS: '이번 달 내 담당 고객사가 없어요.', MANAGERS_NOT_DONE: '아직 [입력 완료]하지 않은 담당이 있어요.',
+BAD_MODE: '입력 방식은 2단계 또는 3단계만 고를 수 있어요.', FORBIDDEN_TEAM: '자기 팀만 입력할 수 있어요.', PAST_WEEK: '지난 주차는 관리자만 고칠 수 있어요.', WEEK_NOT_OPEN: '아직 열리지 않은 주차예요.',
 ALREADY_DONE: '이미 입력 완료된 주차예요. [완료 취소] 뒤에 고쳐 주세요.', NOT_DONE: '입력 완료 상태가 아니에요.', ALL_DONE_ADMIN_ONLY: '4팀 모두 완료된 주차는 관리자만 취소할 수 있어요.',
 BAD_NUMBER: '숫자 칸에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LONG: '비고는 200자까지예요.', UNKNOWN_CUSTOMER: '목록에 없는 고객사예요. 새로고침 후 다시 해 주세요.',
 DUPLICATE_CUSTOMER: '같은 팀에 같은 이름의 고객사가 이미 있어요.', BAD_NAME: '구매사명을 1~60자로 넣어 주세요.', FIELD_TOO_LONG: '계열·발주 형태·사무소는 40자까지예요.',
@@ -8076,9 +8100,9 @@ LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 �
 function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (res.field ? ' (' + res.field + ')' : '') : wkErrorText_(res); }
 async function loadWeeklyInput_() {
 const box = document.getElementById('wk-in');
-if (!box || !wkRes_) return;
+if (!box || (!wkRes_ && !wkMgrOnly_())) return;
 const reqNo = ++wkInReq_;
-const res = await wkFetch_({ view: 'input', year: wkRes_.year, month: wkRes_.month, week: wkWeekArg_(wkRes_), team: wkInTeam_ || undefined });
+const res = await wkFetch_(wkMgrOnly_() ? { view: 'input' } : { view: 'input', year: wkRes_.year, month: wkRes_.month, week: wkWeekArg_(wkRes_), team: wkInTeam_ || undefined }); // 담당 = 서버가 지금 보고 주차·자기 팀으로 정함
 if (reqNo !== wkInReq_ || !document.getElementById('wk-in')) return;
 if (!res || !res.ok) { document.getElementById('wk-in').innerHTML = `<div class="feed-empty">${escapeHtml(wkErr_(res))}</div>`; return; }
 wkIn_ = res; wkInTeam_ = res.team;
@@ -8091,25 +8115,60 @@ if (!d || !box) return;
 const keep = (wkInRendered_ === d && document.getElementById('wi-s-0')) ? wkInEntries_() : null; // 같은 데이터를 다시 그릴 때(창 열기·처리 중 표시) 입력 중인 숫자를 지키기
 const prevL = d.prevLabel ? escapeHtml(d.prevLabel) : '지난 주차';
 const curL = d.gamagam ? '가마감(예상 마감)' : escapeHtml(d.label);
+const three = d.mode === '3단계', asMgr = d.role === 'manager', hh = String(d.deadlineHour === undefined ? 15 : d.deadlineHour).padStart(2, '0') + ':00';
 let x = `<div class="wi-bar">`;
 if (d.isAdmin) x += `<span style="font-size:13px;font-weight:700">입력할 팀</span><select class="cy-sel" aria-label="입력할 팀" onchange="wkInTeam_=this.value;wkAddOpen_=false;wkEditOpen_=false;wkCe_={};wkInMsg_='';loadWeeklyInput_()">${d.teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === d.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
-x += `<span class="wi-mode">입력 방식: <b>${escapeHtml(d.mode || '2단계')}</b> (팀장 입력 → 임원·팀장 열람) · 시트 실적-설정에서 바꿔요</span></div>`;
+if (asMgr) x += `<span class="wi-mode"><b>${escapeHtml(String(d.year))}년 ${escapeHtml(String(d.month))}월 ${escapeHtml(d.label)}</b> · 입력일 ${escapeHtml(wkMd_(d.inputDate))} · 입력 방식: <b>3단계</b> (담당 입력 → 팀장 확정 → 임원·팀장 열람)</span></div>`;
+else {
+// 3단계 ①⑨: 팀장·관리자가 고름 → 시트 실적-설정 '입력방식_{팀}'. 화면 값 = 시트 값(다음 보고부터), 이번 주차에 적용 중인 방식은 따로 안내
+const sheetMode = d.nextMode || d.mode || '2단계';
+const seg = ['2단계', '3단계'].map(function (m) { return `<button class="${sheetMode === m ? 'on' : ''}" ${wkBusy_ || sheetMode === m ? 'disabled' : ''} onclick="wkSetMode_('${m}')">${m === '2단계' ? '2단계 · 팀장 입력' : '3단계 · 담당 입력 → 팀장 확정'}</button>`; }).join('');
+x += `<span style="font-size:13px;font-weight:700">입력 방식</span><span class="wi-seg">${seg}</span><span class="wi-mode">· 바꾸면 시트 ‘실적-설정’의 입력방식_${escapeHtml(d.team)}가 바뀌고, 다음 보고 주차부터 적용돼요${d.nextMode ? ` · <b>이 주차는 ${escapeHtml(d.mode)}</b>로 진행` : ''}</span></div>`;
+}
 const myTeam = session && session.team ? String(session.team).replace(/(지역팀|팀)$/, '') : '';
 if (d.isAdmin && d.team !== myTeam) x += `<div class="wi-proxy">👤 관리자 대리 입력 — <b>${escapeHtml(d.team)}</b> 팀 숫자를 대신 넣고 있어요. 저장·완료 기록에 관리자 이메일이 남고, 화면에는 ‘관리자 대리’로 보여요.</div>`;
-if (d.done) x += `<div class="wi-done">✓ <b>${escapeHtml(wkMd_(String(d.done.at).slice(0, 10)))} ${escapeHtml(String(d.done.at).slice(11))} 입력 완료</b> (${d.done.proxy ? '관리자 대리' : escapeHtml(d.done.byName || '')}) — ${d.allDone ? (d.isAdmin ? '4팀 모두 완료된 주차예요. 관리자만 [완료 취소]할 수 있어요(결과 메일은 다시 보내지 않아요).' : '4팀 모두 완료된 주차예요. 고칠 일이 있으면 관리자에게 알려 주세요.') : '4팀이 모두 완료되기 전까지는 [완료 취소]로 다시 고칠 수 있어요.'}</div>`;
+const doneWord = three ? '팀 확정' : '입력 완료';
+if (asMgr) {
+if (d.done) x += `<div class="wi-done">✓ <b>팀장이 ${escapeHtml(wkMd2_(d.done.at))} ${escapeHtml(String(d.done.at).slice(11))}에 팀 확정</b>했어요. 고칠 일이 있으면 팀장에게 알려 주세요.</div>`;
+else if (d.myDone) x += `<div class="wi-done">✓ <b>${escapeHtml(wkMd2_(d.myDone.at))} ${escapeHtml(String(d.myDone.at).slice(11))} 입력 완료</b>${d.myDone.proxy ? ' (팀장 대신 완료)' : ''} — 팀장 확정 전까지는 [완료 취소]로 다시 고칠 수 있어요.</div>`;
+else if (d.lockedReason === 'NO_ROWS') x += `<div class="pf-hint">이번 달 ${escapeHtml(d.me)}님 담당 고객사가 없어요. 담당이 바뀌었다면 팀장에게 알려 주세요.</div>`;
+else x += `<div class="wi-me">👤 <b>${escapeHtml(d.me)}</b>님 담당 고객사 <b>${d.rows.length}곳</b>만 보여요. 숫자를 넣고 <b>${d.inputDate === wkTodayIso_() ? '오늘' : escapeHtml(wkMd_(d.inputDate))} ${hh}까지</b> [입력 완료]를 눌러 주세요. 팀장 확정 전까지는 [완료 취소] 후 고칠 수 있어요.</div>`;
+} else if (d.done) x += `<div class="wi-done">✓ <b>${escapeHtml(wkMd_(String(d.done.at).slice(0, 10)))} ${escapeHtml(String(d.done.at).slice(11))} ${doneWord}</b> (${d.done.proxy ? '관리자 대리' : escapeHtml(d.done.byName || '')}) — ${d.allDone ? (d.isAdmin ? '4팀 모두 완료된 주차예요. 관리자만 [완료 취소]할 수 있어요(결과 메일은 다시 보내지 않아요).' : '4팀 모두 완료된 주차예요. 고칠 일이 있으면 관리자에게 알려 주세요.') : '4팀이 모두 완료되기 전까지는 [완료 취소]로 다시 고칠 수 있어요.'}</div>`;
 else if (d.lockedReason === 'PAST_WEEK') x += `<div class="pf-hint">지난 주차는 관리자만 고칠 수 있어요. 지금 보고 주차로 이동해 주세요.</div>`;
-else x += `<div class="pf-hint">${d.gamagam ? `<b>${escapeHtml(String(wkRes_.month))}월 예상 마감 실적</b>(그 달 전체)을 천원 단위로 넣어 주세요.` : `${escapeHtml(wkMd2_(d.from))}부터 <b>${escapeHtml(wkMd_(d.to))}까지의 누적 금액</b>을 천원 단위로 넣어 주세요.`} 실적이 없는 고객사는 비워 두면 0으로 봐요.</div>`;
+if (!d.done && !(asMgr && (d.myDone || d.lockedReason === 'NO_ROWS')) && d.lockedReason !== 'PAST_WEEK') x += `<div class="pf-hint">${d.gamagam ? `<b>${escapeHtml(String(d.month))}월 예상 마감 실적</b>(그 달 전체)을 천원 단위로 넣어 주세요.` : `${escapeHtml(wkMd2_(d.from))}부터 <b>${escapeHtml(wkMd_(d.to))}까지의 누적 금액</b>을 천원 단위로 넣어 주세요.`} 실적이 없는 고객사는 비워 두면 0으로 봐요.</div>`;
+// 3단계 팀장: 담당 입력 현황(시안 B) + [대신 입력 완료](⑧)
+const mgrs = three && !asMgr ? (d.managers || []) : [];
+if (three && !asMgr) {
+const nDone = mgrs.filter(function (g) { return g.done; }).length;
+const chips = mgrs.map(function (g, gi) {
+if (g.done) return `<span class="wi-chip done">✓ ${escapeHtml(g.name)} · ${escapeHtml(String(g.done.at).slice(11))}${g.done.proxy ? ' (대신)' : ''}</span>`;
+const px = d.canProxy ? `<button class="wi-px" ${wkBusy_ ? 'disabled' : ''} onclick="wkProxy_(${gi})">대신 입력 완료</button>` : '';
+return g.saved ? `<span class="wi-chip ing">✎ ${escapeHtml(g.name)} · 저장 ${g.saved}/${g.total}곳${px}</span>` : `<span class="wi-chip">— ${escapeHtml(g.name)} · 미입력${px}</span>`;
+}).join('');
+x += `<div class="wi-mgr"><b>담당 입력 현황 <b class="n">${nDone} / ${mgrs.length}명 완료</b></b> <span class="pf-mut">· 담당 마감 ${hh}${d.leadRows ? ` · 담당 없는 고객사 ${d.leadRows}곳은 팀장 입력` : ''}</span>${mgrs.length ? `<div class="wi-chips">${chips}</div>` : `<div class="pf-mut" style="margin-top:6px">이번 달 담당이 지정된 고객사가 없어요(실적-고객사 F열 · 활성 ‘담당’ 이름). 팀장이 모든 줄을 넣어요.</div>`}</div>`;
+}
+const mgrSt = function (r) {
+if (!r.manager) return `<span class="wi-ms lead">${r.managerRaw ? escapeHtml(r.managerRaw) + ' · 계정 없음' : '(담당 없음)'} 팀장 입력</span>`;
+const g = mgrs.find(function (z) { return z.name === r.manager; }) || {};
+return `${escapeHtml(r.manager)} ${g.done ? '<span class="wi-ms done">✓완료</span>' : (g.saved ? '<span class="wi-ms ing">✎입력 중</span>' : '<span class="wi-ms none">—미입력</span>')}`;
+};
 const dis = d.canEdit ? '' : 'disabled';
-x += `<div class="pf-tablewrap"><table class="pf-t wk-t"><tr><th class="sticky">구매사명</th><th>사무소</th><th>${prevL} 누적<br><small>매출 / 이익</small></th><th>${curL} 매출${d.gamagam ? '' : ' 누적'}</th><th>${curL} 이익${d.gamagam ? '' : ' 누적'}</th><th>비고</th></tr>`;
+const col2 = three && !asMgr ? '담당 · 상태' : '사무소';
+x += `<div class="pf-tablewrap"><table class="pf-t wk-t"><tr><th class="sticky">구매사명</th><th>${col2}</th><th>${prevL} 누적<br><small>매출 / 이익</small></th><th>${curL} 매출${d.gamagam ? '' : ' 누적'}</th><th>${curL} 이익${d.gamagam ? '' : ' 누적'}</th><th>비고</th></tr>`;
 d.rows.forEach(function (r, i) {
-x += `<tr><td class="l sticky">${escapeHtml(r.name)}</td><td class="c">${escapeHtml(r.office)}</td><td class="wi-prev"><b>${r.prevSales === null ? '—' : wkFmtIn_(r.prevSales)}</b><br>${r.prevProfit === null ? '—' : wkFmtIn_(r.prevProfit)}</td>
-<td><input class="pf-in" id="wi-s-${i}" inputmode="numeric" ${dis} value="${wkFmtIn_(r.sales)}" placeholder="0"></td><td><input class="pf-in" id="wi-p-${i}" inputmode="numeric" ${dis} value="${wkFmtIn_(r.profit)}" placeholder="0"></td>
+const o = r.orig, chS = o && o.sales !== r.sales, chP = o && o.profit !== r.profit;
+x += `<tr><td class="l sticky">${escapeHtml(r.name)}</td><td class="${three && !asMgr ? 'l' : 'c'}">${three && !asMgr ? mgrSt(r) : escapeHtml(r.office)}</td><td class="wi-prev"><b>${r.prevSales === null ? '—' : wkFmtIn_(r.prevSales)}</b><br>${r.prevProfit === null ? '—' : wkFmtIn_(r.prevProfit)}</td>
+<td><input class="pf-in${chS ? ' wi-chgd' : ''}" id="wi-s-${i}" inputmode="numeric" ${dis} value="${wkFmtIn_(r.sales)}" placeholder="0">${chS ? `<div class="wi-orig">담당 원래 ${o.sales === null ? '빈칸' : wkFmtIn_(o.sales)}</div>` : ''}</td><td><input class="pf-in${chP ? ' wi-chgd' : ''}" id="wi-p-${i}" inputmode="numeric" ${dis} value="${wkFmtIn_(r.profit)}" placeholder="0">${chP ? `<div class="wi-orig">담당 원래 ${o.profit === null ? '빈칸' : wkFmtIn_(o.profit)}</div>` : ''}</td>
 <td><input class="pf-in pf-note" id="wi-n-${i}" maxlength="200" ${dis} value="${escapeHtml(r.note || '')}" placeholder="특이사항(선택)"></td></tr>`;
 });
 x += `</table></div>`;
-const editBtn = d.edit && !wkEditOpen_ ? `<button class="wi-add" onclick="wkEditOpen_=true;wkCe_={};wkInMsg_='';wkRenderInput_()">✎ 고객사 정보 고치기</button>` : '';
-const editBox = d.edit && wkEditOpen_ ? wkCeHtml_(d) : '';
-if (d.canEdit) {
+const editBtn = !asMgr && d.edit && !wkEditOpen_ ? `<button class="wi-add" onclick="wkEditOpen_=true;wkCe_={};wkInMsg_='';wkRenderInput_()">✎ 고객사 정보 고치기</button>` : '';
+const editBox = !asMgr && d.edit && wkEditOpen_ ? wkCeHtml_(d) : '';
+if (asMgr) {
+const st = d.savedCount ? `저장 ${d.savedCount}곳 · ${escapeHtml(wkMd2_(d.lastSavedAt))} ${escapeHtml(String(d.lastSavedAt).slice(11))} 저장${d.myDone ? '' : ' · 아직 [입력 완료] 전'}` : '아직 저장한 숫자가 없어요';
+if (d.canEdit) x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(false)">저장</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(true)">입력 완료</button><span class="wi-st">${st}</span></div>`;
+else if (d.canReopen) x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInReopen_()">완료 취소</button><span class="wi-st">${st}</span></div>`;
+} else if (d.canEdit) {
 x += wkAddOpen_ ? `<div class="wi-addbox"><div class="wi-addh">새 고객사 추가 <span class="pf-mut" style="font-weight:400;font-size:11.5px">· [추가]를 누르면 실적 시트 ‘실적-고객사’ 탭에 한 줄이 생기고 이 표에 바로 나타나요</span></div>
 <div class="wi-addg"><label>팀<input class="pf-in" value="${escapeHtml(d.team)}" disabled></label><label>구매사명 *<input class="pf-in" id="wa-name" maxlength="60"></label><label>계열<input class="pf-in" id="wa-series" maxlength="40" placeholder="미계열"></label>
 <label>발주 형태<input class="pf-in" id="wa-order" maxlength="40" placeholder="오프라인"></label><label>사무소<input class="pf-in" id="wa-office" maxlength="40"></label><label>비고<input class="pf-in" id="wa-note" maxlength="200"></label></div>
@@ -8117,11 +8176,18 @@ x += wkAddOpen_ ? `<div class="wi-addbox"><div class="wi-addh">새 고객사 추
 <div class="pf-btns" style="margin-top:8px"><button class="pf-btn" onclick="wkAddOpen_=false;wkRenderInput_()">취소</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInAdd_()">추가</button></div></div>${editBtn ? `<div class="wi-addrow">${editBtn}</div>` : ''}`
 : `<div class="wi-addrow"><button class="wi-add" onclick="wkAddOpen_=true;wkRenderInput_()">＋ 고객사 추가</button>${editBtn}</div>`;
 x += editBox;
+if (three) {
+const left = mgrs.filter(function (g) { return !g.done; }).map(function (g) { return g.name; });
+const why = left.length ? `담당 ${left.length}명(${left.map(escapeHtml).join('·')})이 아직 [입력 완료] 전이라 확정할 수 없어요 · 팀장은 모든 줄을 넣고 고칠 수 있어요` : '담당이 모두 [입력 완료]했어요. 숫자를 확인하고 [팀 확정]을 눌러 주세요';
+x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(false)">저장</button><button class="pf-btn pri" ${wkBusy_ || !d.canComplete ? 'disabled' : ''} onclick="wkInSave_(true)">팀 확정</button><span class="wi-st">${why}</span></div>`;
+x += `<div class="wi-info">ℹ️ 팀장이 담당 숫자를 고치면 담당이 넣은 원래 값은 시트(실적-주간 K·L열)에 남고, 표에는 “담당 원래 …”로 보여요.</div>`;
+} else {
 const st = d.savedCount ? `저장 ${d.savedCount}곳 · ${escapeHtml(wkMd2_(d.lastSavedAt))} ${escapeHtml(String(d.lastSavedAt).slice(11))} 저장${d.lastSavedProxy ? ' (관리자 대리)' : ''} · 아직 [입력 완료] 전` : '아직 저장한 숫자가 없어요';
 x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(false)">저장</button><button class="pf-btn pri" ${wkBusy_ ? 'disabled' : ''} onclick="wkInSave_(true)">입력 완료</button><span class="wi-st">${st}</span></div>`;
+}
 } else if (d.canReopen) {
 x += (editBtn ? `<div class="wi-addrow">${editBtn}</div>` : '') + editBox;
-x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInReopen_()">완료 취소</button><span class="wi-st">완료 뒤에는 칸이 잠겨요. 고치려면 [완료 취소] → 고친 뒤 다시 [입력 완료]</span></div>`;
+x += `<div class="pf-btns"><button class="pf-btn" ${wkBusy_ ? 'disabled' : ''} onclick="wkInReopen_()">완료 취소</button><span class="wi-st">완료 뒤에는 칸이 잠겨요. 고치려면 [완료 취소] → 고친 뒤 다시 [${doneWord}]</span></div>`;
 } else {
 x += (editBtn ? `<div class="wi-addrow">${editBtn}</div>` : '') + editBox; // 완료·잠긴 주차에도 고객사 정보는 고칠 수 있음
 }
@@ -8130,6 +8196,27 @@ box.innerHTML = x;
 if (keep) keep.forEach(function (e, i) { [['wi-s-', e.sales], ['wi-p-', e.profit], ['wi-n-', e.note]].forEach(function (z) { const el = document.getElementById(z[0] + i); if (el && !el.disabled) el.value = z[1]; }); });
 wkInRendered_ = d;
 if (d.edit && wkEditOpen_) wkCeStatus_();
+}
+function wkTodayIso_() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10); } // 서울 날짜
+// 3단계 ① 입력 방식 바꾸기(다음 보고 주차부터) · ⑧ 팀장 [대신 입력 완료]
+async function wkSetMode_(m) {
+if (wkBusy_ || !wkIn_) return;
+const entries = wkIn_.canEdit ? wkInEntries_() : null; // 다시 그리기 전에 먼저 읽기
+wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
+if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '바꾸기 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
+const r = await wkPost_({ action: 'setMode', year: wkIn_.year, team: wkIn_.team, mode: m });
+if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '입력 방식을 바꾸지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
+await wkAfter_('✓ 입력 방식을 ' + r.to + '로 바꿨어요(시트 실적-설정 입력방식_' + r.team + '). 다음 보고 주차부터 적용돼요.');
+}
+async function wkProxy_(gi) {
+if (wkBusy_ || !wkIn_) return;
+const g = (wkIn_.managers || [])[gi]; if (!g) return;
+const entries = wkIn_.canEdit ? wkInEntries_() : null;
+wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
+if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '대신 완료 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
+const r = await wkPost_(Object.assign({ action: 'proxyComplete', manager: g.name }, wkInBase_()));
+if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '대신 입력 완료를 하지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
+await wkAfter_('✓ ' + g.name + ' 담당을 대신 [입력 완료]했어요(실적-진행에 팀장 이메일로 남아요).');
 }
 // ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 이 팀 활성 '담당' 이름 목록, 사용 끄기 = 경고만, 구매사명·팀 잠금) ----
 const WK_CE_LABEL_ = { series: '계열', orderType: '발주 형태', office: '사무소', manager: '담당', note: '비고', active: '사용' };
@@ -8217,15 +8304,17 @@ const r1 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkI
 if (!r1 || !r1.ok) { wkBusy_ = false; wkInMsg_ = '저장하지 못했어요: ' + wkErr_(r1); wkRenderInput_(); return; }
 if (!complete) { await wkAfter_('✓ 저장했어요.'); return; }
 const r2 = await wkPost_(Object.assign({ action: 'complete' }, wkInBase_()));
-if (!r2 || !r2.ok) { wkBusy_ = false; wkInMsg_ = '저장은 됐지만 입력 완료를 하지 못했어요: ' + wkErr_(r2); wkRenderInput_(); return; }
-await wkAfter_(r2.allDone ? '✓ 입력 완료! 4팀 모두 완료됐어요. 결과 메일은 ' + (r2.mailWaitMin === undefined ? 60 : r2.mailWaitMin) + '분 뒤 첫 정시 2분에 나가요(그 사이 [완료 취소]하면 보내지 않아요).' : '✓ 입력 완료했어요.');
+if (!r2 || !r2.ok) { wkBusy_ = false; wkInMsg_ = '저장은 됐지만 ' + (wkIn_.mode === '3단계' && wkIn_.role === 'lead' ? '팀 확정' : '입력 완료') + '을 하지 못했어요: ' + wkErr_(r2); wkRenderInput_(); return; }
+if (r2.manager) { await wkAfter_('✓ 입력 완료했어요. 팀장이 확정하기 전까지는 [완료 취소]로 다시 고칠 수 있어요.'); return; } // 3단계 담당
+const w = r2.stage === '팀 확정' ? '팀 확정' : '입력 완료';
+await wkAfter_(r2.allDone ? '✓ ' + w + '! 4팀 모두 완료됐어요. 결과 메일은 ' + (r2.mailWaitMin === undefined ? 60 : r2.mailWaitMin) + '분 뒤 첫 정시 2분에 나가요(그 사이 [완료 취소]하면 보내지 않아요).' : '✓ ' + w + '했어요.');
 }
 async function wkInReopen_() {
 if (wkBusy_ || !wkIn_) return;
 wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
 const r = await wkPost_(Object.assign({ action: 'reopen' }, wkInBase_()));
 if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '완료 취소를 하지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
-await wkAfter_('✓ 완료를 취소했어요. 고친 뒤 다시 [입력 완료]를 눌러 주세요.');
+await wkAfter_('✓ 완료를 취소했어요. 고친 뒤 다시 [' + (wkIn_.mode === '3단계' && wkIn_.role === 'lead' ? '팀 확정' : '입력 완료') + ']을 눌러 주세요.');
 }
 async function wkInAdd_() {
 if (wkBusy_ || !wkIn_) return;
