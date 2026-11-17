@@ -800,6 +800,13 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wk-t td.tot { background: var(--accent-soft); font-weight: 700; color: var(--accent); }
 .wk-t td.na { color: #b0ada6; }
 .wk-t td.sticky, .wk-t th.sticky { position: sticky; left: 0; z-index: 1; }
+/* 고객사별 실적 표 머리글 고정 (2026-11-17 재홍님 요청, PC·휴대폰): 표 상자 안에서 세로로 넘기면 제목 2줄이 위에, 가로로 넘기면 구매사명 칸이 왼쪽에 남음 */
+.wk-scroll { max-height: calc(100vh - var(--header-stack-h, 0px) - 24px); overflow: auto; }
+.wk-scroll .pf-t { border-collapse: separate; border-spacing: 0; border-width: 1px 0 0 1px; } /* 고정 칸 사이로 아래 글자가 비치지 않게(겹선 대신 오른쪽·아래 선만) */
+.wk-scroll .pf-t th, .wk-scroll .pf-t td { border-width: 0 1px 1px 0; }
+.wk-scroll tr.wk-h1 th { position: sticky; top: 0; z-index: 2; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
+.wk-scroll tr.wk-h2 th { position: sticky; top: 32px; z-index: 2; box-shadow: 0 1px 0 var(--border); }
+.wk-scroll tr.wk-h1 th.sticky { left: 0; z-index: 3; } /* 왼쪽 위 '구매사명' 칸은 두 방향 모두 고정 */
 .wk-t td.sticky { background: var(--card); min-width: 150px; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wk-t td.sub.sticky { background: #f4f2f8; } .wk-t td.tot.sticky { background: var(--accent-soft); }
 .wk-sub { display: block; font-size: 10.5px; color: var(--text-muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
@@ -7985,8 +7992,8 @@ return `<tr>${first}<td${c}>${perfNum_(r.planSales)}</td><td${c}>${r.entered ===
 }
 function wkTable_(res) {
 const wl = res.gamagam ? '가마감' : escapeHtml(res.label) + ' 누적';
-let h = `<div class="pf-tablewrap"><table class="pf-t wk-t"><tr><th class="sticky" rowspan="2">구매사명</th><th rowspan="2">사무소</th><th colspan="3" class="grp">매출액 (천원)</th><th colspan="3" class="grp">매출이익 (천원)</th><th colspan="3" class="grp">이익률</th><th rowspan="2">비고</th></tr>
-<tr><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>실적</th><th>차이</th></tr>`;
+let h = `<div class="pf-tablewrap wk-scroll"><table class="pf-t wk-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th rowspan="2">사무소</th><th colspan="3" class="grp">매출액 (천원)</th><th colspan="3" class="grp">매출이익 (천원)</th><th colspan="3" class="grp">이익률</th><th rowspan="2">비고</th></tr>
+<tr class="wk-h2"><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>${wl}</th><th>달성률</th><th>계획</th><th>실적</th><th>차이</th></tr>`;
 res.subtotals.forEach(function (s) {
 const teamDone = (res.teams.find(function (t) { return t.team === s.team; }) || {}).status;
 res.rows.filter(function (r) { return r.team === s.team; }).forEach(function (r) {

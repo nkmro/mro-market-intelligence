@@ -405,6 +405,10 @@ t('Q6 고치기 창: 순서는 글자만(입력칸 없음)·🔒, "이번 보고
 t('Q7 모바일 정렬: 제목 줄 wk-meta, 주차 "~끝날 누적", 요약 wk-sum', FH.includes('<div class="wk-meta">') && uiGrab('wkHeader_').includes("'~' + wkMd2_(s.to) + ' 누적'") && uiGrab('wkSummary_').includes('pf-mycard wk-sum') &&
   FH.includes('.wk-meta { display: contents; }'));
 
+// 고객사별 실적 표 머리글 고정(2026-11-17): 표 상자 안 세로 스크롤 + 제목 2줄 위 고정 + 구매사명 칸 왼쪽 고정
+const wt = uiGrab('wkTable_');
+t('Q9 고객사별 실적 표: wk-scroll 상자 · 제목 줄 wk-h1/wk-h2 · CSS 고정(top 0 / 32px)', wt.includes('pf-tablewrap wk-scroll') && wt.includes('<tr class="wk-h1">') && wt.includes('<tr class="wk-h2">') &&
+  uiHtml.includes('.wk-scroll tr.wk-h1 th { position: sticky; top: 0;') && uiHtml.includes('.wk-scroll tr.wk-h2 th { position: sticky; top: 32px;'));
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();
