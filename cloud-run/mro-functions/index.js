@@ -34,6 +34,7 @@ const { acquireLock, releaseLock } = require('./lib/writeLock');
 // 2026-08-28 (push 6단계, PUSH_NOTIFICATION_STAGE6_DESIGN.md): 5단계에서 만든 통합 푸시
 // 발송 공통 모듈. pushBatchTest(이 파일 맨 아래, 신규)만 사용한다.
 const pushSender = require('./lib/pushSender');
+const lastAccess = require('./lib/lastAccess'); // 사용자 현황 최종 접속(K열)
 // 2026-11-04 (요금 절감 1-다): 스케줄러 작업 4개를 5분 1개로 합치는 dispatchBatchTest(이 파일 맨 아래)만 사용한다.
 const dispatch = require('./lib/dispatch');
 
@@ -219,11 +220,23 @@ const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/val
 const resp = await client.request({ url });
 timings.sheetMs = Date.now() - u0;
 const rows = (resp.data && resp.data.values) || [];
-const row = rows.find(r => String(r[0] || '').trim().toLowerCase() === String(email).trim().toLowerCase());
+const rowIdx = rows.findIndex(r => String(r[0] || '').trim().toLowerCase() === String(email).trim().toLowerCase());
+const row = rowIdx >= 0 ? rows[rowIdx] : null;
 if (!row) {
 const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'USER_NOT_FOUND', email });
 return;
+}
+// 최종 접속 기록(K열) — 같은 세션은 1시간에 1번만. 실패해도 whoami 응답은 그대로(best-effort).
+if (lastAccess.shouldMark(session.lastAccessMarkedAt, Date.now())) {
+try {
+const nowMs = Date.now();
+await updateUserCell_(await getUserWriteClient_(), rowIdx + 2, lastAccess.LAST_ACCESS_COL, msToSheetSerial_(nowMs));
+await sessionSnap.ref.update({ lastAccessMarkedAt: new Date(nowMs) });
+timings.lastAccessMarked = true;
+} catch (e) {
+console.error('[lastAccess] 기록 실패(무시): ' + e);
+}
 }
 const serverMs = Date.now() - t0;
 res.status(200).json({ ok: true, serverMs, timings, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4] });
@@ -1487,6 +1500,9 @@ exports.getCustomersTest = async (req, res) => {
 // row 번호를 넣어주지 않으므로, viewer(호출자 본인) 조회에는 rowsToUsers()를 그대로 쓰고,
 // 응답에 넣을 사용자 목록은 원본 행 배열(rawUserRows)을 직접 순회해 만든다 — rowsToUsers()
 // 자체는 건드리지 않는다(다른 배포된 함수들이 그대로 쓰고 있음).
+// 사용자 현황 목록 전용 범위 — K열(최종접속)까지. 다른 함수가 쓰는 POLL_USER_RANGE(A2:I)는 그대로
+// (COMPETENCY_USER_RANGE A2:J처럼 필요한 함수만 넓힌 상수를 따로 두는 기존 방식).
+const USERS_LIST_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:K');
 exports.getUsersTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -1504,7 +1520,7 @@ exports.getUsersTest = async (req, res) => {
 
     const u0 = Date.now();
     const client = await getSheetsClient();
-    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [POLL_USER_RANGE], { unformatted: true });
+    const valueRanges = await batchGetValues(client, SPREADSHEET_ID, [USERS_LIST_RANGE], { unformatted: true });
     timings.sheetMs = Date.now() - u0;
 
     const rawUserRows = (valueRanges[0] && valueRanges[0].values) || [];
@@ -1531,7 +1547,7 @@ exports.getUsersTest = async (req, res) => {
       const row = rawUserRows[i];
       if (!row[0]) continue;
       if (!isAdmin && String(row[3]).trim() !== String(viewer.team).trim()) continue;
-      users.push({ row: i + 2, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4] });
+      users.push({ row: i + 2, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4], lastAccessMs: lastAccess.readFromRow(row, feedEngine.sheetSerialToMs) });
     }
 
     const serverMs = Date.now() - t0;

@@ -873,6 +873,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .user-save-btn:disabled { background: #b8bcb8; cursor: not-allowed; }
 .user-save-msg { font-size: 12px; color: var(--text-muted); }
+.user-last-access { font-size: 12px; color: var(--text-muted); }
 
 @media (max-width: 768px) {
     .sidebar {
@@ -2029,6 +2030,7 @@ function refreshOnResume() {
     if (currentView === 'items') tasks.push(loadItems());
     if (currentView === 'notif') { tasks.push(loadNotifNewPosts().then(function () { renderNotif(); updateNotifBadge(); })); }
     if (currentView === 'users') tasks.push(loadUsers());
+    refreshSessionViaWhoami_(); // 2026-11-16 최종 접속(K열) 기록용 — fire-and-forget, 위 작업과 무관
     Promise.all(tasks).finally(endAppActivating_);
   }, 600);
 }
@@ -3426,6 +3428,7 @@ return `
 <select id="status-${rk}">${STATUS_OPTIONS.map(s => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
 <button class="user-save-btn" id="btn-${rk}" onclick="saveUserRow(${u.row})">저장</button>
 <span class="user-save-msg" id="msg-${rk}"></span>
+${u.lastAccessMs === undefined ? '' : `<span class="user-last-access">${u.lastAccessMs ? '최종 접속 ' + fmtTime(u.lastAccessMs) : '접속 기록 없음'}</span>`}
 </div>
 </div>
 </div>
