@@ -137,5 +137,108 @@ t('R11 사용 끔 고객사의 계획은 계획에만 있는 줄로 안 셈', ws
 t('Y1 연도 목록', ws.yearsFromSettings([['실적관리파일_2026', 'x'], ['실적관리파일_2027', 'y'], ['인사평가파일_2025', 'z'], ['실적관리파일_2025', '']], 2026).join() === '2026');
 t('U1 숫자 읽기', ws.num('1,234') === 1234 && ws.num('') === null && ws.num('가') === null && ws.num(5) === 5);
 
+// 6) 2단계 — 입력·완료·취소·고객사 추가·알림·결과 메일 (가상의 값)
+(async function stage2() {
+const pcm = require('../lib/perfCloseMail');
+const N2 = ws.weekPlan(2026, 11)[1], N1 = ws.weekPlan(2026, 11)[0], P = ws.weekPlan(2026, 11);
+// 진행: 완료 → 취소 → 다시 완료 / 취소만
+const PR = [[2026, 11, 2, '서부', '입력 완료', '', 'a@nkmro.com', '2026-11-16 10:00', ''], [2026, 11, 2, '서부', '완료 취소', '', 'a@nkmro.com', '2026-11-16 10:30', ''],
+  [2026, 11, 2, '동부', '입력 완료', '', 'b@nkmro.com', '2026-11-16 11:00', ''], [2026, 11, 2, '동부', '완료 취소', '', 'b@nkmro.com', '2026-11-16 11:10', ''], [2026, 11, 2, '동부', '입력 완료', '', 'b@nkmro.com', '2026-11-16 11:20', ''],
+  [2026, 11, 2, '전사', '결과 메일', '', '자동', '2026-11-16 12:02', '3통']];
+let dm = ws.teamDoneMap(PR, 2026, 11, '2');
+t('D1 완료 뒤 취소 = 미완료, 다시 완료 = 완료(마지막 시각)', !dm['서부'] && dm['동부'] && dm['동부'].at === '2026-11-16 11:20' && !dm['전사']);
+t('D2 조회 화면도 취소 반영', view(W, PR).teams[0].status === 'ing' && view(W, PR).teams[1].status === 'done');
+t('D3 4팀 판단 = 실적-고객사 사용 중 팀(서부·동부·중부)', ws.teamsOf(C).join() === '서부,동부,중부' && !ws.allDoneOf(C, PR, 2026, 11, N2).all);
+const ALL = [[2026, 11, 2, '서부', '입력 완료', '', 'a@nkmro.com', 't', ''], [2026, 11, 2, '동부', '입력 완료', '', 'b@nkmro.com', 't', ''], [2026, 11, 2, '중부', '입력 완료', '', 'a@nkmro.com', 't', '']];
+t('D4 3팀 모두 완료 = all', ws.allDoneOf(C, ALL, 2026, 11, N2).all === true && ws.allDoneOf(C, ALL, 2026, 11, N1).all === false);
+
+// 입력 탭
+const WK = [[2026, 11, 1, '동부', '한빛정밀', 90000, 5000, ''], [2026, 11, 2, '동부', '한빛정밀', 200000, 13000, '메모', 'b@nkmro.com', '2026-11-16 13:48']];
+function iv(o) { return ws.inputView(Object.assign({ year: 2026, month: 11, entry: N2, plan: P, team: '동부', customers: C, weeklyRows: WK, progressRows: [], names: { 'a@nkmro.com': '관리자', 'b@nkmro.com': '팀장B' }, adminEmail: 'a@nkmro.com', adminTeam: '동부', isAdmin: false, isCurrent: true }, o)); }
+let v2 = iv({});
+t('I1 동부 사용 중 고객사 3곳(거래끝 제외)·지난 주차 1주차', v2.rows.map(function (r) { return r.name; }).join() === '한빛정밀,대성금속,푸른환경' && v2.prevLabel === '1주차');
+t('I2 지난 주차 누적·이번 값·비고', v2.rows[0].prevSales === 90000 && v2.rows[0].sales === 200000 && v2.rows[0].note === '메모' && v2.rows[1].prevSales === null && v2.rows[1].sales === null);
+t('I3 저장 1곳·마지막 저장자', v2.savedCount === 1 && v2.lastSavedBy === '팀장B' && v2.lastSavedAt === '2026-11-16 13:48');
+t('I4 지금 주차·미완료 → 입력 가능', v2.canEdit && v2.canComplete && !v2.canReopen && v2.lockedReason === '');
+t('I5 지난 주차·팀장 → 잠김(PAST_WEEK)', !iv({ isCurrent: false }).canEdit && iv({ isCurrent: false }).lockedReason === 'PAST_WEEK');
+t('I6 지난 주차·관리자 → 입력 가능', iv({ isCurrent: false, isAdmin: true }).canEdit);
+const D동 = [[2026, 11, 2, '동부', '입력 완료', '', 'b@nkmro.com', '2026-11-16 14:05', '']];
+v2 = iv({ progressRows: D동 });
+t('I7 완료 → 잠김 + 팀장 취소 가능(4팀 완료 전)', !v2.canEdit && v2.canReopen && v2.done.byName === '팀장B' && v2.lockedReason === 'DONE' && !v2.allDone);
+v2 = iv({ progressRows: ALL });
+t('I8 4팀 완료 → 팀장 취소 불가, 관리자만', !v2.canReopen && v2.allDone && iv({ progressRows: ALL, isAdmin: true }).canReopen);
+v2 = iv({ team: '서부', progressRows: [[2026, 11, 2, '서부', '입력 완료', '', 'a@nkmro.com', 't', '']] });
+t('I9 관리자가 남의 팀 완료 → 관리자 대리', v2.done.proxy === true && iv({ progressRows: [[2026, 11, 2, '동부', '입력 완료', '', 'a@nkmro.com', 't', '']] }).done.proxy === false);
+t('I10 1주차는 지난 주차 없음', iv({ entry: N1 }).prevLabel === null && iv({ entry: N1 }).rows[0].prevSales === null);
+
+// 저장 계획 (덮어쓰기 / 새 줄 / 빈칸)
+const WR = [[2026, 11, 2, '동부', '한빛정밀', 1, 1, '', 'x', 't'], [], [2026, 11, 2, '서부', '청솔제지', 5, 5, '', 'x', 't']];
+let pw = ws.planWeekWrite({ weeklyRows: WR, customers: C, year: 2026, month: 11, entry: N2, team: '동부지역팀', who: 'B@NKMRO.COM', nowMs: Date.parse('2026-11-16T13:48:00+09:00'),
+  entries: [{ name: '한빛정밀', sales: '211,300', profit: '12400', note: '' }, { name: '대성금속', sales: '-500', profit: '', note: '반품' }, { name: '푸른환경', sales: '', profit: '', note: '' }] });
+t('W1 같은 키 = 그 줄 덮어쓰기(2행)', pw.ok && pw.writes[0].row === 2 && pw.writes[0].values.join('|') === '2026|11|2|동부|한빛정밀|211300|12400||b@nkmro.com|2026-11-16 13:48');
+t('W2 새 줄 = 값 있는 마지막 줄+1(5행, 중간 빈 줄 재사용 안 함)', pw.writes[1].row === 5 && pw.writes[1].isNew && pw.writes[1].values[5] === -500 && pw.writes[1].values[6] === '');
+t('W3 처음부터 빈칸인 고객사는 줄을 만들지 않음', pw.writes.length === 2);
+pw = ws.planWeekWrite({ weeklyRows: WR, customers: C, year: 2026, month: 11, entry: N2, team: '동부', who: 'b', nowMs: 0, entries: [{ name: '한빛정밀', sales: '', profit: '', note: '' }] });
+t('W4 있던 줄을 빈칸으로 저장하면 그 줄 숫자를 비움(행 삭제 없음)', pw.writes.length === 1 && pw.writes[0].row === 2 && pw.writes[0].values[5] === '' && pw.writes[0].values[6] === '');
+const bad = function (e) { return ws.planWeekWrite({ weeklyRows: [], customers: C, year: 2026, month: 11, entry: N2, team: '동부', who: 'b', nowMs: 0, entries: e }).error; };
+t('W5 잘못된 값 거절', bad([{ name: '한빛정밀', sales: '1.5' }]) === 'BAD_NUMBER' && bad([{ name: '한빛정밀', sales: '12a' }]) === 'BAD_NUMBER' && bad([{ name: '청솔제지', sales: '1' }]) === 'UNKNOWN_CUSTOMER'
+  && bad([{ name: '거래끝', sales: '1' }]) === 'UNKNOWN_CUSTOMER' && bad([{ name: '한빛정밀' }, { name: '한빛정밀' }]) === 'DUPLICATE_CUSTOMER' && bad([{ name: '한빛정밀', note: 'x'.repeat(201) }]) === 'NOTE_TOO_LONG');
+pw = ws.planWeekWrite({ weeklyRows: [], customers: C, year: 2026, month: 11, entry: ws.weekPlan(2026, 11)[3], team: '동부', who: 'b', nowMs: 0, entries: [{ name: '한빛정밀', sales: '1' }] });
+t('W6 가마감은 주차 칸 "가마감", 빈 시트는 2행부터', pw.writes[0].values[2] === '가마감' && pw.writes[0].row === 2);
+t('W7 숫자 읽기', ws.checkNum(' 1,234 ') === 1234 && ws.checkNum('') === null && ws.checkNum(null) === null && Number.isNaN(ws.checkNum('1e3')) && Number.isNaN(ws.checkNum('1000000000000')));
+
+// 진행 이력 · 고객사 추가
+const pp = ws.planProgress({ progressRows: [[2026, 11, 1, '동부', '입력 완료']], year: 2026, month: 11, entry: N2, team: '동부', stage: '입력 완료', who: 'B@x', nowMs: Date.parse('2026-11-16T14:05:00+09:00'), mail: '' });
+t('G1 진행 줄 덧붙이기(3행)', pp.row === 3 && pp.values.join('|') === '2026|11|2|동부|입력 완료||b@x|2026-11-16 14:05|');
+let pa = ws.planAddCustomer({ customers: C, team: '동부지역팀', name: '새빛산업(주)', series: '미계열', orderType: '오프라인', office: '창원', note: '신규', who: 'b@x', nowMs: Date.parse('2026-11-16T15:00:00+09:00') });
+t('A1 고객사 추가: 다음 줄·순서 최대+1·사용 TRUE', pa.ok && pa.row === 8 && pa.values.join('|') === '동부|미계열|새빛산업(주)|오프라인|창원||true|7|신규|b@x|2026-11-16 15:00');
+t('A2 같은 팀 같은 이름(사용 끔 포함) 거절, 다른 팀은 허용', ws.planAddCustomer({ customers: C, team: '동부', name: '거래끝' }).error === 'DUPLICATE_CUSTOMER' && ws.planAddCustomer({ customers: C, team: '서부', name: '한빛정밀' }).ok);
+t('A3 이름 비었거나 61자 거절', ws.planAddCustomer({ customers: C, team: '동부', name: '' }).error === 'BAD_NAME' && ws.planAddCustomer({ customers: C, team: '동부', name: 'x'.repeat(61) }).error === 'BAD_NAME');
+
+// 16시 알림 대상
+const U = [['a@nkmro.com', '관리자', '팀장', '동부', '활성'], ['b@nkmro.com', '서부장', '팀장', '서부', '활성'], ['c@nkmro.com', '임원1', '임원', '본사', '활성'],
+  ['d@gmail.com', '임원2', '임원', '본사', '활성'], ['e@nkmro.com', '퇴사', '팀장', '중부', '비활성'], ['f@nkmro.com', '담당', '담당', '동부', '활성']];
+function rj(at, prog, set) { return ws.reminderJobs({ nowMs: Date.parse(at + '+09:00'), settings: set || ws.readSettings([]), customers: C, progressRows: prog || [], weeklyRows: WK, users: U, adminEmail: 'a@nkmro.com' }); }
+t('M1 입력일 15:59 → 없음', rj('2026-11-16T15:59:00').length === 0);
+let jobs = rj('2026-11-16T16:02:00', D동);
+t('M2 입력일 16:02 → 미완료 팀(서부·중부)만, 동부 완료 제외', jobs.map(function (j) { return j.team; }).join() === '서부,중부');
+t('M3 서부 = 그 팀 팀장, 중부(팀장 비활성) = 관리자 대리', jobs[0].recipients.map(function (r) { return r.email; }).join() === 'b@nkmro.com' && !jobs[0].proxy && jobs[1].proxy && jobs[1].recipients[0].email === 'a@nkmro.com');
+t('M4 키 = remind_연_월_주차_팀(하루 1번 판단)', jobs[0].key === 'remind_2026_11_2_서부');
+t('M5 입력일 아닌 날(화) → 없음', rj('2026-11-17T16:02:00').length === 0);
+t('M6 메일사용 FALSE → 없음', rj('2026-11-16T16:02:00', [], ws.readSettings([['메일사용', 'FALSE']])).length === 0);
+t('M7 시트 팀장마감시각 15 → 15시부터', rj('2026-11-16T15:02:00', [], ws.readSettings([['팀장마감시각', 15]])).length === 3);
+t('M8 모두 완료면 알림 없음', rj('2026-11-16T16:02:00', ALL).length === 0);
+const RR = ws.resultRecipients(U);
+t('R1 결과 메일 = 활성 임원·팀장 @nkmro.com (gmail·비활성·담당 제외)', RR.map(function (r) { return r.email; }).join() === 'a@nkmro.com,b@nkmro.com,c@nkmro.com');
+
+// 메일 본문 (승인 원문과 같은 줄)
+const txt = pcm.buildText(ws.reminderParts(jobs[0], RR[1], pcm.APP_URL));
+t('B1 알림 제목·본문', ws.reminderParts(jobs[0], RR[1], pcm.APP_URL).subject === '[MRO 워크허브] 11월 2주차 주간 실적 입력 마감 알림 (서부팀)'
+  && txt.indexOf('서부장 팀장님,') === 0 && txt.indexOf('11월 2주차 주간 실적(11/1~11/15 누적)이 아직 [입력 완료]되지 않았어요.') > 0 && txt.indexOf('· 마감: 11/16(월) 16:00') > 0
+  && txt.indexOf('· 지금 상태: 고객사 1곳 중 0곳 저장됨, 입력 완료 전') > 0 && txt.indexOf('feed.html?view=weekly') > 0);
+t('B2 대리 알림 문구', pcm.buildText(ws.reminderParts(jobs[1], RR[0], pcm.APP_URL)).indexOf('팀장 계정이 아직 없어 관리자에게 보냈어요') > 0);
+const vAll = view(W, ALL);
+const rp = ws.resultParts({ year: 2026, month: 11, entry: N2 }, vAll, RR[2], pcm.APP_URL), rt = pcm.buildText(rp);
+t('B3 결과 메일 제목·전사·팀별', rp.subject === '[MRO 워크허브] 11월 2주차 주간 실적 보고 (3팀 입력 완료)' && rt.indexOf('· 매출 누적 400,000 / 계획 900,000 (44.4%)') > 0 && rt.indexOf('· 동부  250,000 / 400,000 / 62.5%') > 0);
+t('B4 HTML도 만들어짐(버튼 주소)', pcm.buildHtml(rp).indexOf('feed.html?view=weekly') > 0);
+
+// 팀 고르기 (확인 3)
+const T4 = ['서부', '동부', '중부', '영업지원'], meA = { email: 'a', role: '팀장', team: '동부', active: true }, meB = { email: 'b', role: '팀장', team: '서부지역팀', active: true };
+t('L1 관리자: 고른 팀 그대로', ws.leadTeam(meA, true, '중부', T4).team === '중부' && ws.leadTeam(meA, true, '서부지역팀', T4).team === '서부');
+t('L2 관리자: 없는 팀을 보내면 BAD_TEAM(첫 팀으로 바꾸지 않음)', ws.leadTeam(meA, true, '남부', T4).error === 'BAD_TEAM');
+t('L3 관리자: 안 고르면 자기 팀', ws.leadTeam(meA, true, '', T4).team === '동부');
+t('L4 팀장: 자기 팀만, 다른 팀 FORBIDDEN_TEAM', ws.leadTeam(meB, false, '', T4).team === '서부' && ws.leadTeam(meB, false, '동부', T4).error === 'FORBIDDEN_TEAM');
+t('L5 팀장 아님·비활성 → FORBIDDEN', ws.leadTeam({ role: '담당', team: '동부', active: true }, false, '', T4).error === 'FORBIDDEN' && ws.leadTeam({ role: '팀장', team: '동부', active: false }, false, '', T4).error === 'FORBIDDEN');
+
+// 잠금 동시성 (lib/writeLock + 가짜 Firestore)
+const { FakeFirestore } = require('./logintest-parity/fake_firestore');
+const { acquireLock, releaseLock } = require('../lib/writeLock');
+const fs2 = new FakeFirestore();
+const o = { waitMs: 300, staleMs: 60000, pollMs: 50 };
+const a1 = await acquireLock(fs2, 'weeklySales', 'h1', o), a2 = await acquireLock(fs2, 'weeklySales', 'h2', o), p1 = await acquireLock(fs2, 'performanceEval', 'h3', o);
+await releaseLock(fs2, 'weeklySales', 'h1'); const a3 = await acquireLock(fs2, 'weeklySales', 'h2', o);
+t('K1 같은 잠금은 동시에 1명, 성과평가 잠금과는 별개, 풀면 다음 사람', a1 === true && a2 === false && p1 === true && a3 === true);
+
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
+})();

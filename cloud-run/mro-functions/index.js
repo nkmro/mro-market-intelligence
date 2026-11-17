@@ -3282,6 +3282,12 @@ exports.issueMailBatchTest = async (req, res) => {
   } catch (pcErr) {
     console.error('[perfCloseMail] 오류: ' + String((pcErr && pcErr.message) || pcErr));
   }
+  // [2026-11-17] 주간 실적 2단계 — 16시 알림 + 4팀 완료 결과 메일(A안: 매시 2분). 자체 try/catch(실패해도 아래 이슈 메일은 그대로). 결과는 로그 한 줄만
+  try {
+    console.log('[weeklySalesMail] ' + JSON.stringify(await runWeeklySalesMail_(nowMs)));
+  } catch (wsErr) {
+    console.error('[weeklySalesMail] 오류: ' + String((wsErr && wsErr.message) || wsErr));
+  }
   try {
     const client = await getSheetsClient();
     const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
@@ -5232,6 +5238,18 @@ exports.getWeeklySalesTest = async (req, res) => {
       await weeklySalesReport_(req, res, auth, t0, timings);
       return;
     }
+    // 2단계: [우리 팀 입력] 탭(팀장·관리자) — 아래 weeklySalesInput_
+    if (view === 'input') {
+      await weeklySalesInput_(req, res, auth, t0, timings);
+      return;
+    }
+    // 2단계: 메뉴 NEW — 가장 최근 '4팀 완료' 주차 키만(Firestore 문서 1개, 시트 안 읽음, 숫자 없음)
+    if (view === 'badge') {
+      const snap = await firestore.collection(WEEKLY_STATE).doc('latest').get();
+      const d = snap.exists ? snap.data() : null;
+      res.status(200).json({ ok: true, serverMs: Date.now() - t0, timings, key: d ? d.key : null, year: d ? d.year : null, month: d ? d.month : null, label: d ? d.label : null });
+      return;
+    }
     if (view !== 'ping') {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
@@ -5363,4 +5381,287 @@ async function weeklySalesReport_(req, res, auth, t0, timings) {
   });
   res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'report', years: years, maxMonth: maxMonth, today: today,
     viewer: { role: isAdmin ? '관리자' : me.role, team: me ? me.team : '', isAdmin: isAdmin, settingsBad: settings.bad.length } }, view));
+}
+
+// =====================================================================
+// 주간 실적 2단계 (2026-11-17 재홍님 승인): 입력 탭 조회 · saveWeeklySalesTest(save·complete·reopen·addCustomer) · 16시 알림·결과 메일
+// - 잠금: writeLocks/weeklySales (성과평가 performanceEval과 별도, 대기 10초·죽은 잠금 60초)
+// - 같은 요청 두 번 처리 방지: withIdempotency (성과평가 savePerformanceTest와 같음)
+// - NEW: weeklySalesState/latest = 가장 최근 4팀 완료 주차 키. 메일 1번만: weeklySalesMails/{remind_…|result_…}
+// =====================================================================
+const WEEKLY_LOCK_NAME = 'weeklySales';
+const WEEKLY_LOCK_WAIT_MS = 10000;
+const WEEKLY_LOCK_STALE_MS = 60000;
+const WEEKLY_LOCK_POLL_MS = 200;
+const WEEKLY_STATE = 'weeklySalesState';
+const WEEKLY_MAILS = 'weeklySalesMails';
+
+// MRO 본 시트(사용자팀마스터 + '설정') 1번 → 나 · 이름표 · 그해 실적 파일 ID
+async function weeklyMro_(client, email, year) {
+  const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
+  const userRows = (mro[0] && mro[0].values) || [];
+  const users = weeklySales.usersOf(userRows);
+  const me = users.find(function (u) { return u.email === email; }) || null;
+  const admin = users.find(function (u) { return u.email === ADMIN_EMAIL; }) || null;
+  const names = {}; users.forEach(function (u) { names[u.email] = u.name; });
+  return { userRows: userRows, me: me, names: names, adminTeam: admin ? admin.team : '', fileId: weeklySales.findFileId((mro[1] && mro[1].values) || [], year) };
+}
+// 실적 파일 한 번 읽기 (설정·고객사·주간·진행 — 계획은 조회 화면만 쓰므로 여기선 안 읽음)
+async function weeklyFile_(client, fileId) {
+  const q = competency.quoteTab;
+  const vr = await batchGetValues(client, fileId, [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:K',
+    q(weeklySales.TAB_WEEKLY) + '!A2:L', q(weeklySales.TAB_PROGRESS) + '!A2:I'].map(encodeURIComponent), { unformatted: true });
+  return { settings: weeklySales.readSettings((vr[0] && vr[0].values) || []), customers: (vr[1] && vr[1].values) || [],
+    weekly: (vr[2] && vr[2].values) || [], progress: (vr[3] && vr[3].values) || [] };
+}
+// 누가 어느 팀을 입력하나: lib/weeklySales.js leadTeam (확인 3: 관리자가 없는 팀을 보내면 BAD_TEAM)
+const weeklyLeadTeam_ = weeklySales.leadTeam;
+// 고른 연·월·주차 → 주차 정보. 열린 주차(입력일 ≤ 오늘)만. isCurrent = 오늘 기준 '지금 보고' 주차인지
+function weeklyEntry_(year, month, week, settings, nowMs) {
+  const today = weeklySales.seoulToday(nowMs);
+  const nowRep = weeklySales.currentReport(nowMs, settings).current;
+  const y = Number(year) || (nowRep ? nowRep.year : Number(today.slice(0, 4)));
+  const m = Number(month) || (nowRep && nowRep.year === y ? nowRep.month : 0);
+  if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'NO_REPORT_YET' };
+  const plan = weeklySales.weekPlan(y, m, settings);
+  const opened = plan.filter(function (w) { return w.inputDate <= today; });
+  const wk = String(week === undefined || week === null ? '' : week).trim();
+  let entry = wk ? opened.find(function (w) { return wk === weeklySales.GAMAGAM ? w.gamagam : (!w.gamagam && String(w.week) === wk); }) : opened[opened.length - 1];
+  if (wk && !entry) return { ok: false, error: plan.some(function (w) { return wk === weeklySales.GAMAGAM ? w.gamagam : String(w.week) === wk; }) ? 'WEEK_NOT_OPEN' : 'BAD_WEEK' };
+  if (!entry) return { ok: false, error: 'NO_REPORT_YET' };
+  const isCurrent = !!nowRep && nowRep.year === y && nowRep.month === m && nowRep.inputDate === entry.inputDate && nowRep.label === entry.label;
+  return { ok: true, year: y, month: m, plan: plan, entry: entry, isCurrent: isCurrent };
+}
+
+// getWeeklySalesTest view=input — [우리 팀 입력] 탭. 팀장(자기 팀)·관리자(팀 선택)
+async function weeklySalesInput_(req, res, auth, t0, timings) {
+  const b = req.body || {};
+  const fail = function (error, extra) { res.status(200).json(Object.assign({ ok: false, serverMs: Date.now() - t0, timings, error: error }, extra || {})); };
+  const email = String(auth.email || '').trim().toLowerCase(), isAdmin = email === ADMIN_EMAIL, nowMs = Date.now();
+  const client = await getSheetsClient();
+  const guessYear = Number(b.year) || ((weeklySales.currentReport(nowMs).current || {}).year) || competency.seoulYear(nowMs);
+  const m0 = Date.now();
+  const mro = await weeklyMro_(client, email, guessYear);
+  timings.mroSheetMs = Date.now() - m0;
+  if (!isAdmin && !(mro.me && mro.me.active && mro.me.role === '팀장')) return fail('FORBIDDEN');
+  if (!mro.fileId) return fail('SALES_FILE_MISSING', { year: guessYear });
+  let f;
+  const s0 = Date.now();
+  try { f = await weeklyFile_(client, mro.fileId); } catch (e) { return fail('SHEET_ACCESS_FAILED', { httpStatus: (e && e.response && e.response.status) || (e && e.code) || null }); }
+  timings.salesSheetMs = Date.now() - s0;
+  const en = weeklyEntry_(guessYear, b.month, b.week, f.settings, nowMs);
+  if (!en.ok) return fail(en.error);
+  const teams = weeklySales.teamsOf(f.customers);
+  const lead = weeklyLeadTeam_(mro.me, isAdmin, b.team, teams);
+  if (!lead.ok) return fail(lead.error);
+  const view = weeklySales.inputView({ year: en.year, month: en.month, entry: en.entry, plan: en.plan, team: lead.team, customers: f.customers,
+    weeklyRows: f.weekly, progressRows: f.progress, names: mro.names, adminEmail: ADMIN_EMAIL, adminTeam: mro.adminTeam, isAdmin: isAdmin, isCurrent: en.isCurrent });
+  res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
+    isCurrent: en.isCurrent, mode: f.settings.modes[lead.team] || '2단계' }, view));
+}
+
+// POST /saveWeeklySalesTest { sessionToken, idempotencyKey, action, year, month, week, team, entries | customer }
+exports.saveWeeklySalesTest = async (req, res) => {
+  setCors(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  const t0 = Date.now();
+  try {
+    const b = req.body || {};
+    const auth = await authenticateSession(firestore, b.sessionToken);
+    if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
+    const timings = Object.assign({}, auth.timings);
+    if (['save', 'complete', 'reopen', 'addCustomer'].indexOf(b.action) < 0) {
+      res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
+    }
+    if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
+    const result = await withIdempotency(firestore, b.idempotencyKey, 'weeklySales_' + b.action, async function () {
+      const email = String(auth.email || '').trim().toLowerCase(), isAdmin = email === ADMIN_EMAIL, nowMs = Date.now();
+      const client = await getSheetsClient();
+      const year = Number(b.year) || ((weeklySales.currentReport(nowMs).current || {}).year) || competency.seoulYear(nowMs);
+      const m0 = Date.now();
+      const mro = await weeklyMro_(client, email, year);
+      timings.mroSheetMs = Date.now() - m0;
+      if (!isAdmin && !(mro.me && mro.me.active && mro.me.role === '팀장')) return { ok: false, error: 'FORBIDDEN' };
+      if (!mro.fileId) return { ok: false, error: 'SALES_FILE_MISSING', year: year };
+      const holderId = crypto.randomUUID();
+      const gotLock = await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS });
+      if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+      try {
+        let f;
+        const s0 = Date.now();
+        try { f = await weeklyFile_(client, mro.fileId); } catch (e) {
+          return { ok: false, error: 'SHEET_ACCESS_FAILED', httpStatus: (e && e.response && e.response.status) || (e && e.code) || null };
+        }
+        timings.salesSheetMs = Date.now() - s0;
+        const teams = weeklySales.teamsOf(f.customers);
+        const q = competency.quoteTab;
+        const w0 = Date.now();
+        // 고객사 추가: 주차와 무관. 팀장 자기 팀 / 관리자 아무 팀(실적-고객사에 있는 팀만)
+        if (b.action === 'addCustomer') {
+          const c = b.customer || {};
+          const lead = weeklyLeadTeam_(mro.me, isAdmin, c.team || b.team, teams);
+          if (!lead.ok) return lead;
+          // 확인 2: 지금 보고 주차를 이미 입력 완료한 팀은 팀장이 추가할 수 없음([완료 취소] 뒤 추가). 관리자는 가능(이미 나간 결과 메일은 다시 안 보냄)
+          if (!isAdmin) {
+            const cur = weeklyEntry_(year, undefined, undefined, f.settings, nowMs);
+            if (cur.ok && weeklySales.teamDoneMap(f.progress, cur.year, cur.month, weeklySales.weekKeyOf(cur.entry))[lead.team]) return { ok: false, error: 'ALREADY_DONE' };
+          }
+          const plan = weeklySales.planAddCustomer({ customers: f.customers, team: lead.team, name: c.name, series: c.series, orderType: c.orderType, office: c.office, note: c.note, who: email, nowMs: nowMs });
+          if (!plan.ok) return plan;
+          const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_CUSTOMERS) + '!A' + plan.row + ':K' + plan.row, values: [plan.values] }]);
+          timings.writeMs = Date.now() - w0;
+          if (n !== weeklySales.CUSTOMER_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, team: lead.team, name: plan.values[2], row: plan.row };
+        }
+        const en = weeklyEntry_(year, b.month, b.week, f.settings, nowMs);
+        if (!en.ok) return en;
+        if (!en.isCurrent && !isAdmin) return { ok: false, error: 'PAST_WEEK' }; // 확정 ②: 지난 주차는 관리자만
+        const lead = weeklyLeadTeam_(mro.me, isAdmin, b.team, teams);
+        if (!lead.ok) return lead;
+        const st = weeklySales.allDoneOf(f.customers, f.progress, en.year, en.month, en.entry);
+        const isDone = !!st.done[lead.team];
+        const key = weeklySales.reportKey(en.year, en.month, en.entry);
+        if (b.action === 'save') {
+          if (isDone) return { ok: false, error: 'ALREADY_DONE' }; // 완료 뒤에는 [완료 취소] 후 고친다
+          const plan = weeklySales.planWeekWrite({ weeklyRows: f.weekly, customers: f.customers, year: en.year, month: en.month, entry: en.entry, team: lead.team, entries: b.entries, who: email, nowMs: nowMs });
+          if (!plan.ok) return plan;
+          if (!plan.writes.length) return { ok: true, updatedCells: 0, rows: 0 };
+          const n = await perfBatchWrite_(mro.fileId, plan.writes.map(function (w) { return { range: q(weeklySales.TAB_WEEKLY) + '!A' + w.row + ':J' + w.row, values: [w.values] }; }));
+          timings.writeMs = Date.now() - w0;
+          if (n !== plan.writes.length * weeklySales.WEEKLY_WRITE_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, rows: plan.writes.length };
+        }
+        if (b.action === 'complete') {
+          if (isDone) return { ok: false, error: 'ALREADY_DONE' };
+        } else { // reopen
+          if (!isDone) return { ok: false, error: 'NOT_DONE' };
+          if (st.all && !isAdmin) return { ok: false, error: 'ALL_DONE_ADMIN_ONLY' }; // 확정 ③: 4팀 완료 뒤에는 관리자만
+        }
+        const stage = b.action === 'complete' ? '입력 완료' : weeklySales.STAGE_REOPEN;
+        const pw = weeklySales.planProgress({ progressRows: f.progress, year: en.year, month: en.month, entry: en.entry, team: lead.team, stage: stage, who: email, nowMs: nowMs, mail: '' });
+        const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_PROGRESS) + '!A' + pw.row + ':I' + pw.row, values: [pw.values] }]);
+        timings.writeMs = Date.now() - w0;
+        if (n !== weeklySales.PROGRESS_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+        // NEW 상태: 4팀 모두 완료가 되면 latest = 이 주차, 4팀 완료였던 주차를 관리자가 풀면 latest 지움(결과 메일은 다시 안 보냄 — 메일 문서는 그대로)
+        const after = weeklySales.allDoneOf(f.customers, f.progress.concat([pw.values]), en.year, en.month, en.entry);
+        const ref = firestore.collection(WEEKLY_STATE).doc('latest');
+        if (after.all) {
+          await ref.set({ key: key, year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry), label: en.entry.label, at: FieldValue.serverTimestamp() });
+        } else if (st.all) {
+          const cur = await ref.get();
+          if (cur.exists && cur.data().key === key) await ref.delete();
+        }
+        return { ok: true, updatedCells: n, team: lead.team, stage: stage, allDone: after.all };
+      } finally {
+        await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId);
+      }
+    });
+    res.status(200).json(Object.assign({ serverMs: Date.now() - t0, timings: timings }, result));
+  } catch (err) {
+    res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
+  }
+};
+
+// issueMailBatchTest(매시 2분)에서 부름: ① 4팀 완료 결과 메일(latest 문서가 있고 아직 안 보낸 주차) ② 16시 알림(입력일·마감 시각 이후·미완료 팀)
+// 메일 1건 = weeklySalesMails 문서 1개(done이면 건너뜀, 일부 실패면 다음 정시에 남은 사람만 — 성과 마감 메일과 같은 방식). 보낸 뒤 실적-진행에 기록 한 줄.
+async function runWeeklySalesMail_(nowMs) {
+  const stateSnap = await firestore.collection(WEEKLY_STATE).doc('latest').get();
+  const latest = stateSnap.exists ? stateSnap.data() : null;
+  // 시트를 읽기 전에 할 일이 있는지부터: 결과 메일 대기(latest 있고 그 메일 문서가 done 아님) 또는 오늘이 입력일
+  let resultPending = false;
+  if (latest && latest.key) {
+    const rs = await firestore.collection(WEEKLY_MAILS).doc('result_' + latest.key).get();
+    resultPending = !(rs.exists && rs.data().status === 'done');
+  }
+  const guess = weeklySales.currentReport(nowMs).current;
+  // 입력일(월요일)에만 시트를 읽는다. 실제 시각 판단(팀장마감시각, 시트 값)은 reminderJobs 안에서
+  const maybeRemind = !!guess && guess.inputDate === weeklySales.seoulToday(nowMs);
+  if (!resultPending && !maybeRemind) return { skipped: true, reason: 'NOTHING_DUE' };
+  const client = await getSheetsClient();
+  const year = resultPending ? Number(latest.year) : guess.year;
+  const mro = await weeklyMro_(client, '', year);
+  if (!mro.fileId) {
+    // 확인 4: 결과 메일을 보내야 하는데 그해 파일 줄('설정' 실적관리파일_{연도})이 없으면 관리자에게 1번만 알림. 줄을 다시 넣으면 다음 정시에 보냄(문서는 done이 아님)
+    if (resultPending) {
+      const ref = firestore.collection(WEEKLY_MAILS).doc('result_' + latest.key);
+      const prev = (await ref.get()).data() || {};
+      if (!prev.noFileNotified) {
+        try {
+          await mailer.verifyLogin();
+          const msg = "'설정' 탭에 " + weeklySales.FILE_KEY_PREFIX + year + ' 줄이 없어 ' + latest.label + '(' + latest.month + '월) 주간 실적 결과 메일을 보내지 못했어요. 줄을 다시 넣으면 다음 정시 2분에 자동으로 보내요.';
+          await mailer.sendMessages([{ to: mailer.FROM_ADDRESS, subject: '[MRO 워크허브] 주간 실적 결과 메일 보류 — ' + year + '년 실적관리 파일 없음', text: msg, html: '<p style="font-size:13px;">' + msg.replace(/[<>&]/g, '') + '</p>' }]);
+          await ref.set({ status: 'no_file', noFileNotified: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        } catch (nfErr) { console.error('[weeklySalesMail] 파일 없음 알림 실패: ' + nfErr); }
+      }
+    }
+    return { skipped: true, reason: 'NO_FILE', year: year };
+  }
+  const f = await weeklyFile_(client, mro.fileId);
+  if (f.settings.메일사용 === false) return { skipped: true, reason: 'DISABLED' };
+  const summary = { result: null, remind: [] };
+  const jobs = [];
+  if (resultPending) {
+    const en = weeklyEntry_(latest.year, latest.month, latest.week, f.settings, nowMs);
+    if (en.ok && weeklySales.allDoneOf(f.customers, f.progress, en.year, en.month, en.entry).all) {
+      jobs.push({ key: 'result_' + latest.key, kind: 'result', team: '전사', year: en.year, month: en.month, entry: en.entry, recipients: weeklySales.resultRecipients(mro.userRows) });
+    } else summary.result = 'NOT_ALL_DONE';
+  }
+  weeklySales.reminderJobs({ nowMs: nowMs, settings: f.settings, customers: f.customers, progressRows: f.progress, weeklyRows: f.weekly, users: mro.userRows, adminEmail: ADMIN_EMAIL })
+    .forEach(function (j) { jobs.push(j); });
+  if (!jobs.length) return Object.assign(summary, { due: 0 });
+  let view = null, loggedIn = false;
+  const logRows = [];
+  for (const job of jobs) {
+    const ref = firestore.collection(WEEKLY_MAILS).doc(job.key);
+    const snap = await ref.get();
+    const prev = snap.exists ? snap.data() : {};
+    if (prev.status === 'done') continue;
+    const sentBefore = {}; (prev.sentTo || []).forEach(function (e) { sentBefore[e] = true; });
+    const todo = job.recipients.filter(function (r) { return !sentBefore[r.email]; });
+    if (job.kind === 'result' && !view) {
+      const pr = await batchGetValues(client, mro.fileId, [encodeURIComponent(competency.quoteTab(weeklySales.TAB_PLAN) + '!A2:AO')], { unformatted: true });
+      view = weeklySales.buildReportView({ year: job.year, month: job.month, entry: job.entry, plan: weeklySales.weekPlan(job.year, job.month, f.settings),
+        today: weeklySales.seoulToday(nowMs), nowEntry: null, settings: f.settings, customers: f.customers, planRows: (pr[0] && pr[0].values) || [],
+        weeklyRows: f.weekly, progressRows: f.progress, names: mro.names, adminEmail: ADMIN_EMAIL, adminTeam: mro.adminTeam });
+    }
+    const msgs = todo.map(function (r) {
+      const parts = job.kind === 'result' ? weeklySales.resultParts(job, view, r, perfCloseMail.APP_URL) : weeklySales.reminderParts(job, r, perfCloseMail.APP_URL);
+      return { to: parts.to, subject: parts.subject, text: perfCloseMail.buildText(parts), html: perfCloseMail.buildHtml(parts) };
+    });
+    if (!msgs.length) { await ref.set({ status: 'done', sentTo: prev.sentTo || [], updatedAt: FieldValue.serverTimestamp() }, { merge: true }); continue; }
+    if (!loggedIn) {
+      try { await mailer.verifyLogin(); loggedIn = true; } catch (loginErr) {
+        await ref.set({ status: 'login_failed', error: mailer.describeError(loginErr), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        summary.loginFailed = true; break;
+      }
+    }
+    const sent = (prev.sentTo || []).slice(); let failed = 0;
+    const r = await mailer.sendMessages(msgs);
+    if (!r.ok) failed = msgs.length;
+    else r.results.forEach(function (x) { if (x.ok) sent.push(x.to); else failed++; });
+    await ref.set({ status: failed ? 'partial' : 'done', kind: job.kind, team: job.team, sentTo: sent, failed: failed, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    const nSent = msgs.length - failed;
+    if (job.kind === 'result') summary.result = { sent: nSent, failed: failed }; else summary.remind.push({ team: job.team, sent: nSent, failed: failed, proxy: job.proxy });
+    if (nSent > 0) logRows.push({ job: job, mail: nSent + '통' + (failed ? ' (실패 ' + failed + ')' : '') + (job.proxy ? ' · 팀장 없음 → 관리자' : '') });
+  }
+  // 실적-진행에 기록(사람이 시트에서 볼 수 있게). 잠금 안에서 다시 읽고 이어 쓰기 — 실패해도 메일은 이미 나갔으므로 로그만
+  if (logRows.length) {
+    const holderId = crypto.randomUUID();
+    try {
+      if (await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS })) {
+        try {
+          const fresh = await weeklyFile_(client, mro.fileId);
+          let rows = fresh.progress.slice();
+          const data = logRows.map(function (l) {
+            const pw = weeklySales.planProgress({ progressRows: rows, year: l.job.year, month: l.job.month, entry: l.job.entry, team: l.job.team,
+              stage: l.job.kind === 'result' ? weeklySales.STAGE_MAIL_RESULT : weeklySales.STAGE_MAIL_REMIND, who: '자동', nowMs: nowMs, mail: l.mail });
+            rows = rows.concat([pw.values]);
+            return { range: competency.quoteTab(weeklySales.TAB_PROGRESS) + '!A' + pw.row + ':I' + pw.row, values: [pw.values] };
+          });
+          await perfBatchWrite_(mro.fileId, data);
+        } finally { await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId); }
+      }
+    } catch (logErr) { console.error('[weeklySalesMail] 진행 기록 실패(메일은 발송됨): ' + logErr); }
+  }
+  return summary;
 }
