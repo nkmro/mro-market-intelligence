@@ -520,7 +520,7 @@ t('Q13 방식 바꾸기·대신 완료도 입력칸을 다시 그리기 전에 �
 t('E21 담당 권한은 save·complete·reopen만, FORBIDDEN이 잠금 앞', sv.includes("['save', 'complete', 'reopen'].indexOf(b.action) >= 0") && sv.indexOf("if (!isAdmin && !asMgr && !(mro.me") < sv.indexOf('acquireLock('));
 // 금요일 입력 시작 화면(정적): 상단·주차 막대 기간 표시, 예상치 안내, 마감 뒤 재촉(2안, 잠금 없음), 담당 '이번 주 2단계' 안내
 const hd = uiGrab('wkHeader_'), due = uiGrab('wkDue_'), ri4 = uiGrab('wkRenderInput_'), li4 = uiGrab('loadWeeklyInput_');
-t('Q14 상단 "입력 금~월 16:00"·막대 "11/20~11/23"', hd.includes('입력 ${wkMd_(res.openDate || res.inputDate)}~${wkMd_(res.inputDate)}') && hd.includes('${wkRange_(s.openDate || s.inputDate, s.inputDate)}'));
+t('Q14 상단 제목 아래는 누적 기간만(입력 기간 글자 없음 — 2026-11-18 재홍님: 줄 넘김)·막대 "11/20~23"', !hd.includes('<small>입력 ') && hd.includes('${wkRange_(s.openDate || s.inputDate, s.inputDate)}'));
 const wr = new Function(uiGrab('wkMd2_') + ';' + uiGrab('wkRange_') + '; return wkRange_;')();
 t('Q17 주차 막대 기간 줄임: 같은 달 "11/6~9", 달 바뀜 "1/29~2/1"', wr('2026-11-06', '2026-11-09') === '11/6~9' && wr('2027-01-29', '2027-02-01') === '1/29~2/1' && wr('2026-11-27', '2026-11-30') === '11/27~30');
 t('Q15 마감 뒤 재촉 문구(2안)·하루 넘으면 "N일 남음"', due.includes('⏰ 늦었어요! 지금 입력해 주시면 바로 결과가 모여요') && due.includes("dd + '일'") && ri4.includes('늦었어요! 지금 입력해 주시면 바로 결과가 모여요.'));

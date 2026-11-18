@@ -7999,7 +7999,7 @@ return `<div class="wk-team ${t.status}"><span class="ico">${ic}</span><div styl
 }).join('');
 return `<div class="wk-card">
 <div class="wk-top"><button class="wk-nav" ${prev ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(prev)}})"` : 'disabled'} aria-label="이전 주차">‹</button>
-<div class="wk-title">${res.year}년 ${res.month}월 ${escapeHtml(res.label)}<small>입력 ${wkMd_(res.openDate || res.inputDate)}~${wkMd_(res.inputDate)} ${String(res.deadline.hour).padStart(2, '0')}:00 · ${res.gamagam ? res.month + '월 예상 마감 실적' : wkMd2_(res.from) + ' ~ ' + wkMd2_(res.to) + ' 누적 실적'}</small></div>
+<div class="wk-title">${res.year}년 ${res.month}월 ${escapeHtml(res.label)}<small>${res.gamagam ? res.month + '월 예상 마감 실적' : wkMd2_(res.from) + ' ~ ' + wkMd2_(res.to) + ' 누적 실적'}</small></div>
 <button class="wk-nav" ${next ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(next)}})"` : 'disabled'} aria-label="다음 주차">›</button>
 <div class="wk-meta"><span class="wk-sel">${yearSel}${monthSel}</span>${wkDue_(res)}</div></div>
 <div class="wk-steps">${steps}</div>
