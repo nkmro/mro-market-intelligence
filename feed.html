@@ -7961,6 +7961,8 @@ function wkPick_(o) { wkSel_ = Object.assign({}, wkSel_, o); loadWeeklyPage(); }
 function wkSetTab_(t) { wkTab_ = t; if (wkRes_) wkRender_(wkRes_); }
 const WK_DOW_ = ['일', '월', '화', '수', '목', '금', '토'];
 function wkMd_(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); if (!m) return ''; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return Number(m[2]) + '/' + Number(m[3]) + '(' + WK_DOW_[d.getUTCDay()] + ')'; }
+// 주차 막대 기간: 같은 달이면 "11/6~9", 달이 바뀌면 "1/29~2/1" (2026-11-18 재홍님 요청)
+function wkRange_(a, b) { const x = wkMd2_(a), y = wkMd2_(b); return x.split('/')[0] === y.split('/')[0] ? x + '~' + y.split('/')[1] : x + '~' + y; }
 function wkMd2_(iso) { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
 function wkDiff_(d) { if (d === null || d === undefined || !isFinite(d)) return ''; const v = Math.round(d * 1000) / 10; return `<span class="${v >= 0 ? 'wk-up' : 'wk-down'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%p</span>`; }
 // 마감 배지: 마감 전 = 남은 시간(하루 이상이면 "N일"), 4팀 다 끝남 = 보고 끝, 마감 지남 = 재촉 문구(잠그지 않음 — 2026-11-18 재홍님 확정)
@@ -7987,7 +7989,7 @@ for (let m = 1; m <= Number(res.maxMonth || res.month); m++) months += `<option 
 const monthSel = `<select class="cy-sel" aria-label="월" onchange="wkPick_({year:${res.year},month:Number(this.value),week:''})">${months}</select>`;
 const steps = st.map(function (s) {
 const cls = s.inputDate === res.inputDate && s.label === res.label ? 'cur' : (s.open ? 'past' : 'fut');
-return `<button class="wk-step ${cls}" ${s.open ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(s)}})"` : 'disabled'}><i></i><b>${escapeHtml(s.label)}</b><span>${wkMd2_(s.openDate || s.inputDate)}~${wkMd2_(s.inputDate)}</span><br><span>${s.gamagam ? '예상 마감' : '~' + wkMd2_(s.to) + ' 누적'}</span><br><span>${s.gamagam ? '<em class="wk-gm">가마감</em>' : (s.now ? '지금 보고' : (s.open ? '' : '예정'))}</span></button>`;
+return `<button class="wk-step ${cls}" ${s.open ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(s)}})"` : 'disabled'}><i></i><b>${escapeHtml(s.label)}</b><span>${wkRange_(s.openDate || s.inputDate, s.inputDate)}</span><br><span>${s.gamagam ? '예상 마감' : '~' + wkMd2_(s.to) + ' 누적'}</span><br><span>${s.gamagam ? '<em class="wk-gm">가마감</em>' : (s.now ? '지금 보고' : (s.open ? '' : '예정'))}</span></button>`;
 }).join('');
 const n = res.teams.length, done = res.doneCount, ing = res.teams.filter(function (t) { return t.status === 'ing'; }).length;
 const cards = res.teams.map(function (t) {
