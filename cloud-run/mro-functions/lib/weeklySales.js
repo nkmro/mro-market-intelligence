@@ -30,7 +30,7 @@ HEADERS[TAB_SETTINGS] = ['키', '값', '설명'];
 // 실적-설정 키와 기본값(시트에 줄이 없을 때만 쓴다 — 시트 우선)
 const MODE_KEY_PREFIX = '입력방식_';
 const MODES = ['2단계', '3단계'];
-const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5, 결과메일대기분: 60 }; // 결과메일대기분: 2026-11-17 재홍님 요청(4팀 완료 1시간 뒤)
+const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5, 결과메일대기분: 60, 입력시작일수: 3 }; // 결과메일대기분: 2026-11-17 재홍님 요청(4팀 완료 1시간 뒤)
 const GAMAGAM = '가마감';
 
 function cell(v) { return String(v === undefined || v === null ? '' : v).trim(); }
@@ -110,6 +110,7 @@ function readSettings(rows) {
   take('첫주합침일수', function (v) { return intIn(v, 0, 6); }, '0~6 정수');
   take('가마감이월일수', function (v) { return intIn(v, 1, 8); }, '1~8 정수 (8 = 넘기지 않음)');
   take('결과메일대기분', function (v) { return intIn(v, 0, 1440); }, '0~1440 정수(분)');
+  take('입력시작일수', function (v) { return intIn(v, 0, 6); }, '0~6 정수 (3 = 전주 금요일부터)'); // 2026-11-18 재홍님 요청: 마감 월요일 며칠 전부터 입력이 열리나
   return out;
 }
 
@@ -120,11 +121,13 @@ function pad2(n) { return (n < 10 ? '0' : '') + n; }
 function utc(y, m, d) { return Date.UTC(y, m - 1, d); }
 function monIdx(ms) { return (new Date(ms).getUTCDay() + 6) % 7; } // 월=0 … 일=6
 
-// 한 달의 입력 일정. [{ week: 1.., label: '1주차' | '가마감', inputDate, from, to }] — to는 누적 마지막 날(가마감은 말일)
+// 한 달의 입력 일정. [{ week: 1.., label: '1주차' | '가마감', inputDate, openDate, from, to }] — to는 누적 마지막 날(가마감은 말일)
+// inputDate = 마감 월요일(16시 알림·마감 표시 기준), openDate = 입력이 열리는 날(inputDate − 입력시작일수, 기본 3 = 전주 금요일)
 function weekPlan(year, month, s) {
   s = s || DEFAULTS;
   const merge = s.첫주합침일수 === undefined ? DEFAULTS.첫주합침일수 : s.첫주합침일수;
   const carry = s.가마감이월일수 === undefined ? DEFAULTS.가마감이월일수 : s.가마감이월일수;
+  const lead = (s.입력시작일수 === undefined ? DEFAULTS.입력시작일수 : s.입력시작일수) * DAY;
   const first = utc(year, month, 1);
   const last = utc(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1) - DAY;
   const mon0 = first - monIdx(first) * DAY;
@@ -136,13 +139,14 @@ function weekPlan(year, month, s) {
   const out = [];
   let n = 1;
   for (let rep = weekStart + 7 * DAY; rep < gm; rep += 7 * DAY, n++) {
-    out.push({ week: n, label: n + '주차', inputDate: ymd(rep), from: ymd(first), to: ymd(rep - DAY), gamagam: false });
+    out.push({ week: n, label: n + '주차', inputDate: ymd(rep), openDate: ymd(rep - lead), from: ymd(first), to: ymd(rep - DAY), gamagam: false });
   }
-  out.push({ week: n, label: GAMAGAM, inputDate: ymd(gm), from: ymd(first), to: ymd(last), gamagam: true });
+  out.push({ week: n, label: GAMAGAM, inputDate: ymd(gm), openDate: ymd(gm - lead), from: ymd(first), to: ymd(last), gamagam: true });
   return out;
 }
 
-// 서울 기준 오늘 → 지금 보여 줄 보고(입력일이 오늘 이하인 가장 최근 보고). 지난달·이번 달 일정에서 찾는다.
+// 서울 기준 오늘 → 지금 보여 줄 보고(입력이 열린 날(openDate)이 오늘 이하인 가장 최근 보고). 지난달·이번 달 일정에서 찾는다.
+// 마감(월요일 16시)이 지나도 다음 주차 입력이 열리기 전까지는 그 주차가 '지금 보고'(잠그지 않음 — 2026-11-18 재홍님 확정)
 function seoulToday(nowMs) { return ymd(Math.floor(((nowMs === undefined ? Date.now() : nowMs) + 9 * 3600 * 1000) / DAY) * DAY); }
 function currentReport(nowMs, s) {
   const today = seoulToday(nowMs);
@@ -154,7 +158,7 @@ function currentReport(nowMs, s) {
   });
   all.sort(function (a, b) { return a.inputDate < b.inputDate ? -1 : a.inputDate > b.inputDate ? 1 : 0; });
   let cur = null, next = null;
-  all.forEach(function (w) { if (w.inputDate <= today) cur = w; else if (!next) next = w; });
+  all.forEach(function (w) { if (w.openDate <= today) cur = w; else if (!next) next = w; });
   return { today: today, current: cur, next: next };
 }
 
@@ -213,8 +217,8 @@ function ratio(a, b) { return (a === null || b === null || !(b > 0)) ? null : a 
 // 고른 달의 주차 막대: 오늘 이전·오늘 입력일은 고를 수 있음(open), 뒤는 예정(future). now = 오늘 기준 '지금 보고'
 function steps(plan, today, nowEntry) {
   return plan.map(function (w) {
-    return { label: w.label, week: w.week, gamagam: w.gamagam, inputDate: w.inputDate, from: w.from, to: w.to,
-      open: w.inputDate <= today, now: !!(nowEntry && nowEntry.inputDate === w.inputDate && nowEntry.label === w.label) };
+    return { label: w.label, week: w.week, gamagam: w.gamagam, inputDate: w.inputDate, openDate: w.openDate, from: w.from, to: w.to,
+      open: w.openDate <= today, now: !!(nowEntry && nowEntry.inputDate === w.inputDate && nowEntry.label === w.label) };
   });
 }
 
@@ -288,7 +292,7 @@ function buildReportView(p) {
   const planOnly = Object.keys(plan).filter(function (k) { return !known[k]; });
   return {
     year: year, month: month, label: p.entry.label, gamagam: p.entry.gamagam,
-    inputDate: p.entry.inputDate, from: p.entry.from, to: p.entry.to,
+    inputDate: p.entry.inputDate, openDate: p.entry.openDate, from: p.entry.from, to: p.entry.to,
     deadline: { date: p.entry.inputDate, hour: p.settings.팀장마감시각 },
     steps: steps(p.plan, p.today, p.nowEntry),
     teams: teamStatus, doneCount: teamStatus.filter(function (t) { return t.status === 'done'; }).length,
@@ -397,7 +401,7 @@ function inputView(p) {
   const rows = vis.map(function (x) { return x.row; });
   const out = {
     team: team, teams: st.teams, isAdmin: !!p.isAdmin, gamagam: p.entry.gamagam, label: p.entry.label,
-    from: p.entry.from, to: p.entry.to, inputDate: p.entry.inputDate, prevLabel: prevEntry ? prevEntry.label : null,
+    from: p.entry.from, to: p.entry.to, inputDate: p.entry.inputDate, openDate: p.entry.openDate, prevLabel: prevEntry ? prevEntry.label : null,
     rows: rows, savedCount: rows.filter(function (r) { return r.saved; }).length,
     lastSavedAt: lastAt, lastSavedBy: lastBy ? (names[lastBy] || lastBy) : '', lastSavedProxy: proxyOf(lastBy),
     done: d ? { at: d.at, byName: names[d.by] || d.by, proxy: proxyOf(d.by) } : null, allDone: st.all,
@@ -576,7 +580,7 @@ function escH(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').repl
 function resultSteps(view, entry) {
   return (view.steps || []).map(function (s) {
     const st = s.inputDate < entry.inputDate ? 'done' : (s.inputDate === entry.inputDate && s.label === entry.label ? 'cur' : 'fut');
-    return { label: s.label, state: st, sub: st === 'fut' ? fmtMd2(s.inputDate) + ' 입력' : (s.gamagam ? '예상 마감' : '~' + fmtMd2(s.to)) };
+    return { label: s.label, state: st, sub: st === 'fut' ? fmtMd2(s.openDate) + '~' + fmtMd2(s.inputDate) + ' 입력' : (s.gamagam ? '예상 마감' : '~' + fmtMd2(s.to)) };
   });
 }
 function resultCardHtml(job, view) {
@@ -775,12 +779,12 @@ function parseModeStage(st) {
   const m = /^입력방식 (2단계|3단계)→(2단계|3단계)$/.exec(cell(st));
   return m ? { from: m[1], to: m[2] } : null;
 }
-// ⑨ 그 주차에 적용되는 방식. 시트 값이 기본, 그 주차 입력일(서울) 0시 이후에 앱에서 바꾼 기록이 있으면 그중 가장 이른 기록의 '바꾸기 전' 값
+// ⑨ 그 주차에 적용되는 방식. 시트 값이 기본, 그 주차 입력이 열린 날(openDate, 서울) 0시 이후에 앱에서 바꾼 기록이 있으면 그중 가장 이른 기록의 '바꾸기 전' 값
 // (시트에서 직접 바꾸면 기록이 없으므로 바로 적용 — 시트 우선)
 function modeAt(settings, progressRows, team, entry) {
   const t = normTeam(team), sheet = (settings && settings.modes && settings.modes[t]) || '2단계';
   if (!entry) return sheet;
-  const hit = (progressRows || []).find(function (r) { return r && normTeam(r[3]) === t && parseModeStage(r[4]) && cell(r[7]).slice(0, 10) >= entry.inputDate; });
+  const hit = (progressRows || []).find(function (r) { return r && normTeam(r[3]) === t && parseModeStage(r[4]) && cell(r[7]).slice(0, 10) >= (entry.openDate || entry.inputDate); });
   return hit ? parseModeStage(hit[4]).from : sheet;
 }
 // ① 방식 바꾸기 쓰기 계획. settingRows = 실적-설정 A2:C 그대로(줄 번호용). 같은 키 줄이 있으면 B칸만, 없으면 새 줄 A~C

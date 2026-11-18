@@ -55,18 +55,31 @@ let c = ws.currentReport(at('2026-11-17T10:00:00'));
 t('N1 11/17(화) → 11월 2주차(11/16 입력)', c.current.month === 11 && c.current.label === '2주차' && c.next.inputDate === '2026-11-23');
 c = ws.currentReport(at('2026-11-16T00:30:00'));
 t('N2 11/16 00:30 서울 → 이미 2주차', c.current.label === '2주차');
-c = ws.currentReport(at('2026-11-15T23:59:00'));
-t('N3 11/15 밤 → 1주차', c.current.label === '1주차');
+c = ws.currentReport(at('2026-11-12T23:59:00'));
+t('N3 11/12(목) 밤 → 1주차(2주차 입력은 11/13 금요일부터)', c.current.label === '1주차');
 c = ws.currentReport(at('2027-02-01T09:00:00'));
 t('N4 2027-02-01 → 1월 가마감', c.current.year === 2027 && c.current.month === 1 && c.current.gamagam);
 c = ws.currentReport(at('2028-01-03T09:00:00'));
 t('N5 2028-01-03 → 2027년 12월 가마감(해 넘김)', c.current.year === 2027 && c.current.month === 12 && c.current.gamagam);
+// 금요일 입력 시작(2026-11-18 재홍님 요청): 입력은 마감 월요일 3일 전(전주 금요일 0시)부터, 마감 뒤에도 잠그지 않음
+t('F1 11월 1주차: 11/6(금)부터 입력, 마감 11/9(월)', nov[0].openDate === '2026-11-06' && nov[0].inputDate === '2026-11-09' && nov[3].openDate === '2026-11-27');
+c = ws.currentReport(at('2026-11-13T00:00:00'));
+t('F2 11/13(금) 0시 → 2주차가 지금 보고(입력 열림)', c.current.label === '2주차' && c.next.label === '3주차' && c.next.openDate === '2026-11-20');
+c = ws.currentReport(at('2026-11-10T09:00:00'));
+t('F3 11/10(화) = 마감 뒤에도 1주차(잠그지 않음)', c.current.label === '1주차');
+c = ws.currentReport(at('2027-01-29T09:00:00'));
+t('F4 2027-01-29(금) → 1월 가마감(2/1 마감)이 열림', c.current.month === 1 && c.current.gamagam && c.current.openDate === '2027-01-29');
+const s0 = ws.readSettings([['입력시작일수', 0]]);
+t('F5 입력시작일수 0 = 월요일 당일만(예전과 같음), 7은 잘못된 값', ws.weekPlan(2026, 11, s0)[0].openDate === '2026-11-09' && ws.currentReport(at('2026-11-13T09:00:00'), s0).current.label === '1주차' && ws.readSettings([['입력시작일수', 7]]).bad.length === 1);
+let olap = [];
+for (let y = 2026; y <= 2030; y++) for (let m = 1; m <= 12; m++) { const pl = ws.weekPlan(y, m); for (let k = 1; k < pl.length; k++) if (pl[k].openDate <= pl[k - 1].inputDate) olap.push(y + '-' + m); }
+t('F6 5년간 다음 주차 입력 시작이 앞 주차 마감보다 늦음(겹침 없음)', olap.length === 0, olap.join(','));
 
 // 3) 설정 읽기
-let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5], ['결과메일대기분', 60]]);
+let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5], ['결과메일대기분', 60], ['입력시작일수', 3]]);
 t('S1 정상 값', s.bad.length === 0 && s.modes.동부 === '2단계' && s.modes.서부 === '3단계' && s.팀장마감시각 === 16 && s.메일사용 === true && s.usedDefault.length === 0);
 s = ws.readSettings([]);
-t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 7 && s.결과메일대기분 === 60 && s.bad.length === 0);
+t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 8 && s.결과메일대기분 === 60 && s.입력시작일수 === 3 && s.bad.length === 0);
 t('S5 결과메일대기분: 0~1440, 잘못되면 기본 60', ws.readSettings([['결과메일대기분', 0]]).결과메일대기분 === 0 && ws.readSettings([['결과메일대기분', '90']]).결과메일대기분 === 90 && ws.readSettings([['결과메일대기분', '2000']]).결과메일대기분 === 60 && ws.readSettings([['결과메일대기분', '2000']]).bad.length === 1);
 const H1MS = Date.parse('2026-11-17T16:09:00+09:00');
 t('S6 결과 메일 때: 완료 16:09 → 17:02 기다림, 18:02 보냄, 대기 0분이면 17:02 보냄, 완료 시각 없으면 바로', !ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T18:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([['결과메일대기분', 0]])) && ws.resultDue(null, H1MS, ws.readSettings([])));
@@ -115,6 +128,7 @@ t('R7 계획 0 → 달성률 null(나누기 0 없음)', v.rows[2].planSales === 
 t('R8 계획 없음 → 계획 null·달성률 null', v.rows[3].hasPlan === false && v.rows[3].planSales === null && v.rows[3].salesRate === null);
 t('R9 주차 막대: 1·2주차 열림, 2주차 now, 3주차·가마감 예정', v.steps.map(function (s) { return (s.open ? 'o' : 'f') + (s.now ? '*' : ''); }).join() === 'o,o*,f,f');
 t('R10 마감 = 11/16 16시', v.deadline.date === '2026-11-16' && v.deadline.hour === 16);
+t('F7 조회·주차 막대에 입력 시작일(openDate) — 2주차 11/13(금)', v.openDate === '2026-11-13' && v.steps[1].openDate === '2026-11-13' && v.steps[2].open === false);
 const W = [ // 연도, 월, 주차, 팀, 구매사명, 매출누적, 이익누적, 비고
   [2026, 11, 2, '동부', '한빛정밀', 200000, 13000, ''],
   [2026, 11, '2', '동부지역팀', '대성금속', 50000, 2500, '첫 납품'],
@@ -504,6 +518,11 @@ t('Q13 방식 바꾸기·대신 완료도 입력칸을 다시 그리기 전에 �
   px3.indexOf('wkInEntries_()') < px3.indexOf('wkRenderInput_()') && px3.indexOf("action: 'save'") < px3.indexOf("action: 'proxyComplete'"));
 // 3단계 서버(정적): 담당은 save·complete·reopen만, 잠금 앞에서 권한 확인
 t('E21 담당 권한은 save·complete·reopen만, FORBIDDEN이 잠금 앞', sv.includes("['save', 'complete', 'reopen'].indexOf(b.action) >= 0") && sv.indexOf("if (!isAdmin && !asMgr && !(mro.me") < sv.indexOf('acquireLock('));
+// 금요일 입력 시작 화면(정적): 상단·주차 막대 기간 표시, 예상치 안내, 마감 뒤 재촉(2안, 잠금 없음), 담당 '이번 주 2단계' 안내
+const hd = uiGrab('wkHeader_'), due = uiGrab('wkDue_'), ri4 = uiGrab('wkRenderInput_'), li4 = uiGrab('loadWeeklyInput_');
+t('Q14 상단 "입력 금~월 16:00"·막대 "11/20~11/23"', hd.includes('입력 ${wkMd_(res.openDate || res.inputDate)}~${wkMd_(res.inputDate)}') && hd.includes('${wkMd2_(s.openDate || s.inputDate)}~${wkMd2_(s.inputDate)}'));
+t('Q15 마감 뒤 재촉 문구(2안)·하루 넘으면 "N일 남음"', due.includes('⏰ 늦었어요! 지금 입력해 주시면 바로 결과가 모여요') && due.includes("dd + '일'") && ri4.includes('늦었어요! 지금 입력해 주시면 바로 결과가 모여요.'));
+t('Q16 예상치 안내(누적 기간 끝나기 전, 가마감 제외)·담당 2단계 주차 안내', ri4.includes('<b>예상치</b>로 넣어 두고') && ri4.includes('!d.gamagam && wkTodayIso_() <= d.to') && li4.includes("res.error === 'MODE_2STEP' && res.nextMode === '3단계' && res.next"));
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();

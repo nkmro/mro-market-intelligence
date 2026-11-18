@@ -5364,7 +5364,7 @@ async function weeklySalesReport_(req, res, auth, t0, timings) {
     return;
   }
   const plan = weeklySales.weekPlan(year, month, settings);
-  const opened = plan.filter(function (w) { return w.inputDate <= today; });
+  const opened = plan.filter(function (w) { return w.openDate <= today; }); // 입력이 열린 주차(전주 금요일부터)
   const reqWeek = String(body.week === undefined || body.week === null ? '' : body.week).trim();
   let entry = reqWeek ? opened.find(function (w) { return reqWeek === weeklySales.GAMAGAM ? w.gamagam : (!w.gamagam && String(w.week) === reqWeek); }) : null;
   if (!entry) entry = opened[opened.length - 1] || null;
@@ -5424,7 +5424,7 @@ function weeklyEntry_(year, month, week, settings, nowMs) {
   const m = Number(month) || (nowRep && nowRep.year === y ? nowRep.month : 0);
   if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, error: 'NO_REPORT_YET' };
   const plan = weeklySales.weekPlan(y, m, settings);
-  const opened = plan.filter(function (w) { return w.inputDate <= today; });
+  const opened = plan.filter(function (w) { return w.openDate <= today; }); // 입력이 열린 주차(전주 금요일부터)
   const wk = String(week === undefined || week === null ? '' : week).trim();
   let entry = wk ? opened.find(function (w) { return wk === weeklySales.GAMAGAM ? w.gamagam : (!w.gamagam && String(w.week) === wk); }) : opened[opened.length - 1];
   if (wk && !entry) return { ok: false, error: plan.some(function (w) { return wk === weeklySales.GAMAGAM ? w.gamagam : String(w.week) === wk; }) ? 'WEEK_NOT_OPEN' : 'BAD_WEEK' };
@@ -5456,13 +5456,17 @@ async function weeklySalesInput_(req, res, auth, t0, timings) {
   const lead = asMgr ? weeklyMgrTeam_(mro.me, teams) : weeklyLeadTeam_(mro.me, isAdmin, b.team, teams);
   if (!lead.ok) return fail(lead.error);
   const mode = weeklySales.modeAt(f.settings, f.progress, lead.team, en.entry); // ⑨ 그 주차에 적용되는 방식
-  if (asMgr && mode !== '3단계') return fail('MODE_2STEP', { team: lead.team });
+  if (asMgr && mode !== '3단계') {
+    // 시트는 이미 3단계인데 이번 주차가 아직 2단계(⑨ 다음 보고 주차부터)면 '언제부터'를 알려 준다 — 2026-11-18 박태영 담당 화면에서 확인된 혼동
+    const nx = f.settings.modes[lead.team] === '3단계' ? weeklySales.currentReport(nowMs, f.settings).next : null;
+    return fail('MODE_2STEP', { team: lead.team, nextMode: f.settings.modes[lead.team] || '2단계', next: nx ? { year: nx.year, month: nx.month, label: nx.label, openDate: nx.openDate, inputDate: nx.inputDate } : null });
+  }
   const view = weeklySales.inputView({ year: en.year, month: en.month, entry: en.entry, plan: en.plan, team: lead.team, customers: f.customers,
     weeklyRows: f.weekly, progressRows: f.progress, names: mro.names, adminEmail: ADMIN_EMAIL, adminTeam: mro.adminTeam, isAdmin: isAdmin, isCurrent: en.isCurrent,
     mode: mode, nextMode: f.settings.modes[lead.team] || '2단계', managerUsers: weeklySales.managerUsersOf(mro.userRows, lead.team), meManager: asMgr ? mro.me.name : '' });
   if (asMgr) {
     res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
-      isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각 }, view, { teams: [lead.team] }));
+      isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각, leadHour: f.settings.팀장마감시각 }, view, { teams: [lead.team] }));
     return;
   }
   // 고객사 정보 고치기 창: 그 팀 고객사 전체(사용 끔 포함) + 그 팀 활성 '담당' 이름 목록
@@ -5470,7 +5474,7 @@ async function weeklySalesInput_(req, res, auth, t0, timings) {
   const nowEn = weeklyEntry_(en.year, undefined, undefined, f.settings, nowMs);
   view.edit = nowEn.ok ? { month: nowEn.month, customers: weeklySales.customerEditList(f.customers, lead.team, f.weekly, nowEn.year, nowEn.month), managers: weeklySales.managersOf(mro.userRows, lead.team) } : null;
   res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
-    isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각 }, view));
+    isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각, leadHour: f.settings.팀장마감시각 }, view));
 }
 // 담당이 입력하는 팀 = 자기 팀(실적-고객사에 있는 팀만)
 function weeklyMgrTeam_(me, teams) {

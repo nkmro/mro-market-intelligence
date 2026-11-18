@@ -768,7 +768,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wk-sel { display: flex; gap: 6px; }
 .wk-due { margin-left: auto; background: #fdecea; color: var(--danger); font-weight: 700; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; }
 .wk-due-ok { background: #eef8f2; color: #1d6b43; }
-.wk-due-late { background: #f1efea; color: var(--text-muted); }
+.wk-due-late { background: #fff1d6; color: #9a5b00; }
+.wi-nudge { background: #fff1d6; border: 1px solid #f2c46b; color: #7a4a00; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0; }
 .wk-steps { display: flex; margin: 14px 0 4px; }
 .wk-step { flex: 1; position: relative; text-align: center; font-size: 12px; color: var(--text-muted); cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
 .wk-step:disabled { cursor: default; }
@@ -7962,7 +7963,7 @@ const WK_DOW_ = ['일', '월', '화', '수', '목', '금', '토'];
 function wkMd_(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); if (!m) return ''; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return Number(m[2]) + '/' + Number(m[3]) + '(' + WK_DOW_[d.getUTCDay()] + ')'; }
 function wkMd2_(iso) { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
 function wkDiff_(d) { if (d === null || d === undefined || !isFinite(d)) return ''; const v = Math.round(d * 1000) / 10; return `<span class="${v >= 0 ? 'wk-up' : 'wk-down'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%p</span>`; }
-// 마감 배지: 마감 전 = 남은 시간, 4팀 다 끝남 = 보고 끝, 마감 지남 = 마감 지남
+// 마감 배지: 마감 전 = 남은 시간(하루 이상이면 "N일"), 4팀 다 끝남 = 보고 끝, 마감 지남 = 재촉 문구(잠그지 않음 — 2026-11-18 재홍님 확정)
 function wkDue_(res) {
 const all = res.teams.length > 0 && res.doneCount === res.teams.length;
 if (all) return `<span class="wk-due wk-due-ok">✓ 보고 끝 (${res.teams.length}팀 완료)</span>`;
@@ -7970,9 +7971,9 @@ const h = Number(res.deadline.hour);
 const dueMs = Date.parse(res.deadline.date + 'T' + String(h).padStart(2, '0') + ':00:00+09:00');
 const left = dueMs - Date.now();
 const when = (res.deadline.date === res.today ? '오늘' : wkMd_(res.deadline.date)) + ' ' + String(h).padStart(2, '0') + ':00';
-if (left <= 0) return `<span class="wk-due wk-due-late">마감 지남 · ${when}</span>`;
-const mins = Math.floor(left / 60000), hh = Math.floor(mins / 60), mm = mins % 60;
-return `<span class="wk-due">⏰ 마감 ${when} · ${hh > 0 ? hh + '시간 ' : ''}${mm}분 남음</span>`;
+if (left <= 0) return `<span class="wk-due wk-due-late">⏰ 늦었어요! 지금 입력해 주시면 바로 결과가 모여요 (${res.teams.length - res.doneCount}팀 남음)</span>`;
+const mins = Math.floor(left / 60000), dd = Math.floor(mins / 1440), hh = Math.floor(mins / 60) % 24, mm = mins % 60;
+return `<span class="wk-due">⏰ 마감 ${when} · ${dd > 0 ? dd + '일' : (hh > 0 ? hh + '시간 ' : '') + mm + '분'} 남음</span>`;
 }
 function wkHeader_(res) {
 const st = res.steps || [];
@@ -7986,7 +7987,7 @@ for (let m = 1; m <= Number(res.maxMonth || res.month); m++) months += `<option 
 const monthSel = `<select class="cy-sel" aria-label="월" onchange="wkPick_({year:${res.year},month:Number(this.value),week:''})">${months}</select>`;
 const steps = st.map(function (s) {
 const cls = s.inputDate === res.inputDate && s.label === res.label ? 'cur' : (s.open ? 'past' : 'fut');
-return `<button class="wk-step ${cls}" ${s.open ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(s)}})"` : 'disabled'}><i></i><b>${escapeHtml(s.label)}</b><span>입력 ${wkMd_(s.inputDate)}</span><br><span>${s.gamagam ? '예상 마감' : '~' + wkMd2_(s.to) + ' 누적'}</span><br><span>${s.gamagam ? '<em class="wk-gm">가마감</em>' : (s.now ? '지금 보고' : (s.open ? '' : '예정'))}</span></button>`;
+return `<button class="wk-step ${cls}" ${s.open ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(s)}})"` : 'disabled'}><i></i><b>${escapeHtml(s.label)}</b><span>${wkMd2_(s.openDate || s.inputDate)}~${wkMd2_(s.inputDate)}</span><br><span>${s.gamagam ? '예상 마감' : '~' + wkMd2_(s.to) + ' 누적'}</span><br><span>${s.gamagam ? '<em class="wk-gm">가마감</em>' : (s.now ? '지금 보고' : (s.open ? '' : '예정'))}</span></button>`;
 }).join('');
 const n = res.teams.length, done = res.doneCount, ing = res.teams.filter(function (t) { return t.status === 'ing'; }).length;
 const cards = res.teams.map(function (t) {
@@ -7996,7 +7997,7 @@ return `<div class="wk-team ${t.status}"><span class="ico">${ic}</span><div styl
 }).join('');
 return `<div class="wk-card">
 <div class="wk-top"><button class="wk-nav" ${prev ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(prev)}})"` : 'disabled'} aria-label="이전 주차">‹</button>
-<div class="wk-title">${res.year}년 ${res.month}월 ${escapeHtml(res.label)}<small>입력일 ${wkMd_(res.inputDate)} · ${res.gamagam ? res.month + '월 예상 마감 실적' : wkMd2_(res.from) + ' ~ ' + wkMd2_(res.to) + ' 누적 실적'}</small></div>
+<div class="wk-title">${res.year}년 ${res.month}월 ${escapeHtml(res.label)}<small>입력 ${wkMd_(res.openDate || res.inputDate)}~${wkMd_(res.inputDate)} ${String(res.deadline.hour).padStart(2, '0')}:00 · ${res.gamagam ? res.month + '월 예상 마감 실적' : wkMd2_(res.from) + ' ~ ' + wkMd2_(res.to) + ' 누적 실적'}</small></div>
 <button class="wk-nav" ${next ? `onclick="wkPick_({year:${res.year},month:${res.month},week:${wkArg(next)}})"` : 'disabled'} aria-label="다음 주차">›</button>
 <div class="wk-meta"><span class="wk-sel">${yearSel}${monthSel}</span>${wkDue_(res)}</div></div>
 <div class="wk-steps">${steps}</div>
@@ -8104,6 +8105,11 @@ if (!box || (!wkRes_ && !wkMgrOnly_())) return;
 const reqNo = ++wkInReq_;
 const res = await wkFetch_(wkMgrOnly_() ? { view: 'input' } : { view: 'input', year: wkRes_.year, month: wkRes_.month, week: wkWeekArg_(wkRes_), team: wkInTeam_ || undefined }); // 담당 = 서버가 지금 보고 주차·자기 팀으로 정함
 if (reqNo !== wkInReq_ || !document.getElementById('wk-in')) return;
+if (res && res.error === 'MODE_2STEP' && res.nextMode === '3단계' && res.next) { // 시트는 3단계, 이번 주차는 아직 2단계(다음 보고 주차부터 적용)
+const n = res.next;
+document.getElementById('wk-in').innerHTML = `<div class="feed-empty">이번 주차는 아직 <b>2단계(팀장 입력)</b>로 진행 중이에요.<br>우리 팀은 <b>${escapeHtml(String(n.month))}월 ${escapeHtml(n.label)}</b>(입력 ${escapeHtml(wkMd_(n.openDate))}~${escapeHtml(wkMd_(n.inputDate))})부터 <b>3단계</b>라, 그때부터 여기서 내 담당 고객사 숫자를 직접 넣어요.</div>`;
+return;
+}
 if (!res || !res.ok) { document.getElementById('wk-in').innerHTML = `<div class="feed-empty">${escapeHtml(wkErr_(res))}</div>`; return; }
 wkIn_ = res; wkInTeam_ = res.team;
 wkRenderInput_();
@@ -8118,7 +8124,7 @@ const curL = d.gamagam ? '가마감(예상 마감)' : escapeHtml(d.label);
 const three = d.mode === '3단계', asMgr = d.role === 'manager', hh = String(d.deadlineHour === undefined ? 15 : d.deadlineHour).padStart(2, '0') + ':00';
 let x = `<div class="wi-bar">`;
 if (d.isAdmin) x += `<span style="font-size:13px;font-weight:700">입력할 팀</span><select class="cy-sel" aria-label="입력할 팀" onchange="wkInTeam_=this.value;wkAddOpen_=false;wkEditOpen_=false;wkCe_={};wkInMsg_='';loadWeeklyInput_()">${d.teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === d.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
-if (asMgr) x += `<span class="wi-mode"><b>${escapeHtml(String(d.year))}년 ${escapeHtml(String(d.month))}월 ${escapeHtml(d.label)}</b> · 입력일 ${escapeHtml(wkMd_(d.inputDate))} · 입력 방식: <b>3단계</b> (담당 입력 → 팀장 확정 → 임원·팀장 열람)</span></div>`;
+if (asMgr) x += `<span class="wi-mode"><b>${escapeHtml(String(d.year))}년 ${escapeHtml(String(d.month))}월 ${escapeHtml(d.label)}</b> · 입력 ${escapeHtml(wkMd_(d.openDate || d.inputDate))}~${escapeHtml(wkMd_(d.inputDate))} ${hh} · 입력 방식: <b>3단계</b> (담당 입력 → 팀장 확정 → 임원·팀장 열람)</span></div>`;
 else {
 // 3단계 ①⑨: 팀장·관리자가 고름 → 시트 실적-설정 '입력방식_{팀}'. 화면 값 = 시트 값(다음 보고부터), 이번 주차에 적용 중인 방식은 따로 안내
 const sheetMode = d.nextMode || d.mode || '2단계';
@@ -8132,10 +8138,15 @@ if (asMgr) {
 if (d.done) x += `<div class="wi-done">✓ <b>팀장이 ${escapeHtml(wkMd2_(d.done.at))} ${escapeHtml(String(d.done.at).slice(11))}에 팀 확정</b>했어요. 고칠 일이 있으면 팀장에게 알려 주세요.</div>`;
 else if (d.myDone) x += `<div class="wi-done">✓ <b>${escapeHtml(wkMd2_(d.myDone.at))} ${escapeHtml(String(d.myDone.at).slice(11))} 입력 완료</b>${d.myDone.proxy ? ' (팀장 대신 완료)' : ''} — 팀장 확정 전까지는 [완료 취소]로 다시 고칠 수 있어요.</div>`;
 else if (d.lockedReason === 'NO_ROWS') x += `<div class="pf-hint">이번 달 ${escapeHtml(d.me)}님 담당 고객사가 없어요. 담당이 바뀌었다면 팀장에게 알려 주세요.</div>`;
-else x += `<div class="wi-me">👤 <b>${escapeHtml(d.me)}</b>님 담당 고객사 <b>${d.rows.length}곳</b>만 보여요. 숫자를 넣고 <b>${d.inputDate === wkTodayIso_() ? '오늘' : escapeHtml(wkMd_(d.inputDate))} ${hh}까지</b> [입력 완료]를 눌러 주세요. 팀장 확정 전까지는 [완료 취소] 후 고칠 수 있어요.</div>`;
+else if (!(d.isCurrent && Date.now() >= Date.parse(d.inputDate + 'T' + String(d.deadlineHour === undefined ? 15 : d.deadlineHour).padStart(2, '0') + ':00:00+09:00'))) x += `<div class="wi-me">👤 <b>${escapeHtml(d.me)}</b>님 담당 고객사 <b>${d.rows.length}곳</b>만 보여요. 숫자를 넣고 <b>${d.inputDate === wkTodayIso_() ? '오늘' : escapeHtml(wkMd_(d.inputDate))} ${hh}까지</b> [입력 완료]를 눌러 주세요. 팀장 확정 전까지는 [완료 취소] 후 고칠 수 있어요.</div>`;
 } else if (d.done) x += `<div class="wi-done">✓ <b>${escapeHtml(wkMd_(String(d.done.at).slice(0, 10)))} ${escapeHtml(String(d.done.at).slice(11))} ${doneWord}</b> (${d.done.proxy ? '관리자 대리' : escapeHtml(d.done.byName || '')}) — ${d.allDone ? (d.isAdmin ? '4팀 모두 완료된 주차예요. 관리자만 [완료 취소]할 수 있어요(결과 메일은 다시 보내지 않아요).' : '4팀 모두 완료된 주차예요. 고칠 일이 있으면 관리자에게 알려 주세요.') : '4팀이 모두 완료되기 전까지는 [완료 취소]로 다시 고칠 수 있어요.'}</div>`;
 else if (d.lockedReason === 'PAST_WEEK') x += `<div class="pf-hint">지난 주차는 관리자만 고칠 수 있어요. 지금 보고 주차로 이동해 주세요.</div>`;
-if (!d.done && !(asMgr && (d.myDone || d.lockedReason === 'NO_ROWS')) && d.lockedReason !== 'PAST_WEEK') x += `<div class="pf-hint">${d.gamagam ? `<b>${escapeHtml(String(d.month))}월 예상 마감 실적</b>(그 달 전체)을 천원 단위로 넣어 주세요.` : `${escapeHtml(wkMd2_(d.from))}부터 <b>${escapeHtml(wkMd_(d.to))}까지의 누적 금액</b>을 천원 단위로 넣어 주세요.`} 실적이 없는 고객사는 비워 두면 0으로 봐요.</div>`;
+const inputOpen = !d.done && !(asMgr && (d.myDone || d.lockedReason === 'NO_ROWS')) && d.lockedReason !== 'PAST_WEEK';
+// 마감 뒤 재촉(잠그지 않음): 담당 = 담당마감시각, 팀장 = 팀장마감시각. 마감 전 금~일 = 누적 기간이 안 끝났으니 예상치 안내(2026-11-18 재홍님 확정)
+const dueH = asMgr ? d.deadlineHour : d.leadHour, dueMs = Date.parse(d.inputDate + 'T' + String(dueH === undefined ? 16 : dueH).padStart(2, '0') + ':00:00+09:00');
+const dueTxt = escapeHtml(wkMd_(d.inputDate)) + ' ' + String(dueH === undefined ? 16 : dueH).padStart(2, '0') + ':00';
+if (inputOpen && d.isCurrent && Date.now() >= dueMs) x += `<div class="wi-nudge">⏰ <b>늦었어요! 지금 입력해 주시면 바로 결과가 모여요.</b> ${asMgr ? escapeHtml(d.me) + '님, 담당 ' : ''}마감(${dueTxt})이 지났어요 — 숫자를 넣고 [${three && !asMgr ? '팀 확정' : '입력 완료'}]을 눌러 주세요.</div>`; // 문구 = 2026-11-18 재홍님 선택(2안)
+if (inputOpen) x += `<div class="pf-hint">${d.gamagam ? `<b>${escapeHtml(String(d.month))}월 예상 마감 실적</b>(그 달 전체)을 천원 단위로 넣어 주세요.` : `${escapeHtml(wkMd2_(d.from))}부터 <b>${escapeHtml(wkMd_(d.to))}까지의 누적 금액</b>을 천원 단위로 넣어 주세요.`} 실적이 없는 고객사는 비워 두면 0으로 봐요.${!d.gamagam && wkTodayIso_() <= d.to ? `<br>⏳ 아직 누적 기간(~${escapeHtml(wkMd_(d.to))})이 끝나지 않았어요. <b>예상치</b>로 넣어 두고, 마감(${dueTxt}) 전까지 고쳐 주세요.` : ''}</div>`;
 // 3단계 팀장: 담당 입력 현황(시안 B) + [대신 입력 완료](⑧)
 const mgrs = three && !asMgr ? (d.managers || []) : [];
 if (three && !asMgr) {
