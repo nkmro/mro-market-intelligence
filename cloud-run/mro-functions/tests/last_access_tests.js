@@ -64,6 +64,7 @@ const r3 = ctx.renderUserRow(u);
 t('F3 옛 서버 응답(필드 없음) → 아무것도 안 보임', !r3.includes('user-last-access'));
 const r4 = ctx.renderUserRow(Object.assign({}, u, { lastAccessMs: Date.now() }));
 t('F4 오늘 → "최종 접속 오늘 HH:MM"', /최종 접속 오늘 \d\d:\d\d/.test(r4));
+t('F7 최종 접속은 이메일 줄(top-line) 안, 입력 줄(user-row)에는 없음(2026-11-18 줄 넘김 방지)', /<div class="top-line">hong@nkmro\.com <span class="user-last-access">최종 접속 10\.3 17:05<\/span><\/div>/.test(r1) && !/user-row">[\s\S]*user-last-access/.test(r1));
 t('F5 저장 버튼·메시지 칸은 그대로', r1.includes('id="btn-u2"') && r1.includes('id="msg-u2"'));
 const ro = html.slice(html.indexOf('function refreshOnResume'), html.indexOf("document.addEventListener('visibilitychange'"));
 t('F6 백그라운드 복귀 때도 whoami 호출', ro.includes('refreshSessionViaWhoami_();'));

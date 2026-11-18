@@ -983,7 +983,7 @@ padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .user-save-btn:disabled { background: #b8bcb8; cursor: not-allowed; }
 .user-save-msg { font-size: 12px; color: var(--text-muted); }
-.user-last-access { font-size: 12px; color: var(--text-muted); }
+.user-last-access { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
 
 @media (max-width: 768px) {
     .sidebar {
@@ -3555,7 +3555,7 @@ const rk = 'u' + u.row;
 return `
 <div class="notif-item" style="cursor:default; align-items:flex-start;">
 <div class="flex1">
-<div class="top-line">${escapeHtml(u.email)}</div>
+<div class="top-line">${escapeHtml(u.email)} ${u.lastAccessMs === undefined ? '' : `<span class="user-last-access">${u.lastAccessMs ? '최종 접속 ' + fmtTime(u.lastAccessMs) : '접속 기록 없음'}</span>`}</div><!-- 2026-11-18 최종 접속을 이메일 옆으로(겸임팀 칸 추가 뒤 줄 넘김 방지) -->
 <div class="user-row">
 <input type="text" id="name-${rk}" value="${escapeHtml(u.name || '')}" placeholder="이름">
 <select id="role-${rk}">${ROLE_OPTIONS.map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select>
@@ -3564,7 +3564,6 @@ return `
 <select id="status-${rk}">${STATUS_OPTIONS.map(s => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
 <button class="user-save-btn" id="btn-${rk}" onclick="saveUserRow(${u.row})">저장</button>
 <span class="user-save-msg" id="msg-${rk}"></span>
-${u.lastAccessMs === undefined ? '' : `<span class="user-last-access">${u.lastAccessMs ? '최종 접속 ' + fmtTime(u.lastAccessMs) : '접속 기록 없음'}</span>`}
 </div>
 </div>
 </div>
