@@ -22,6 +22,7 @@ const {
   parseSettings
 } = require('./lib/sheetsClient');
 const feedEngine = require('./lib/feedEngine');
+const teamsLib = require('./lib/teams'); // 2026-11-18 팀장 겸임: 사용자팀마스터 L열 겸임팀
 const feedResponses = require('./lib/feedResponses');
 // 2026-08-20 (markThreadSeen 1단계, 설계 승인 완료 — MARKTHREADSEEN_CLOUDRUN_DESIGN.md):
 // Firestore 트랜잭션 기반 쓰기 idempotency 처리 공통화. markThreadSeenTest만 이번에 사용한다.
@@ -182,7 +183,7 @@ exports.sessionSyncTest = async (req, res) => {
 
 // POST /whoamiTest : sessionToken -> Firestore   ->    (   ).
 //  Firestore  +  Sheets , / .
-const USER_DATA_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:I');
+const USER_DATA_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L'); // 2026-11-18: L열 겸임팀까지
 exports.whoamiTest = async (req, res) => {
 setCors(res);
 if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -239,7 +240,7 @@ console.error('[lastAccess] 기록 실패(무시): ' + e);
 }
 }
 const serverMs = Date.now() - t0;
-res.status(200).json({ ok: true, serverMs, timings, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4] });
+res.status(200).json({ ok: true, serverMs, timings, email: row[0], name: row[1], role: row[2], team: row[3], teams: teamsLib.teamsOf(row[3], row[teamsLib.EXTRA_COL]), status: row[4] });
 } catch (err) {
 const serverMs = Date.now() - t0;
 res.status(500).json({ ok: false, serverMs, error: String((err && err.message) || err) });
@@ -354,14 +355,14 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'FORBIDDEN' });
 return;
 }
-const myTeam = me[3];
+const myTeams = teamsLib.teamsOf(me[3], me[teamsLib.EXTRA_COL]); // 겸임 팀장 = 맡은 팀 전부의 담당
 const managers = [];
 rows.forEach(function (row) {
 if (!row[0]) return;
 const role = row[2];
 const team = row[3];
 const status = row[4];
-if (role === '담당' && String(team || '').trim() === String(myTeam || '').trim() && status === '활성') {
+if (role === '담당' && myTeams.indexOf(String(team || '').trim()) >= 0 && status === '활성') {
 managers.push({ email: row[0], name: row[1] });
 }
 });
@@ -405,7 +406,7 @@ res.status(500).json({ ok: false, serverMs, error: String((err && err.message) |
 const SHEET_POST_NAME = '시황게시물';
 const SHEET_ITEM_NAME = '품목마스터';
 const SHEET_COMMENT_NAME = '댓글';
-const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:I');
+const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L'); // 2026-11-18: L열 겸임팀까지(rowsToUsers teams)
 const POLL_POST_RANGE = encodeURIComponent(SHEET_POST_NAME + '!A2:H');
 // 2026-09-28: A2:H → A2:I (I열 원자재수정일을 feedEngine.relatedActiveItems cutoff에 쓰기 위함)
 const POLL_ITEM_RANGE = encodeURIComponent(SHEET_ITEM_NAME + '!A2:I');
@@ -711,7 +712,7 @@ exports.getCommentsTest = async (req, res) => {
 
     const leadScope = settings['팀장_열람범위'] || null;
     const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
-    const comments = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+    const comments = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
 
     const serverMs = Date.now() - t0;
     res.status(200).json(Object.assign({ serverMs: serverMs, timings: timings }, feedResponses.buildGetCommentsResponse(comments)));
@@ -1075,7 +1076,7 @@ async function postCommentAction_(viewer, allUsers, allPosts, allItems, allComme
 
   const leadScope = settings['팀장_열람범위'] || null;
   const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
-  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
   const commentsResp = feedResponses.buildGetCommentsResponse(visibleComments);
 
   const commentsByPost = feedEngine.groupCommentsByPost(updatedAllComments);
@@ -1207,7 +1208,7 @@ async function loginAction_(email, password, userRows, settings, deviceId) {
     if (String(row[0] || '').trim().toLowerCase() === normalizedEmail) {
       userRowIndex = i;
       user = {
-        email: row[0], name: row[1], role: row[2], team: row[3], status: row[4],
+        email: row[0], name: row[1], role: row[2], team: row[3], teams: teamsLib.teamsOf(row[3], row[teamsLib.EXTRA_COL]), status: row[4],
         passwordHash: row[6] || null, failCount: Number(row[7]) || 0, passwordChangedAtRaw: row[8]
       };
       break;
@@ -1271,6 +1272,7 @@ async function loginAction_(email, password, userRows, settings, deviceId) {
     name: user.name,
     role: user.role,
     team: user.team,
+    teams: user.teams,
     passwordExpired: passwordExpired
   };
 }
@@ -1403,7 +1405,7 @@ exports.getItemsTest = async (req, res) => {
     const isAdmin = String(viewer.email).trim().toLowerCase() === ADMIN_EMAIL;
     const items = [];
     allItems.forEach(function (it) {
-      if (!isAdmin && String(it.team).trim() !== String(viewer.team).trim()) return;
+      if (!isAdmin && !teamsLib.teamsMatch(viewer.teams || [viewer.team], [it.team])) return; // 겸임이면 맡은 팀 전부
       items.push({
         itemId: it.itemId, customer: it.customer, itemName: it.itemName, manager: it.manager,
         team: it.team, materials: it.materials, status: it.status
@@ -1412,11 +1414,11 @@ exports.getItemsTest = async (req, res) => {
 
     let resultItems = items;
     if (viewer.role === '담당') {
-      resultItems = items.filter(function (it) { return it.team === viewer.team; });
+      resultItems = items.filter(function (it) { return teamsLib.teamsMatch(teamsLib.viewTeams(viewer), it.team); });
     } else if (viewer.role === '팀장') {
       const scope = settings['팀장_열람범위']; // 팀장_열람범위
       if (scope !== '전체') { // 전체
-        resultItems = items.filter(function (it) { return it.team === viewer.team; });
+        resultItems = items.filter(function (it) { return teamsLib.teamsMatch(teamsLib.viewTeams(viewer), it.team); });
       }
     }
 
@@ -1502,7 +1504,7 @@ exports.getCustomersTest = async (req, res) => {
 // 자체는 건드리지 않는다(다른 배포된 함수들이 그대로 쓰고 있음).
 // 사용자 현황 목록 전용 범위 — K열(최종접속)까지. 다른 함수가 쓰는 POLL_USER_RANGE(A2:I)는 그대로
 // (COMPETENCY_USER_RANGE A2:J처럼 필요한 함수만 넓힌 상수를 따로 두는 기존 방식).
-const USERS_LIST_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:K');
+const USERS_LIST_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L'); // 2026-11-18: L열 겸임팀까지
 exports.getUsersTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -1546,8 +1548,8 @@ exports.getUsersTest = async (req, res) => {
     for (let i = 0; i < rawUserRows.length; i++) {
       const row = rawUserRows[i];
       if (!row[0]) continue;
-      if (!isAdmin && String(row[3]).trim() !== String(viewer.team).trim()) continue;
-      users.push({ row: i + 2, email: row[0], name: row[1], role: row[2], team: row[3], status: row[4], lastAccessMs: lastAccess.readFromRow(row, feedEngine.sheetSerialToMs) });
+      if (!isAdmin && (viewer.teams || [viewer.team]).indexOf(String(row[3]).trim()) < 0) continue; // 겸임 팀장 = 맡은 팀 전부
+      users.push({ row: i + 2, email: row[0], name: row[1], role: row[2], team: row[3], extraTeams: String(row[teamsLib.EXTRA_COL] || '').trim(), status: row[4], lastAccessMs: lastAccess.readFromRow(row, feedEngine.sheetSerialToMs) });
     }
 
     const serverMs = Date.now() - t0;
@@ -1701,7 +1703,7 @@ function buildCommentUpdateResponse_(viewer, allUsers, allPosts, allItems, setti
   const post = allPosts.find(function (p) { return String(p.id).trim() === String(postId).trim(); });
   const leadScope = settings['팀장_열람범위'] || null;
   const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
-  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+  const visibleComments = feedEngine.visibleCommentsForPost(updatedAllComments, postId, viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
   const commentsResp = feedResponses.buildGetCommentsResponse(visibleComments);
 
   const commentsByPost = feedEngine.groupCommentsByPost(updatedAllComments);
@@ -1995,7 +1997,7 @@ async function upsertItemAction_(viewer, allUsers, allCustomers, body) {
   if (!managerUser) {
     return { ok: false, error: 'MANAGER_NOT_FOUND' };
   }
-  if (String(managerUser.team).trim() !== String(viewer.team).trim()) {
+  if ((viewer.teams || [String(viewer.team).trim()]).indexOf(String(managerUser.team).trim()) < 0) { // 겸임 팀장 = 맡은 팀 담당 모두
     return { ok: false, error: 'MANAGER_NOT_IN_YOUR_TEAM' };
   }
   const team = managerUser.team;
@@ -2300,6 +2302,13 @@ async function updateUserAction_(viewer, body) {
   if (body.status !== undefined && VALID_STATUS_.indexOf(body.status) === -1) {
     return { ok: false, error: 'INVALID_STATUS' };
   }
+  // 2026-11-18 팀장 겸임: L열 겸임팀(쉼표로 여러 팀, 빈칸 = 겸임 없음). 팀 이름은 소속팀과 같은 목록에서만
+  let extraTeams;
+  if (body.extraTeams !== undefined) {
+    const list = teamsLib.splitTeams(body.extraTeams);
+    if (list.some(function (t) { return VALID_TEAMS_.indexOf(t) === -1; })) return { ok: false, error: 'INVALID_TEAM' };
+    extraTeams = list.filter(function (t, i) { return list.indexOf(t) === i && t !== String(body.team === undefined ? '' : body.team); }).join(',');
+  }
 
   const client = await getUserWriteClient_();
   // Code.gs와 동일한 순서(name -> role -> team -> status)로, 전달된 필드만 개별 갱신한다
@@ -2316,6 +2325,9 @@ async function updateUserAction_(viewer, body) {
   if (body.status !== undefined) {
     await updateUserCell_(client, rowNum, 'E', body.status);
   }
+  if (extraTeams !== undefined) {
+    await updateUserCell_(client, rowNum, 'L', extraTeams);
+  }
   return { ok: true };
 }
 
@@ -2324,7 +2336,7 @@ exports.updateUserTest = async (req, res) => {
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
   try {
-    const { sessionToken, idempotencyKey, row, name, role, team, status } = req.body || {};
+    const { sessionToken, idempotencyKey, row, name, role, team, status, extraTeams } = req.body || {};
     const auth = await authenticateSession(firestore, sessionToken);
     if (!auth.ok) {
       const serverMs = Date.now() - t0;
@@ -2350,7 +2362,7 @@ exports.updateUserTest = async (req, res) => {
     }
 
     const result = await withIdempotency(firestore, idempotencyKey, 'updateUser', async function () {
-      return updateUserAction_(viewer, { row: row, name: name, role: role, team: team, status: status });
+      return updateUserAction_(viewer, { row: row, name: name, role: role, team: team, status: status, extraTeams: extraTeams });
     });
 
     const serverMs = Date.now() - t0;
@@ -2995,7 +3007,7 @@ exports.getPinnedCommentsTest = async (req, res) => {
         const d = doc.data();
         const original = allComments.find(function (c) { return c.commentId === doc.id; });
         if (!original) { staleDocIds.push(doc.id); return; }
-        const visible = feedEngine.visibleCommentsForPost(allComments, d.postId, viewer.role, viewer.team, leadScope, teamByEmail);
+        const visible = feedEngine.visibleCommentsForPost(allComments, d.postId, viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
         const stillVisible = visible.some(function (c) { return c.commentId === doc.id; });
         if (!stillVisible) return; // 이 조회자 팀 스코프에서는 안 보임 -> 이번 응답에서만 제외(문서는 유지)
         // 2026-09-14: 게시물을 못 찾는 예외적인 경우(이론상 자가정리로 걸러지지만 방어적으로)에도
@@ -3073,7 +3085,7 @@ exports.pinCommentTest = async (req, res) => {
 
     const leadScope = settings['팀장_열람범위'] || null;
     const teamByEmail = feedEngine.buildTeamByEmail(allUsers);
-    const visible = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, viewer.team, leadScope, teamByEmail);
+    const visible = feedEngine.visibleCommentsForPost(allComments, postId, viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
     const target = visible.find(function (c) { return c.commentId === commentId; });
     if (!target) {
       const serverMs = Date.now() - t0;

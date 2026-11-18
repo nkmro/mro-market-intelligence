@@ -36,8 +36,8 @@ t('R6 열 상수 K / 10', la.LAST_ACCESS_COL === 'K' && la.LAST_ACCESS_COL_INDEX
 // 3) index.js 배선(정적 확인)
 const idx = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
 const gu = idx.slice(idx.indexOf('exports.getUsersTest'), idx.indexOf('exports.getUsersTest') + 2500);
-t('I1 getUsersTest는 A2:K 범위 사용', /USERS_LIST_RANGE = encodeURIComponent\(SHEET_USER_NAME \+ '!A2:K'\)/.test(idx) && gu.includes('[USERS_LIST_RANGE]'));
-t('I2 다른 함수용 POLL_USER_RANGE는 A2:I 그대로', idx.includes("const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:I');"));
+t('I1 getUsersTest는 A2:L 범위 사용(K 최종접속 + 2026-11-18 L 겸임팀)', /USERS_LIST_RANGE = encodeURIComponent\(SHEET_USER_NAME \+ '!A2:L'\)/.test(idx) && gu.includes('[USERS_LIST_RANGE]'));
+t('I2 POLL_USER_RANGE는 A2:L(2026-11-18 겸임팀 L열까지 — K 최종접속은 읽기만, 쓰기 없음)', idx.includes("const POLL_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L');"));
 t('I3 getUsersTest 응답에 lastAccessMs', gu.includes('lastAccessMs: lastAccess.readFromRow(row, feedEngine.sheetSerialToMs)'));
 const wh = idx.slice(idx.indexOf('exports.whoamiTest'), idx.indexOf('exports.getSettingsTest'));
 t('I4 whoami: shouldMark 확인 후 K열 쓰기', wh.includes('lastAccess.shouldMark(session.lastAccessMarkedAt') && wh.includes('lastAccess.LAST_ACCESS_COL, msToSheetSerial_(nowMs)'));

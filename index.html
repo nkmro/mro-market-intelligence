@@ -810,6 +810,7 @@ function saveSession(res) {
     name: res.name,
     role: res.role,
     team: res.team,
+    teams: res.teams || [res.team], // 2026-11-18 팀장 겸임: 소속팀 + 겸임팀
     passwordExpired: res.passwordExpired || false
   }));
   // 방금 실제로 로그인에 성공한 경우에만 세워지는 표시. feed.html이 이 표시를 보고

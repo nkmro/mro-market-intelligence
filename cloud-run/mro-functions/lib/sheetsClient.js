@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/sheetsClient.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 rowsToItems에 원자재수정일 I열 추가)
+// [DELIVERY] cloud-run/mro-functions/lib/sheetsClient.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 rowsToItems에 원자재수정일 I열 추가; 2026-11-18 rowsToUsers에 teams(소속팀+L열 겸임팀))
 // cloud-run/mro-functions/lib/sheetsClient.js
 //
 // Sheets 읽기 공통화. pollSignalTest가 이미 쓰던 GoogleAuth 클라이언트 생성 +
@@ -14,6 +14,7 @@
 // 시점에 한다.
 
 const { GoogleAuth } = require('google-auth-library');
+const teamsLib = require('./teams');
 
 async function getSheetsClient() {
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
@@ -32,7 +33,8 @@ async function batchGetValues(client, spreadsheetId, ranges, opts) {
   return (resp.data && resp.data.valueRanges) || [];
 }
 
-// 사용자팀마스터 (!A2:I) : email,name,role,team,status,lastCheckedAt(F),... (G/H는 이번 범위에서 안 씀)
+// 사용자팀마스터 (!A2:L) : email,name,role,team,status,lastCheckedAt(F),... (G/H는 이번 범위에서 안 씀)
+// teams = 소속팀(D) + 겸임팀(L) — lib/teams.js (2026-11-18 팀장 겸임)
 function rowsToUsers(rows) {
   return rows.map(function (row) {
     return {
@@ -41,7 +43,8 @@ function rowsToUsers(rows) {
       role: row[2],
       team: row[3],
       status: row[4],
-      lastCheckedAtRaw: row[5]
+      lastCheckedAtRaw: row[5],
+      teams: teamsLib.teamsOf(row[3], row[teamsLib.EXTRA_COL])
     };
   });
 }

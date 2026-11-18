@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 받는 사람 규칙 변경: 팀장이 고정한 댓글도 그 팀장 본인과 임원 전원이 받음)
+// [DELIVERY] cloud-run/mro-functions/lib/issueMail.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-10-14 받는 사람 규칙 변경: 팀장이 고정한 댓글도 그 팀장 본인과 임원 전원이 받음; 2026-11-18 겸임 팀장이 고정하면 맡은 팀 전부)
 // cloud-run/mro-functions/lib/issueMail.js
 //
 // 이슈 댓글 메일(설계서 ISSUE_COMMENT_MAIL_DESIGN.md v4)의 "계산" 부분만 모은 모듈. 시트/Firestore/메일
@@ -12,6 +12,7 @@
 // 2) buildSubject/buildHtml/buildText(): 메일 제목·본문(앱 화면 디자인 차용, 시안 v3 + 2026-10-07 Outlook 대응·댓글 바로가기)
 
 const { sheetSerialToMs } = require('./feedEngine');
+const teamsLib = require('./teams');
 
 const APP_URL = 'https://nkmro.github.io/mro-market-intelligence/feed.html';
 const C = { accent:'#3a2f6e', headerEnd:'#7c5aa8', blue:'#2f5fd0', blueSoft:'#e8eefc', blueBorder:'#c9d9f7',
@@ -188,11 +189,11 @@ function planIssueMail(input) {
     if (!pinner || pinner.status !== '활성') { excluded.push({ commentId: pin.commentId, reason: 'PINNER_NOT_ACTIVE' }); return; }
     let targets;
     if (pinner.role === '팀장') {
-      const team = String(pinner.team || '').trim();
+      const pinTeams = teamsLib.teamsOf(pinner.team, (pinner.teams || []).slice(1).join(',')); // 겸임 팀장 = 맡은 팀 전부(2026-11-18 재홍님 ②-나)
       const pinnerEmail = lower(pinner.email);
       // 2026-10-14: 고정한 팀장 본인과 임원(팀 무관)도 받는다. 다른 팀의 담당·일반, 다른 팀장은 받지 않는다.
       targets = active.filter(function (u) {
-        if (String(u.team || '').trim() === team && (u.role === '담당' || u.role === '일반')) return true;
+        if (pinTeams.indexOf(String(u.team || '').trim()) >= 0 && (u.role === '담당' || u.role === '일반')) return true;
         if (lower(u.email) === pinnerEmail) return true;
         return u.role === '임원';
       });

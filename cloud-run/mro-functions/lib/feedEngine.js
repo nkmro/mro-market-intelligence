@@ -1,4 +1,4 @@
-// [DELIVERY] cloud-run/mro-functions/lib/feedEngine.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 relatedActiveItems cutoff에 원자재수정일 I열 반영)
+// [DELIVERY] cloud-run/mro-functions/lib/feedEngine.js 전체 교체용 — GitHub 커밋본이 곧 gcloud 배포 소스(단일본). (2026-09-28 relatedActiveItems cutoff에 원자재수정일 I열 반영; 2026-11-18 팀장 겸임: teamScopeAllows·작성자 팀이 팀 목록도 받음)
 // cloud-run/mro-functions/lib/feedEngine.js
 //
 // 공통 판정/변환 로직. 기존 index.js에 pollSignalTest 전용으로 있던 5개 함수
@@ -19,6 +19,7 @@
 //
 // [2026-08-19 날짜/시간대 버그 수정, 기존 그대로 승계] 시트 시리얼 넘버는 스프레드시트에
 // 설정된 시간대(서울, UTC+9, DST 없음) 기준 벽시계 값이라, UTC로 취급하면 9시간 어긋난다.
+const teamsLib = require('./teams'); // 2026-11-18 팀장 겸임: 팀 비교는 teamsMatch(문자열끼리는 예전과 같은 ===)
 const SPREADSHEET_UTC_OFFSET_MS = 9 * 60 * 60 * 1000; // Asia/Seoul = UTC+9, DST 없음
 
 // Google Sheets serial date(1899-12-30 기준, 스프레드시트 시간대(서울) 벽시계 값) -> 실제 UTC Unix ms.
@@ -39,8 +40,8 @@ function sheetSerialToMs(v) {
 function teamScopeAllows(role, viewerTeam, targetTeam, leadScope, authorRole) {
   if (authorRole === '임원') return true;
   if (role === '임원') return true;
-  if (role === '팀장') return leadScope === '전체' ? true : viewerTeam === targetTeam;
-  if (role === '담당' || role === '일반') return viewerTeam === targetTeam;
+  if (role === '팀장') return leadScope === '전체' ? true : teamsLib.teamsMatch(viewerTeam, targetTeam);
+  if (role === '담당' || role === '일반') return teamsLib.teamsMatch(viewerTeam, targetTeam);
   return false;
 }
 
@@ -69,7 +70,7 @@ function relatedActiveItems(post, allItems) {
 function buildTeamByEmail(allUsers) {
   const map = {};
   allUsers.forEach(function (u) {
-    map[String(u.email || '').trim().toLowerCase()] = u.team;
+    map[String(u.email || '').trim().toLowerCase()] = teamsLib.viewTeams(u); // 겸임이면 팀 목록(댓글 작성자 팀 판단)
   });
   return map;
 }
@@ -80,7 +81,7 @@ function findViewer(allUsers, email) {
   const target = String(email || '').trim().toLowerCase();
   const row = allUsers.find(function (u) { return String(u.email || '').trim().toLowerCase() === target; });
   if (!row) return null;
-  return { email: row.email, name: row.name, role: row.role, team: row.team, lastCheckedAtRaw: row.lastCheckedAtRaw };
+  return { email: row.email, name: row.name, role: row.role, team: row.team, teams: row.teams, lastCheckedAtRaw: row.lastCheckedAtRaw };
 }
 
 // [신규] 댓글을 postId별로 그룹핑 (기존 pollSignalTest/각 handle*_가 반복 구현하던 것을 공용화).
@@ -177,7 +178,7 @@ function needsAttentionFor(viewer, itemSummaries, lastCheckedMs) {
 function buildFeedEntry(viewer, post, allItems, commentsByPost, leadScope, teamByEmail) {
   const candidateItems = relatedActiveItems(post, allItems);
   const viewableItems = candidateItems.filter(function (it) {
-    return teamScopeAllows(viewer.role, viewer.team, it.team, leadScope);
+    return teamScopeAllows(viewer.role, teamsLib.viewTeams(viewer), it.team, leadScope);
   });
   if (viewableItems.length === 0) return null;
 
@@ -189,7 +190,7 @@ function buildFeedEntry(viewer, post, allItems, commentsByPost, leadScope, teamB
   });
 
   const items = viewableItems.map(function (it) {
-    return summarizeItemFull(it, byItemId[String(it.itemId)] || [], viewer.role, viewer.team, leadScope, teamByEmail);
+    return summarizeItemFull(it, byItemId[String(it.itemId)] || [], viewer.role, teamsLib.viewTeams(viewer), leadScope, teamByEmail);
   });
 
   const confirmedCount = items.filter(function (s) { return s.confirmed; }).length;

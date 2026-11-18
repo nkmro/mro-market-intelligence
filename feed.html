@@ -1805,10 +1805,11 @@ async function refreshSessionViaWhoami_() {
       session.name = res.name || session.name;
       session.role = res.role || session.role;
       session.team = res.team || session.team;
+      session.teams = res.teams || session.teams || [session.team]; // 2026-11-18 팀장 겸임
       session.email = res.email || session.email;
       localStorage.setItem('mro_session', JSON.stringify(session));
       const sidebarMe = document.getElementById('sidebar-me');
-      if (sidebarMe) sidebarMe.textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+      if (sidebarMe) sidebarMe.textContent = meLabel_();
     }
   } catch (e) {
     // 네트워크 오류/타임아웃 등 — 조용히 무시. 실패해도 기존 Apps Script 기반 인증 흐름은 그대로 유지된다.
@@ -1909,7 +1910,7 @@ const feedOk = await feedPromise;
 if (!feedOk) { clearTimeout(__authSafetyTimer); return; } // 세션 만료 - 이미 로그인 화면으로 이동 중, 화면을 보여줄 필요 없음
 const __authTFeed = Date.now();
 document.getElementById('app-shell').style.display = 'flex';
-document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+document.getElementById('sidebar-me').textContent = meLabel_();
 if (session.email === ADMIN_EMAIL) {
 document.getElementById('nav-users').style.display = 'flex';
 }
@@ -2024,7 +2025,7 @@ function showForcedPasswordChangeOverlay() {
 document.getElementById('app-shell').style.display = 'flex';
 hideAuthLoadingOverlay();
 hideGenericLoading();
-document.getElementById('sidebar-me').textContent = '👤 ' + (session.name || '') + ' ' + (session.role || '');
+document.getElementById('sidebar-me').textContent = meLabel_();
 const overlay = document.createElement('div');
 overlay.className = 'item-form-overlay';
 overlay.id = 'pw-change-overlay';
@@ -3559,6 +3560,7 @@ return `
 <input type="text" id="name-${rk}" value="${escapeHtml(u.name || '')}" placeholder="이름">
 <select id="role-${rk}">${ROLE_OPTIONS.map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select>
 <select id="team-${rk}">${TEAM_OPTIONS.map(t => `<option value="${t}" ${t === u.team ? 'selected' : ''}>${t}</option>`).join('')}</select>
+<input type="text" id="extra-${rk}" value="${escapeHtml(u.extraTeams || '')}" placeholder="겸임팀 없음" title="겸임팀: 맡은 팀이 둘 이상인 팀장만. 여러 팀은 쉼표로(예: 영업지원,소싱) — 시트 사용자팀마스터 L열">
 <select id="status-${rk}">${STATUS_OPTIONS.map(s => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
 <button class="user-save-btn" id="btn-${rk}" onclick="saveUserRow(${u.row})">저장</button>
 <span class="user-save-msg" id="msg-${rk}"></span>
@@ -3575,12 +3577,14 @@ const nameEl = document.getElementById('name-' + rk);
 const roleEl = document.getElementById('role-' + rk);
 const teamEl = document.getElementById('team-' + rk);
 const statusEl = document.getElementById('status-' + rk);
+const extraEl = document.getElementById('extra-' + rk);
 const btn = document.getElementById('btn-' + rk);
 const msg = document.getElementById('msg-' + rk);
 const name = nameEl.value.trim();
 const role = roleEl.value;
 const team = teamEl.value;
 const status = statusEl.value;
+const extraTeams = extraEl ? extraEl.value.trim() : undefined; // 2026-11-18 팀장 겸임(L열)
 btn.disabled = true;
 msg.textContent = '저장 중...';
 try {
@@ -3588,7 +3592,7 @@ try {
 // CLOUD_RUN_UPDATE_USER_URL이 채워져 있으면 updateUserRemote_()의 3단 폴백 정책을 먼저
 // 시도하고, 비어 있으면(롤백 상태) 기존 Apps Script 경로를 그대로 쓴다 — upsertItem과
 // 동일한 "빈 문자열로 롤백" 스위치 패턴.
-const res = (await updateUserRemote_({ row, name, role, team, status }))
+const res = (await updateUserRemote_({ row, name, role, team, status, extraTeams }))
   || await callApi('updateUser', { row, name, role, team, status });
 if (!res.ok) {
 if (res.error === 'AMBIGUOUS_NEEDS_CONFIRMATION') {
@@ -3603,7 +3607,7 @@ return;
 msg.textContent = '저장됨 ✓';
 btn.disabled = false;
 const u = usersState.users.find(x => x.row === row);
-if (u) { u.name = name; u.role = role; u.team = team; u.status = status; }
+if (u) { u.name = name; u.role = role; u.team = team; u.status = status; if (extraTeams !== undefined) u.extraTeams = extraTeams; }
 setTimeout(() => { const m = document.getElementById('msg-' + rk); if (m) m.textContent = ''; }, 2000);
 } catch (e) {
 msg.textContent = '네트워크 오류';
@@ -4248,6 +4252,10 @@ async function upsertItemRemote_(payload) {
 // 호출부(saveUserRow)가 기존 callApi('updateUser', payload) Apps Script 경로를 그대로 쓰게
 // 한다(롤백 스위치, 다른 *Remote_() 함수들과 동일). 관리자 전용 권한 판정은 서버(Cloud Run)가
 // Code.gs와 동일하게 그대로 수행한다.
+// 2026-11-18 팀장 겸임: 맡은 팀 목록(소속팀 + 사용자팀마스터 L열 겸임팀). 예전 세션(teams 없음)은 소속팀 하나
+function myTeams_() { const t = session && Array.isArray(session.teams) && session.teams.length ? session.teams : [session && session.team]; return t.map(function (x) { return String(x || '').trim(); }).filter(Boolean); }
+// 사이드바 아래 이름: 겸임이면 "👤 한겸임 팀장 · 중부·영업지원"
+function meLabel_() { const t = myTeams_(); return '👤 ' + (session.name || '') + ' ' + (session.role || '') + (t.length > 1 ? ' · ' + t.join('·') : ''); }
 async function updateUserRemote_(payload) {
   if (!CLOUD_RUN_UPDATE_USER_URL) return null;
 
@@ -7415,12 +7423,12 @@ itemsState.customers = customersRes.ok ? (customersRes.customers || []) : [];
 itemsState.teamUsers = usersRes.ok ? (usersRes.users || []).filter(function (u) {
   // 시트 값에 섞여 들어올 수 있는 공백/형식 차이 때문에 정상적으로 존재하는 담당자가 드롭다운에서
   // 누락되는 문제가 있어(String+trim 없이 비교), 이 프로젝트 전반의 관례대로 공백을 제거하고 비교한다.
-  return String(u.team || '').trim() === String(session.team || '').trim()
+  return myTeams_().indexOf(String(u.team || '').trim()) >= 0 // 겸임 팀장 = 맡은 팀 담당 모두
     && String(u.status || '').trim() === '활성'
     && String(u.role || '').trim() === '담당';
 }) : [];
 if (!itemsState.loaded) {
-itemsState.filterTeam = session.team || '';
+itemsState.filterTeam = myTeams_().length > 1 ? '' : (session.team || ''); // 겸임이면 처음엔 맡은 팀 전체
 }
 itemsState.loaded = true;
 // 응답을 기다리는 사이 사용자가 이미 다른 탭으로 이동했을 수 있다. 이때 items-view는 display:none이라
@@ -7450,7 +7458,7 @@ function renderItemsTeamFilterOptions() {
 const select = document.getElementById('items-team-filter');
 if (!select) return;
 const teams = Array.from(new Set(itemsState.items.map(function (it) { return it.team; }).filter(Boolean)));
-select.innerHTML = '<option value="">전체 팀</option>' + teams.map(function (t) {
+select.innerHTML = '<option value="">' + (myTeams_().length > 1 && session.email !== ADMIN_EMAIL ? escapeHtml(myTeams_().join('·')) + ' (내 팀 전체)' : '전체 팀') + '</option>' + teams.map(function (t) {
 return '<option value="' + escapeHtml(t) + '" ' + (t === itemsState.filterTeam ? 'selected' : '') + '>' + escapeHtml(t) + '</option>';
 }).join('');
 }
