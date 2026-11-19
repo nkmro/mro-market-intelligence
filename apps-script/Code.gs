@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-13 인사평가 자동 연도 전환에 성과평가 반영: 새해 파일의 성과-월실적·성과-마감 탭도 역량- 탭처럼 2행 아래 내용만 지움(YR_PERF_CLEAR_TABS_), 성과-평가기준·인사평가설정은 그대로)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-19 자동 연도 전환에 실적관리(주간 실적) 파일 추가: 실적관리파일_{다음 해}도 같은 예약으로 복사·정리·등록(yrSalesPrep_) / 2026-11-13 인사평가 자동 연도 전환에 성과평가 반영: 새해 파일의 성과-월실적·성과-마감 탭도 역량- 탭처럼 2행 아래 내용만 지움(YR_PERF_CLEAR_TABS_), 성과-평가기준·인사평가설정은 그대로)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -5265,6 +5265,107 @@ const YR_PERF_CLEAR_TABS_ = '성과-월실적|성과-마감';
 const YR_TEST_PREFIX_ = 'TEST_';
 const YR_HANDLER_ = 'yearRolloverDaily';
 
+// ---- 2026-11-19 실적관리(주간 실적) 파일도 같은 예약으로 (재홍님 시안 승인) ----
+// 실적관리파일_{올해} 복사 → 실적-주간·실적-진행 2행 아래 비움 → 실적-고객사: 고객사마다 12월 기준 최종 줄 1개만(적용월 비움, 순서는 첫 줄 값 —
+// Cloud Run lib/weeklySales.js customersAt(rows, 12)과 같은 규칙) → 실적-연간계획: 연도만 다음 해로, 숫자만 비움(수식 칸은 그대로, 팀·구매사명 그대로) →
+// 실적-설정은 그대로 → 서비스 계정 편집자 → '설정' 탭 실적관리파일_{다음 해} 등록 → 메일(인사평가와 따로).
+// 시작일은 실적-설정 탭 '연도전환시작일'(없으면 1). 인사평가와 따로 돈다: 한쪽이 실패해도 다른 쪽은 진행, 실패한 쪽만 다음 날 다시.
+const YR_SALES_KEY_PREFIX_ = '실적관리파일_';
+const YR_SALES_CLEAR_TABS_ = '실적-주간|실적-진행';
+const YR_SALES_CUST_TAB_ = '실적-고객사';
+const YR_SALES_PLAN_TAB_ = '실적-연간계획';
+// 종류별 값. prop = 이어서 하기용 스크립트 속성 이름 앞부분(인사평가는 예전 이름 그대로 'YR_')
+const YR_KINDS_ = {
+  hr: { prefix: YR_FILE_KEY_PREFIX_, label: '인사평가', prop: 'YR_', settingsTab: YR_SETTINGS_TAB_, mailTail: ' — 1월 중 추가매출 계획을 입력해 주세요' },
+  sales: { prefix: YR_SALES_KEY_PREFIX_, label: '실적관리', prop: 'YRS_', settingsTab: '실적-설정', mailTail: ' — 1월 첫 입력 전에 연간계획 숫자를 넣어 주세요' }
+};
+
+// 실적-고객사 2행 아래 값 → 새해용 줄. 같은 팀(끝 '지역팀'/'팀' 뗌)+구매사명 묶음마다 '적용월 가장 늦은 줄'(같으면 아래 줄) 1개,
+// 순서(H)는 묶음의 첫 줄(가장 이른 적용월) 값, 적용월(L) 비움. 묶음 순서 = 시트에 처음 나온 순서. 구매사명 빈 줄은 버림.
+function yrSalesCollapse_(rows) {
+  const cell = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  const am = function (r) { const s = cell(r[11]); return /^\d+$/.test(s) && Number(s) >= 1 && Number(s) <= 12 ? Number(s) : 0; };
+  const groups = {}, order = [];
+  (rows || []).forEach(function (r) {
+    const name = cell(r && r[2]); if (!name) return;
+    const k = cell(r[0]).replace(/(지역팀|팀)$/, '') + '/' + name, a = am(r);
+    const g = groups[k] || (groups[k] = { first: null, firstAm: 99, pick: null, pickAm: -1 });
+    if (g.first === null) order.push(k);
+    if (a < g.firstAm) { g.first = r; g.firstAm = a; }
+    if (a >= g.pickAm) { g.pick = r; g.pickAm = a; }
+  });
+  return order.map(function (k) {
+    const g = groups[k], r = g.pick.slice();
+    while (r.length < 12) r.push('');
+    r[7] = g.first[7]; r[11] = '';
+    return r;
+  });
+}
+
+// 수식이 새 파일에서 그대로 두면 안 되는 것인지: 올해 연도 숫자(앞뒤가 숫자가 아닌 2026 등)가 박혔거나 IMPORTRANGE(다른 파일)를 쓰면 true
+function yrFxWarn_(f, y) {
+  const s = String(f || '');
+  return /IMPORTRANGE/i.test(s) || new RegExp('(^|[^0-9])' + y + '([^0-9]|$)').test(s);
+}
+
+// 실적관리 새 파일 정리(2단계). 지운·정리한 내용을 report에 적고, 그대로 둔 탭 이름 목록을 돌려준다.
+function yrSalesPrep_(nss, ny, report) {
+  const kept = [], clear = YR_SALES_CLEAR_TABS_.split('|');
+  nss.getSheets().forEach(function (sh) {
+    const name = sh.getName();
+    if (clear.indexOf(name) >= 0) {
+      const lr = sh.getLastRow(), lc = sh.getLastColumn();
+      if (lr > 1 && lc > 0) sh.getRange(2, 1, lr - 1, lc).clearContent();
+      report.push('지움: ' + name + ' ' + Math.max(lr - 1, 0) + '줄');
+    } else if (name !== YR_SALES_CUST_TAB_ && name !== YR_SALES_PLAN_TAB_) {
+      kept.push(name);
+    }
+  });
+  // 실적-고객사: 이력 줄 합치기
+  const cs = nss.getSheetByName(YR_SALES_CUST_TAB_);
+  if (!cs) throw new Error(YR_SALES_CUST_TAB_ + ' 탭이 없음');
+  const clr = cs.getLastRow();
+  if (clr > 1) {
+    const lc = Math.max(cs.getLastColumn(), 12);
+    const rng = cs.getRange(2, 1, clr - 1, lc), rows = rng.getValues();
+    const out = yrSalesCollapse_(rows);
+    const off = out.filter(function (r) { return String(r[6]).trim().toUpperCase() === 'FALSE'; }).length;
+    const named = rows.filter(function (r) { return String(r[2]).trim(); }).length;
+    rng.clearContent();
+    if (out.length) cs.getRange(2, 1, out.length, lc).setValues(out);
+    report.push('고객사 정리: ' + named + '줄 → ' + out.length + '곳 (이력 줄 ' + (named - out.length) + '개 합침, 적용월 비움' + (off ? ', 사용 끔 ' + off + '곳은 그대로 FALSE' : '') + ')');
+  } else {
+    report.push('고객사 정리: 줄 없음');
+  }
+  // 실적-연간계획: A열 연도 → 다음 해, D열부터 숫자만 비움(수식 칸은 그대로). 구매사명(C) 빈 줄은 건드리지 않음
+  const ps = nss.getSheetByName(YR_SALES_PLAN_TAB_);
+  if (!ps) throw new Error(YR_SALES_PLAN_TAB_ + ' 탭이 없음');
+  const plr = ps.getLastRow(), plc = ps.getLastColumn();
+  if (plr > 1 && plc >= 3) {
+    const prng = ps.getRange(2, 1, plr - 1, plc), vals = prng.getValues(), fx = prng.getFormulas();
+    const yearCells = [], numCells = [], warn = [];
+    let nRows = 0, nFx = 0;
+    vals.forEach(function (r, i) {
+      if (!String(r[2]).trim()) return;
+      nRows++;
+      fx[i].forEach(function (f, c) { if (f && yrFxWarn_(f, ny - 1)) warn.push(ps.getRange(i + 2, c + 1).getA1Notation() + ' ' + (f.length > 50 ? f.slice(0, 50) + '…' : f)); }); // 2026-11-19 재홍님: 올해 연도·다른 파일 참조 수식 안내
+      if (!fx[i][0]) yearCells.push('A' + (i + 2));
+      for (let c = 3; c < plc; c++) {
+        if (fx[i][c]) { nFx++; continue; }
+        if (r[c] !== '' && r[c] !== null) numCells.push(ps.getRange(i + 2, c + 1).getA1Notation());
+      }
+    });
+    if (yearCells.length) ps.getRangeList(yearCells).setValue(ny);
+    for (let j = 0; j < numCells.length; j += 500) ps.getRangeList(numCells.slice(j, j + 500)).clearContent();
+    report.push('연간계획: ' + nRows + '줄 연도 ' + ny + '로, 숫자 ' + numCells.length + '칸 비움 (수식 칸 ' + nFx + '개 그대로)');
+    if (warn.length) report.push('확인 필요 수식(올해 연도·다른 파일 참조 — 새 파일에서 손으로 고쳐 주세요): ' + warn.slice(0, 10).join(', ') + (warn.length > 10 ? ' 외 ' + (warn.length - 10) + '개' : ''));
+  } else {
+    report.push('연간계획: 줄 없음');
+  }
+  SpreadsheetApp.flush();
+  return kept;
+}
+
 // 올해 파일 이름 → 다음 해 이름: 이름 안의 올해 숫자(처음 1번)만 다음 해로. 없으면 '다음해_' + 이름.
 function yrNextName_(name, y, ny) {
 const s = String(name || '');
@@ -5301,18 +5402,26 @@ return null;
 }
 
 // 예약 실행 진입점 (installYearRolloverTrigger로 등록)
+// 2026-11-19: 인사평가 → 실적관리 순서로 따로 돈다(한쪽 예외가 다른 쪽을 막지 않게)
+function yrRunAll_(test, manual) {
+const now = new Date(), out = {};
+['hr', 'sales'].forEach(function (k) {
+try { out[k] = yrRun_(test, now, manual, k); } catch (e) { out[k] = { ok: false, error: String((e && e.message) || e) }; Logger.log(k + ' 연도 전환 예외: ' + e); }
+});
+return out;
+}
 function yearRolloverDaily() {
-yrRun_(false, new Date());
+yrRunAll_(false, false);
 }
 
 // 시험 모드 — 편집기에서 직접 1번 실행. 결과는 메일 + 실행 로그.
 function yearRolloverTest() {
-return yrRun_(true, new Date());
+return yrRunAll_(true, false);
 }
 
 // 수동 복구 — 예약이 실패했을 때 재홍님이 편집기에서 1번 실행(실제 모드, 12월 시작일 무시, 1월 이후 올해 파일이 없으면 만듦).
 function yearRolloverRunNow() {
-return yrRun_(false, new Date(), true);
+return yrRunAll_(false, true);
 }
 
 // 시험 파일 정리 — 재홍님이 시험 파일을 확인한 뒤 편집기에서 1번 실행.
@@ -5321,7 +5430,8 @@ const props = PropertiesService.getScriptProperties();
 const y = Number(Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy'));
 const ny = y + 1;
 const trashed = [];
-const propKey = 'YR_' + YR_TEST_PREFIX_ + ny + '_FILEID';
+['YR_', 'YRS_'].forEach(function (pre) { // 인사평가(YR_)·실적관리(YRS_) 시험 파일
+const propKey = pre + YR_TEST_PREFIX_ + ny + '_FILEID';
 const id = props.getProperty(propKey);
 if (id) {
 try {
@@ -5330,6 +5440,7 @@ if (String(f.getName()).indexOf(YR_TEST_PREFIX_) === 0 && !f.isTrashed()) { f.se
 } catch (e) { Logger.log('시험 파일 찾기 실패(이미 지워졌을 수 있음): ' + e); }
 props.deleteProperty(propKey);
 }
+});
 Logger.log('휴지통으로 옮긴 시험 파일: ' + (trashed.length ? trashed.join(', ') : '없음'));
 return trashed;
 }
@@ -5355,23 +5466,24 @@ Logger.log('연도 전환 메일 실패: ' + e);
 }
 }
 
-function yrRun_(test, now, manual) {
+function yrRun_(test, now, manual, kind) {
+const K = YR_KINDS_[kind || 'hr'];
 const today = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd');
 const ty = Number(today.slice(0, 4)), month = Number(today.slice(5, 7)), day = Number(today.slice(8, 10));
 // 0) 할 일이 있는 날인지(2~11월 예약 실행은 '설정' 캐시만 보고 바로 끝남). 시험 모드는 늘 올해 → 다음 해
-const hasKey = function (yy) { return !!getSetting_(YR_FILE_KEY_PREFIX_ + yy); };
+const hasKey = function (yy) { return !!getSetting_(K.prefix + yy); };
 const tg = test ? { src: ty, dst: ty + 1 } : yrTarget_(month, ty, hasKey, !!manual);
 if (!tg) {
-if (manual) Logger.log('연도 전환 수동 실행: 할 일 없음 (' + YR_FILE_KEY_PREFIX_ + ty + ' 있음, 12월 아님)');
+if (manual) Logger.log('연도 전환 수동 실행: 할 일 없음 (' + K.prefix + ty + ' 있음, 12월 아님)');
 return { skipped: 'NOTHING_TO_DO' };
 }
-const y = tg.src, ny = tg.dst, nextKey = YR_FILE_KEY_PREFIX_ + ny;
+const y = tg.src, ny = tg.dst, nextKey = K.prefix + ny;
 // 실패 메일 끝 문장: 예약이 다음 날 다시 하는지(12/1~1/30), 아니면 수동 실행이 필요한지(수동·1/31)
 const retryLine = test ? '' : ((manual || (month === 1 && day === 31)) ? '자동 재시도는 없습니다 — 원인을 고친 뒤 편집기에서 yearRolloverRunNow를 1번 실행해 주세요.' : '내일 새벽 다시 시도합니다.');
 if (!test && getSetting_(nextKey)) return { skipped: 'ALREADY_DONE' };
 const lock = LockService.getScriptLock();
 if (!lock.tryLock(30000)) {
-yrMail_(test, ny + ' 인사평가 파일 생성 실패 — 0단계', '다른 작업이 잠금을 쓰고 있어 시작하지 못했습니다.\n' + retryLine);
+yrMail_(test, ny + ' ' + K.label + ' 파일 생성 실패 — 0단계', '다른 작업이 잠금을 쓰고 있어 시작하지 못했습니다.\n' + retryLine);
 return { ok: false, step: 0, error: 'LOCK_TIMEOUT' };
 }
 let step = 0;
@@ -5380,19 +5492,19 @@ try {
 const props = PropertiesService.getScriptProperties();
 invalidateSheetCache_(SHEET_SETTING);
 if (!test && getSetting_(nextKey)) return { skipped: 'ALREADY_DONE' }; // 잠금 안에서 한 번 더
-const curId = String(getSetting_(YR_FILE_KEY_PREFIX_ + y) || '').trim();
-if (!curId) throw new Error("'설정' 탭에 " + YR_FILE_KEY_PREFIX_ + y + ' 키가 없음');
+const curId = String(getSetting_(K.prefix + y) || '').trim();
+if (!curId) throw new Error("'설정' 탭에 " + K.prefix + y + ' 키가 없음');
 const cur = DriveApp.getFileById(curId);
 const curSS = SpreadsheetApp.openById(curId);
 report.push('원본: ' + cur.getName() + ' (' + y + ') → 만들 해: ' + ny + (manual ? ' [수동]' : ''));
 if (!test && !manual && month === 12) {
-const st = curSS.getSheetByName(YR_SETTINGS_TAB_);
+const st = curSS.getSheetByName(K.settingsTab);
 const startDay = yrStartDay_(st ? st.getDataRange().getValues() : []);
 if (day < startDay) return { skipped: 'BEFORE_START_DAY', startDay: startDay };
 }
 // 1) 복사 (이미 만든 파일이 있으면 이어서)
 step = 1;
-const propKey = 'YR_' + (test ? YR_TEST_PREFIX_ : '') + ny + '_FILEID';
+const propKey = K.prop + (test ? YR_TEST_PREFIX_ : '') + ny + '_FILEID';
 const realName = yrNextName_(cur.getName(), y, ny);
 const newName = (test ? YR_TEST_PREFIX_ : '') + realName;
 let nf = null;
@@ -5412,8 +5524,8 @@ report.push('복사: ' + nf.getName() + ' (어제 만든 파일 이어서)');
 // 2) 기록 탭 2행 아래 내용만 지움 (머리글·서식·드롭다운 규칙은 그대로) — 역량- 탭 + 성과-월실적·성과-마감(2026-11-13)
 step = 2;
 const nss = SpreadsheetApp.openById(nf.getId());
-const kept = [];
-nss.getSheets().forEach(function (sh) {
+const kept = kind === 'sales' ? yrSalesPrep_(nss, ny, report) : [];
+if (kind !== 'sales') nss.getSheets().forEach(function (sh) {
 const name = sh.getName();
 if ((name.indexOf(YR_RECORD_TAB_PREFIX_) === 0 || YR_PERF_CLEAR_TABS_.split('|').indexOf(name) >= 0) && !sh.isSheetHidden()) {
 const lr = sh.getLastRow(), lc = sh.getLastColumn();
@@ -5451,7 +5563,7 @@ const sheet = getSheetObj_(SHEET_SETTING);
 const data = sheet.getDataRange().getValues();
 const row = yrSettingInsertRow_(data);
 if (row <= data.length) sheet.insertRowAfter(row - 1);
-sheet.getRange(row, 1, 1, 4).setValues([[nextKey, nf.getId(), ny + '년 인사평가 파일 ID (자동 연도 전환 ' + today + ')', '공통']]);
+sheet.getRange(row, 1, 1, 4).setValues([[nextKey, nf.getId(), ny + '년 ' + K.label + ' 파일 ID (자동 연도 전환 ' + today + ')', '공통']]);
 invalidateSheetCache_(SHEET_SETTING);
 props.deleteProperty(propKey);
 report.push("'설정' 탭 " + row + '행에 ' + nextKey + ' 등록');
@@ -5460,15 +5572,15 @@ report.push("'설정' 탭: 시험 모드라 쓰지 않음");
 }
 // 5) 성공 메일 (실제는 이 뒤로 키가 있어 다시 오지 않음 = 1번)
 step = 5;
-yrMail_(test, ny + ' 인사평가 파일 생성 완료' + (test ? '' : ' — 1월 중 추가매출 계획을 입력해 주세요'),
+yrMail_(test, ny + ' ' + K.label + ' 파일 생성 완료' + (test ? '' : K.mailTail),
 (test ? '시험 파일입니다. 확인 후 편집기에서 yearRolloverCleanupTest를 1번 실행해 휴지통으로 옮겨 주세요.\n\n' : '') +
 '파일: ' + url + '\n\n' + report.join('\n'));
-Logger.log('연도 전환 ' + (test ? '[시험] ' : '') + '완료\n' + report.join('\n'));
+Logger.log(K.label + ' 연도 전환 ' + (test ? '[시험] ' : '') + '완료\n' + report.join('\n'));
 return { ok: true, test: test, fileId: nf.getId(), name: nf.getName(), report: report };
 } catch (e) {
 const msg = String((e && e.message) || e);
-Logger.log('연도 전환 ' + (test ? '[시험] ' : '') + step + '단계 실패: ' + msg + '\n' + report.join('\n'));
-yrMail_(test, ny + ' 인사평가 파일 생성 실패 — ' + step + '단계',
+Logger.log(K.label + ' 연도 전환 ' + (test ? '[시험] ' : '') + step + '단계 실패: ' + msg + '\n' + report.join('\n'));
+yrMail_(test, ny + ' ' + K.label + ' 파일 생성 실패 — ' + step + '단계',
 step + '단계에서 실패했습니다: ' + msg + '\n\n지금까지 한 일:\n' + (report.join('\n') || '(없음)') + '\n\n' + retryLine);
 return { ok: false, step: step, error: msg, report: report };
 } finally {

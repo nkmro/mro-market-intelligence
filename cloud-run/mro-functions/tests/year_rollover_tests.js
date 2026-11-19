@@ -15,14 +15,18 @@ function extractFn(name) {
   return m < 0 ? rest : rest.slice(0, m + 1);
 }
 const consts = (code.match(/^const YR_[A-Z_]+_ = '[^']*';$/gm) || []).join('\n');
+// 2026-11-19 실적관리 추가: 종류 표(YR_KINDS_ = { … }; 여러 줄)도 그대로 잘라 넣는다
+const kinds = (code.match(/^const YR_KINDS_ = \{[\s\S]*?\n\};$/m) || [''])[0];
 const FNS = ['yrNextName_', 'yrStartDay_', 'yrSettingInsertRow_', 'yrTarget_', 'yearRolloverDaily', 'yearRolloverRunNow', 'yearRolloverTest', 'yearRolloverCleanupTest',
-  'installYearRolloverTrigger', 'yrMail_', 'yrRun_'];
-const SRC = consts + '\n' + FNS.map(extractFn).join('\n');
+  'installYearRolloverTrigger', 'yrMail_', 'yrRun_', 'yrRunAll_', 'yrSalesCollapse_', 'yrFxWarn_', 'yrSalesPrep_'];
+const SRC = consts + '\n' + kinds + '\n' + FNS.map(extractFn).join('\n');
 
 // ───── 가짜 시트·Drive ─────
 function mkSheet(name, rows, opt) {
   opt = opt || {};
-  const sh = { name, rows: rows.map(r => r.slice()), hidden: !!opt.hidden, validation: opt.validation || {} };
+  const sh = { name, rows: rows.map(r => r.slice()), hidden: !!opt.hidden, validation: opt.validation || {}, fx: opt.fx || {} }; // fx: { 'R,C': '=수식' } (2026-11-19 실적관리)
+  const a1 = (r, c) => { let s = '', x = c; while (x > 0) { const m = (x - 1) % 26; s = String.fromCharCode(65 + m) + s; x = Math.floor((x - 1) / 26); } return s + r; };
+  const cellOf = a => { const m = /^([A-Z]+)(\d+)$/.exec(a); let c = 0; for (const ch of m[1]) c = c * 26 + ch.charCodeAt(0) - 64; return [Number(m[2]), c]; };
   const width = () => sh.rows.reduce((m, r) => { let w = 0; r.forEach((v, i) => { if (v !== '' && v !== undefined) w = i + 1; }); return Math.max(m, w); }, 0);
   const lastRow = () => { for (let i = sh.rows.length - 1; i >= 0; i--) if (sh.rows[i].some(v => v !== '' && v !== undefined)) return i + 1; return 0; };
   sh.api = {
@@ -33,7 +37,13 @@ function mkSheet(name, rows, opt) {
       clearContent: () => { for (let i = r - 1; i < r - 1 + (nr || 1); i++) for (let j = c - 1; j < c - 1 + (nc || 1); j++) if (sh.rows[i]) sh.rows[i][j] = ''; sh.cleared = (sh.cleared || 0) + 1; },
       getValues: () => { const out = []; for (let i = r - 1; i < r - 1 + (nr || 1); i++) { const row = []; for (let j = c - 1; j < c - 1 + (nc || 1); j++) row.push(sh.rows[i] && sh.rows[i][j] !== undefined ? sh.rows[i][j] : ''); out.push(row); } return out; },
       setValues: v => { v.forEach((row, i) => { while (sh.rows.length < r + i) sh.rows.push([]); row.forEach((x, j) => { sh.rows[r - 1 + i][c - 1 + j] = x; }); }); },
-      getDataValidation: () => (sh.validation[(c)] ? { rule: 'YN' } : null)
+      getDataValidation: () => (sh.validation[(c)] ? { rule: 'YN' } : null),
+      getFormulas: () => { const out = []; for (let i = r; i < r + (nr || 1); i++) { const row = []; for (let j = c; j < c + (nc || 1); j++) row.push(sh.fx[i + ',' + j] || ''); out.push(row); } return out; },
+      getA1Notation: () => a1(r, c)
+    }),
+    getRangeList: list => ({
+      setValue: v => { list.forEach(x => { const [r, c] = cellOf(x); sh.rows[r - 1][c - 1] = v; delete sh.fx[r + ',' + c]; }); sh.rangeListCalls = (sh.rangeListCalls || 0) + 1; },
+      clearContent: () => { list.forEach(x => { const [r, c] = cellOf(x); sh.rows[r - 1][c - 1] = ''; delete sh.fx[r + ',' + c]; }); sh.rangeListCalls = (sh.rangeListCalls || 0) + 1; }
     })
   };
   return sh;
@@ -53,7 +63,7 @@ function world(o) {
       getParents: () => { let used = !f.folder; return { hasNext: () => !used, next: () => { used = true; return f.folder; } }; },
       makeCopy: (name, dest) => {
         st.copies++;
-        const sheets = f.sheets.map(s => mkSheet(s.name, s.rows, { hidden: s.hidden, validation: Object.assign({}, s.validation) }));
+        const sheets = f.sheets.map(s => mkSheet(s.name, s.rows, { hidden: s.hidden, validation: Object.assign({}, s.validation), fx: Object.assign({}, s.fx) }));
         const id = addFile(name, sheets, []); st.files[id].folder = dest; return fileApi(st.files[id]);
       },
       getEditors: () => f.editors.map(e => ({ getEmail: () => e })),
@@ -81,13 +91,30 @@ function world(o) {
   const setRows = [['키', '값', '설명', '구분'], ['팀장_열람범위', '자기팀', '', '공통'], [o.noCurKey ? '다른키' : '인사평가파일_2026', cur, '', '공통'],
     ['트리거시각', '1', '', '자재시황'], ['백업시각', '23', '', '자재시황']];
   if (o.nextExists) setRows.push(['인사평가파일_2027', 'FX', '', '공통']);
+  // 2026-11-19 실적관리 파일(o.sales일 때만 — 예시 숫자, 실제 실적 아님). 고객사: 가나화학 6월 담당 바뀜, 라마산업 8월 추가, 사바전자 9월 사용 끔
+  let salesId = null;
+  if (o.sales) {
+    const CH = ['팀', '계열', '구매사명', '발주형태', '사무소', '담당', '사용', '순서', '비고', '등록자', '등록일시', '적용월'];
+    const PH = ['연도', '팀', '구매사명']; for (let m = 1; m <= 12; m++) PH.push(m + '월 매출', m + '월 이익', m + '월 이익률'); PH.push('연간 매출', '연간 이익');
+    const pr = (n, v) => { const r = [2026, '동부', n]; for (let i = 0; i < 38; i++) r.push(v); return r; };
+    salesId = addFile('2026_실적관리', [
+      mkSheet('실적-고객사', [CH, ['동부', '', '가나화학(주)', '', '', '김민수', 'TRUE', 1, '', '', '', ''], ['동부', '', '다라테크(주)', '', '', '이서연', 'TRUE', 2, '', '', '', ''],
+        ['동부', '', '사바전자(주)', '', '', '이서연', 'TRUE', 3, '', '', '', ''], ['동부', '', '가나화학(주)', '', '', '박지훈', 'TRUE', 1, '', '', '', 6],
+        ['동부', '', '라마산업(주)', '', '', '김민수', 'TRUE', 4, '', '', '', 8], ['동부', '', '사바전자(주)', '', '', '이서연', 'FALSE', 3, '', '', '', 9]]),
+      mkSheet('실적-연간계획', [PH, pr('가나화학(주)', 100), pr('다라테크(주)', 50)], { fx: Object.assign({ '2,6': '=E2/D2' }, o.planFx || {}) }),
+      mkSheet('실적-주간', [['연도', '월', '주차', '팀', '구매사명', '매출누적'], [2026, 11, 1, '동부', '가나화학(주)', 30], [2026, 11, 2, '동부', '가나화학(주)', 60]]),
+      mkSheet('실적-진행', [['연도', '월', '주차', '팀', '단계'], [2026, 11, 1, '동부', '팀 확정']]),
+      mkSheet('실적-설정', [['키', '값', '설명'], ['입력요일', '월', ''], ['연도전환시작일', o.salesStartDay === undefined ? '1' : o.salesStartDay, '']])
+    ], o.salesNoSA ? ['joojhong@gmail.com'] : ['joojhong@gmail.com', SA]);
+    setRows.push(['실적관리파일_2026', salesId, '', '공통']);
+  }
   const settings = mkSheet('설정', setRows);
   const ctx = {
     JSON, String, Number, Math, Object, Array, Error, RegExp,
     SHEET_SETTING: '설정', ADMIN_EMAIL: 'jhjoo@nkmro.com',
     Logger: { log: s => { st.log = (st.log || '') + s + '\n'; } },
     Utilities: { formatDate: (d, tz, fmt) => { const s = new Date(d.getTime() + 9 * 3600000).toISOString(); return fmt === 'yyyy' ? s.slice(0, 4) : s.slice(0, 10); } },
-    getSetting_: k => { const r = settings.rows.slice(1).find(x => x[0] === k); return r ? r[1] : null; },
+    getSetting_: k => { if (o.hrThrows && /^인사평가파일_/.test(k)) throw new Error('boom'); const r = settings.rows.slice(1).find(x => x[0] === k); return r ? r[1] : null; },
     getSheetObj_: n => { if (n !== '설정') throw new Error('unexpected sheet ' + n); return settings.api; },
     invalidateSheetCache_: () => { st.cacheCleared++; },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in st.props ? st.props[k] : null), setProperty: (k, v) => { st.props[k] = v; }, deleteProperty: k => { delete st.props[k]; } }) },
@@ -102,8 +129,8 @@ function world(o) {
       newTrigger: fn => { const spec = { fn }; const b = { timeBased: () => b, atHour: h => { spec.hour = h; return b; }, everyDays: n => { spec.days = n; return b; }, inTimezone: z => { spec.tz = z; return b; }, create: () => { st.triggers.push(spec); return spec; } }; return b; }
     }
   };
-  vm.runInNewContext(SRC + '\nthis.__t = { yrNextName_, yrStartDay_, yrSettingInsertRow_, yrTarget_, yrRun_, yearRolloverDaily, yearRolloverRunNow, yearRolloverTest, yearRolloverCleanupTest, installYearRolloverTrigger };', ctx);
-  return { st, fn: ctx.__t, cur, settings, SA, file: id => st.files[id], byName: n => Object.values(st.files).find(f => f.name === n) };
+  vm.runInNewContext(SRC + '\nthis.__t = { yrNextName_, yrStartDay_, yrSettingInsertRow_, yrTarget_, yrRun_, yearRolloverDaily, yearRolloverRunNow, yearRolloverTest, yearRolloverCleanupTest, installYearRolloverTrigger, yrRunAll_, yrSalesCollapse_, yrFxWarn_ };', ctx);
+  return { st, fn: ctx.__t, cur, salesId, settings, SA, file: id => st.files[id], byName: n => Object.values(st.files).find(f => f.name === n) };
 }
 const KST = (y, m, d, h) => new Date(Date.UTC(y, m - 1, d, (h === undefined ? 4 : h) - 9));
 
@@ -261,9 +288,9 @@ const KST = (y, m, d, h) => new Date(Date.UTC(y, m - 1, d, (h === undefined ? 4 
   const w = world({ nextExists: true });
   const r = w.fn.yrRun_(false, KST(2027, 1, 5), true);
   t('Y23 1월·2027 있음·수동 → 할 일 없음(2028 복사 안 함), 메일 없음', r.skipped === 'NOTHING_TO_DO' && w.st.copies === 0 && w.st.mails.length === 0 && !w.byName('2028_인사평가'), r);
-  const w2 = world();
-  const r2 = w2.fn.yearRolloverRunNow(); // 오늘(11월)·2026 있음
-  t('Y24 11월·수동 → 할 일 없음(다음 해 파일 미리 안 만듦)', r2.skipped === 'NOTHING_TO_DO' && w2.st.copies === 0, r2);
+  const w2 = world({ sales: true });
+  const r2 = w2.fn.yearRolloverRunNow(); // 오늘(11월)·2026 있음 — 2026-11-19부터 인사평가·실적관리 둘 다
+  t('Y24 11월·수동 → 할 일 없음(다음 해 파일 미리 안 만듦) — 인사평가·실적관리 둘 다', r2.hr.skipped === 'NOTHING_TO_DO' && r2.sales.skipped === 'NOTHING_TO_DO' && w2.st.copies === 0, r2);
   const w3 = world({ startDay: '20' });
   const r3 = w3.fn.yrRun_(false, KST(2026, 12, 2), true);
   t('Y25 12/2·시작일 20·수동 → 시작일 무시하고 2027 생성·등록', r3.ok && w3.st.copies === 1 && w3.settings.rows.some(x => x[0] === '인사평가파일_2027'), r3);
@@ -306,11 +333,108 @@ const KST = (y, m, d, h) => new Date(Date.UTC(y, m - 1, d, (h === undefined ? 4 
   t('Y29 숨긴 성과-마감 탭은 건드리지 않음(역량 숨긴 탭과 같은 규칙), 성과-월실적은 비움', nf.sheets.find(s => s.name === '성과-마감').rows[1][2] === 9 && !nf.sheets.find(s => s.name === '성과-마감').cleared && nf.sheets.find(s => s.name === '성과-월실적').cleared === 1);
 }
 {
-  const w = world();
-  const r = w.fn.yearRolloverTest();
-  const nf = Object.values(w.st.files).find(f => /^TEST_/.test(f.name));
+  const w = world({ sales: true });
+  const r = w.fn.yearRolloverTest().hr; // 2026-11-19부터 { hr, sales }
+  const nf = Object.values(w.st.files).find(f => /^TEST_.*인사평가/.test(f.name));
   t('Y30 시험 모드(yearRolloverTest): TEST_ 파일에서도 성과 탭 2개 비움 + 메일 보고에 지움 줄, 설정 탭에는 안 씀', r.ok && nf && nf.sheets.find(s => s.name === '성과-월실적').cleared === 1
-    && w.st.mails.length === 1 && w.st.mails[0].body.indexOf('지움: 성과-월실적 2줄') >= 0 && w.st.mails[0].body.indexOf('지움: 성과-마감 1줄') >= 0 && !w.settings.rows.some(x => x[0] === '인사평가파일_2027'), { r: r && r.ok, mail: w.st.mails[0] && w.st.mails[0].body.slice(0, 400) });
+    && w.st.mails.filter(m => /인사평가/.test(m.subj)).length === 1 && w.st.mails[0].body.indexOf('지움: 성과-월실적 2줄') >= 0 && w.st.mails[0].body.indexOf('지움: 성과-마감 1줄') >= 0 && !w.settings.rows.some(x => x[0] === '인사평가파일_2027'), { r: r && r.ok, mail: w.st.mails[0] && w.st.mails[0].body.slice(0, 400) });
+}
+
+// ───── 2026-11-19 실적관리(주간 실적) 파일 — 같은 예약, 따로 진행 ─────
+{
+  const w = world({ sales: true });
+  const rh = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'hr'), rs = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales');
+  const nf = w.byName('2027_실적관리'), sh = n => nf.sheets.find(x => x.name === n);
+  t('S1 12/1: 인사평가·실적관리 둘 다 생성, 설정 탭에 두 키 등록', rh.ok && rs.ok && w.st.copies === 2 && w.settings.rows.some(x => x[0] === '인사평가파일_2027') && w.settings.rows.some(x => x[0] === '실적관리파일_2027' && x[1] === nf.id && /2027년 실적관리 파일 ID/.test(x[2]) && x[3] === '공통'), [rh, rs]);
+  t('S2 실적-주간·실적-진행 2행 아래 비움, 머리글 그대로', sh('실적-주간').rows.slice(1).every(r => r.every(v => v === '')) && sh('실적-주간').rows[0][0] === '연도' && sh('실적-진행').rows.slice(1).every(r => r.every(v => v === '')));
+  const cr = sh('실적-고객사').rows.filter((r, i) => i > 0 && r[2]);
+  t('S3 실적-고객사: 4곳, 가나화학=박지훈·순서1, 사바전자=FALSE, 라마산업 포함, 적용월 모두 비움', cr.length === 4 && cr[0][5] === '박지훈' && cr[0][7] === 1 && cr[2][2] === '사바전자(주)' && cr[2][6] === 'FALSE' && cr[3][2] === '라마산업(주)' && cr.every(r => r[11] === ''), cr);
+  const pl = sh('실적-연간계획');
+  t('S4 실적-연간계획: 연도 2027, 팀·구매사명 그대로, 숫자 비움, 수식 칸 그대로', pl.rows[1][0] === 2027 && pl.rows[2][0] === 2027 && pl.rows[1][2] === '가나화학(주)' && pl.rows[1].slice(3).every((v, j) => j === 2 || v === '') && pl.fx['2,6'] === '=E2/D2' && pl.rows[0][3] === '1월 매출', pl.rows[1].slice(0, 8));
+  t('S5 실적-설정 그대로, 원본 2026 파일은 안 바뀜', sh('실적-설정').rows.length === 3 && w.file(w.salesId).sheets.find(x => x.name === '실적-주간').rows[1][5] === 30 && w.file(w.salesId).sheets.find(x => x.name === '실적-고객사').rows.length === 7);
+  const ms = w.st.mails.find(m => /실적관리/.test(m.subj));
+  t('S6 메일 따로 1통: 제목·보고 줄', w.st.mails.length === 2 && ms && /2027 실적관리 파일 생성 완료 — 1월 첫 입력 전에 연간계획 숫자를 넣어 주세요/.test(ms.subj)
+    && /고객사 정리: 6줄 → 4곳 \(이력 줄 2개 합침, 적용월 비움, 사용 끔 1곳은 그대로 FALSE\)/.test(ms.body) && /연간계획: 2줄 연도 2027로, 숫자 75칸 비움 \(수식 칸 1개 그대로\)/.test(ms.body) && /그대로 둔 탭: 실적-설정/.test(ms.body), ms && ms.body);
+  t('S7 이어서 하기 속성: 실적관리는 YRS_, 끝나면 지움', !('YRS_2027_FILEID' in w.st.props) && !('YR_2027_FILEID' in w.st.props));
+  const again = w.fn.yrRun_(false, KST(2026, 12, 2), false, 'sales');
+  t('S8 다음 날 → 이미 있음, 복사 안 함', again.skipped === 'ALREADY_DONE' && w.st.copies === 2);
+}
+{
+  const w = world({ sales: true, salesStartDay: '10' });
+  const rh = w.fn.yrRun_(false, KST(2026, 12, 2), false, 'hr'), rs = w.fn.yrRun_(false, KST(2026, 12, 2), false, 'sales');
+  t('S9 시작일은 각 파일 설정 탭: 실적-설정 10 → 실적만 기다림, 인사평가(1)는 생성', rh.ok && rs.skipped === 'BEFORE_START_DAY' && rs.startDay === 10 && w.st.copies === 1);
+}
+{
+  const w = world({ sales: true, salesNoSA: true });
+  const rh = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'hr'), rs = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales');
+  const ms = w.st.mails.find(m => /실적관리/.test(m.subj));
+  t('S10 실적관리만 3단계 실패 → 실패 메일·속성 남김(다음 날 이어서), 인사평가는 정상', rh.ok && rs.ok === false && rs.step === 3 && /2027 실적관리 파일 생성 실패 — 3단계/.test(ms.subj) && /내일 새벽 다시 시도합니다/.test(ms.body) && w.st.props.YRS_2027_FILEID && !w.settings.rows.some(x => x[0] === '실적관리파일_2027'), rs);
+  w.file(w.salesId).editors.push(w.SA);
+  const rs2 = w.fn.yrRun_(false, KST(2026, 12, 2), false, 'sales');
+  const cr = w.byName('2027_실적관리').sheets.find(x => x.name === '실적-고객사').rows.filter((r, i) => i > 0 && r[2]);
+  t('S11 다음 날 이어서 → 같은 파일(복사 1번뿐), 고객사 다시 정리해도 4곳 그대로', rs2.ok && w.st.copies === 2 && cr.length === 4 && w.settings.rows.some(x => x[0] === '실적관리파일_2027'), rs2);
+}
+{
+  const w = world();
+  const rs = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales'), rh = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'hr');
+  t("S12 '설정'에 실적관리파일_2026 없음 → 실적만 0단계 실패 메일, 인사평가는 정상", rs.ok === false && rs.step === 0 && /실적관리파일_2026 키가 없음/.test(rs.error) && rh.ok && w.st.mails.some(m => /실적관리 파일 생성 실패 — 0단계/.test(m.subj)), rs);
+}
+{
+  const w = world({ sales: true });
+  const out = w.fn.yrRunAll_(true, false);
+  const tf = Object.values(w.st.files).filter(f => /^TEST_/.test(f.name)).map(f => f.name).sort();
+  t('S13 시험 모드 둘 다: TEST_2027_인사평가·TEST_2027_실적관리, 설정 탭 안 씀, [시험] 메일 2통', out.hr.ok && out.sales.ok && JSON.stringify(tf) === JSON.stringify(['TEST_2027_실적관리', 'TEST_2027_인사평가']) && w.settings.rows.length === 6 && w.st.mails.length === 2 && w.st.mails.every(m => /^\[시험\]/.test(m.subj)), { out, tf });
+  t('S14 시험 속성 따로: YR_TEST_2027_FILEID / YRS_TEST_2027_FILEID', !!w.st.props.YR_TEST_2027_FILEID && !!w.st.props.YRS_TEST_2027_FILEID);
+  const y = new Date().getFullYear();
+  if (y === 2026) {
+    const trashed = w.fn.yearRolloverCleanupTest().slice().sort();
+    t('S15 정리 → 시험 파일 2개 휴지통, 원본 그대로', JSON.stringify(trashed) === JSON.stringify(['TEST_2027_실적관리', 'TEST_2027_인사평가']) && !w.file(w.salesId).trashed && !w.file(w.cur).trashed && !w.st.props.YRS_TEST_2027_FILEID, trashed);
+  }
+}
+{
+  const w = world({ sales: true, hrThrows: true });
+  const out = w.fn.yrRunAll_(true, false);
+  t('S16a 시험: 인사평가 쪽 실패해도 실적관리는 진행', out.hr.ok === false && /boom/.test(out.hr.error) && out.sales.ok === true, out);
+  const out2 = w.fn.yrRunAll_(false, true); // 수동(11월): 인사평가는 잠금 전 단계에서 예외 → yrRunAll_이 잡음, 실적관리는 할 일 없음
+  t('S16b 잠금 전 예외도 yrRunAll_이 잡고 다음 종류로 넘어감', out2.hr.ok === false && /boom/.test(out2.hr.error) && out2.sales.skipped === 'NOTHING_TO_DO' && /hr 연도 전환 예외/.test(w.st.log), out2);
+}
+{
+  // Cloud Run lib/weeklySales.js customersAt(rows, 12)와 같은 규칙인지(무작위 300번) + 새해 1월 화면 = 올해 12월 화면
+  const ws = require('../lib/weeklySales.js'), { fn } = world();
+  const J = x => JSON.parse(JSON.stringify(x));
+  let same = true, info = null;
+  for (let k = 0; k < 300 && same; k++) {
+    const rows = [], n = 1 + Math.floor(Math.random() * 12);
+    for (let i = 0; i < n; i++) rows.push([['동부', '동부팀', '서부지역팀'][i % 3], '', 'C' + Math.floor(Math.random() * 4), '', '', 'D' + i, Math.random() < 0.3 ? 'FALSE' : 'TRUE', Math.floor(Math.random() * 5), '', '', '', ['', 0, 3, 6, 6, 12, 13, 'x'][Math.floor(Math.random() * 8)]]);
+    const a = J(fn.yrSalesCollapse_(rows)), b = ws.customersAt(rows, 12);
+    const ok1 = JSON.stringify(a.map(r => r.slice(0, 11))) === JSON.stringify(b.map(r => r.slice(0, 11))) && a.every(r => r[11] === '');
+    const ok2 = JSON.stringify(ws.customersAt(a, 1).map(r => r.slice(0, 11))) === JSON.stringify(b.map(r => r.slice(0, 11)));
+    const ok3 = JSON.stringify(J(fn.yrSalesCollapse_(a))) === JSON.stringify(a);
+    if (!(ok1 && ok2 && ok3)) { same = false; info = { rows, a, b, ok1, ok2, ok3 }; }
+  }
+  t('S17 고객사 합치기 = Cloud Run customersAt(12월) / 새해 1월 화면 = 올해 12월 / 두 번 해도 같음 (무작위 300번)', same, info);
+}
+
+{
+  // S18 (2026-11-19 재홍님 '넣기'): 연간계획 수식 중 올해 연도·IMPORTRANGE는 메일에 '확인 필요 수식'으로, 정상 수식은 조용히
+  const { fn } = world();
+  t('S18a yrFxWarn_: 연도 박힘·IMPORTRANGE만 true, 같은 줄 계산·다른 숫자(20260, 12026, 2027)는 false',
+    fn.yrFxWarn_('=IF(A2=2026,D2,0)', 2026) && fn.yrFxWarn_("='2026 계획'!D2", 2026) && fn.yrFxWarn_('=importrange("1AbC","실적-연간계획!D2")', 2026) && fn.yrFxWarn_('=2026', 2026)
+    && !fn.yrFxWarn_('=E2/D2', 2026) && !fn.yrFxWarn_('=SUM(D2,G2,J2)', 2026) && !fn.yrFxWarn_('=D2*20260', 2026) && !fn.yrFxWarn_('=D2+12026', 2026) && !fn.yrFxWarn_('=IF(A2=2027,1,0)', 2026));
+  const long = '=IF(A2=2026,D2*1.1+E2*1.2+F2*1.3+G2*1.4+H2*1.5+I2*1.6,0)';
+  const w = world({ sales: true, planFx: { '2,7': '=IF(A2=2026,D2,0)', '3,8': '=IMPORTRANGE("1AbC","실적-연간계획!D3")', '3,9': long } });
+  const rs = w.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales');
+  const line = rs.report.find(x => /^확인 필요 수식/.test(x)) || '';
+  t('S18b 메일 줄: G2·H3·I3 위치와 수식(50자 넘으면 …), 정상 수식 F2(=E2/D2)는 안 나옴, 수식은 그대로 남음',
+    rs.ok && /G2 =IF\(A2=2026,D2,0\)/.test(line) && /H3 =IMPORTRANGE\("1AbC"/.test(line) && line.indexOf('I3 ' + long.slice(0, 50) + '…') >= 0 && line.indexOf('F2 =E2/D2') < 0
+    && w.byName('2027_실적관리').sheets.find(x => x.name === '실적-연간계획').fx['2,7'] === '=IF(A2=2026,D2,0)' && /수식 칸 4개 그대로/.test(rs.report.join('\n')), rs.report);
+  const many = {}; for (let c = 4; c <= 15; c++) many['2,' + c] = '=IF($A$2=2026,1,0)';
+  const w2 = world({ sales: true, planFx: many });
+  const l2 = w2.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales').report.find(x => /^확인 필요 수식/.test(x)) || '';
+  t('S18c 12개면 10개까지 + "외 2개"', (l2.match(/=IF\(\$A\$2=2026/g) || []).length === 10 && / 외 2개$/.test(l2), l2);
+  const w3 = world({ sales: true });
+  const r3 = w3.fn.yrRun_(false, KST(2026, 12, 1), false, 'sales');
+  t('S18d 걸리는 수식이 없으면(정상 수식 1개뿐) 안내 줄 없음', r3.ok && !r3.report.some(x => /확인 필요 수식/.test(x)), r3.report);
 }
 
 console.log('pass ' + pass + ' / fail ' + fail);
