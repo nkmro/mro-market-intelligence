@@ -10,6 +10,8 @@ const LEGACY_TAB_KEYS = { '0': 'selfDev', '1406147068': 'gradeComp', '1204504857
 // 지금 5개 탭의 카드 제목 칸(4-2 표). 새 탭은 사무소·이름·담당·순번·앱 관리 칸 다음 첫 번째 칸.
 const LEGACY_TITLE_FIELD = { selfDev: '자기개발 항목', gradeComp: '개선 직급 역량 항목', faceSales: '고객사', costSave: '원가 개선 항목', addSales: '고객사' };
 const RECORD_TAB_PREFIX = '역량-';
+// 2026-11-18 팀장 겸임 2차: 보는 사람이 맡은 팀(소속팀 + 사용자팀마스터 L열 겸임팀)에 그 팀이 있나. teams가 없으면 소속팀만(예전과 같음)
+function viewerHas_(viewer, team) { const t = String(team || '').trim(); return (viewer.teams && viewer.teams.length ? viewer.teams : [viewer.team]).some(function (x) { return String(x || '').trim() === t; }); }
 const TAB_EMOJI_PREFIX = '탭이모지_';   // 인사평가설정 키: 탭이모지_<항목 이름>
 const DEFAULT_TAB_EMOJI = '📝';
 const TAB_LABEL_MAX = 4;               // 탭 끝 이름 권장 길이(넘으면 ping 경고만)
@@ -145,7 +147,7 @@ function monthOf(recordedAt) {
 // v1.7 ⑳: awaitingReply = 본인 추가매출 중 회신 대기 개수(본인 숫자만, 팀 건수표에는 넣지 않음)
 function buildMine(viewer, users, recordsByTab) {
   const mine = {}; const counts = {}; let awaitingReply = 0;
-  const team = users.filter(function (u) { return u.status === '활성' && MEMBER_ROLES.indexOf(u.role) >= 0 && String(u.team || '').trim() === String(viewer.team || '').trim(); });
+  const team = users.filter(function (u) { return u.status === '활성' && MEMBER_ROLES.indexOf(u.role) >= 0 && viewerHas_(viewer, u.team); });
   team.forEach(function (u) { counts[normEmail(u.email)] = { name: u.name, office: u.office || '', byTab: {} }; });
   Object.keys(recordsByTab).forEach(function (tab) {
     mine[tab] = [];
@@ -170,7 +172,7 @@ function buildTeam(viewer, users, recordsByTab, opts) {
   opts = opts || {};
   const isExec = viewer.role === '임원';
   const inScope = function (u) {
-    return MEMBER_ROLES.indexOf(u.role) >= 0 && (isExec || String(u.team || '').trim() === String(viewer.team || '').trim());
+    return MEMBER_ROLES.indexOf(u.role) >= 0 && (isExec || viewerHas_(viewer, u.team));
   };
   const members = {};
   users.filter(function (u) { return inScope(u) && (u.status === '활성' || opts.includeLeft); }).forEach(function (u) {

@@ -8,6 +8,7 @@
 //   ② 말일이 든 주의 월요일~말일 날짜 수가 가마감이월일수(기본 5) 이상이면 가마감은 다음 월요일(다음 달이어도),
 //      아니면 그 월요일이 가마감(예상 마감 실적). 가마감 날에는 가마감만 넣는다.
 
+const teamsLib = require('./teams'); // 2026-11-18 팀장 겸임 2차: 사용자팀마스터 L열 겸임팀
 const FILE_KEY_PREFIX = '실적관리파일_';
 const TAB_CUSTOMERS = '실적-고객사';
 const TAB_PLAN = '실적-연간계획';
@@ -516,7 +517,7 @@ function planAddCustomer(p) {
 // 사용자팀마스터 A2:J 줄 → [{email, name, role, team, active}]
 function usersOf(userRows) {
   return (userRows || []).filter(function (r) { return r && cell(r[0]); }).map(function (r) {
-    return { email: lcs(r[0]), name: cell(r[1]), role: cell(r[2]), team: cell(r[3]), active: cell(r[4]) === '활성' };
+    return { email: lcs(r[0]), name: cell(r[1]), role: cell(r[2]), team: cell(r[3]), active: cell(r[4]) === '활성', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]).map(normTeam) }; // teams = 소속팀 + 겸임팀(L열)
   });
 }
 function mailable(u) { return u && u.active && u.email.slice(-MAIL_DOMAIN.length) === MAIL_DOMAIN; }
@@ -533,7 +534,7 @@ function reminderJobs(p) {
   const jobs = [];
   st.teams.forEach(function (t) {
     if (st.done[t]) return;
-    const leaders = users.filter(function (u) { return u.role === '팀장' && normTeam(u.team) === t && mailable(u); });
+    const leaders = users.filter(function (u) { return u.role === '팀장' && leadsTeam_(u, t) && mailable(u); }); // 겸임 팀장은 맡은 팀 전부
     const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
     const total = customersAt(p.customers, cur.month).filter(function (r) { return cell(r && r[2]) && normTeam(r[0]) === t && cell(r[6]).toUpperCase() !== 'FALSE'; }).length; // 확인 1: 이력 줄은 한 곳으로(그 달 기준)
     const saved = {};
@@ -625,7 +626,10 @@ function resultParts(job, view, r, appUrl) {
   };
 }
 
-// 누가 어느 팀을 입력하나. 관리자 = 고른 팀(안 고르면 자기 팀 → 첫 팀, 없는 팀을 고르면 BAD_TEAM), 활성 팀장 = 자기 팀만(다른 팀은 FORBIDDEN_TEAM)
+// 팀장이 그 팀을 맡았나(소속팀 + 겸임팀). teams가 없는 예전 모양이면 소속팀만
+function leadsTeam_(u, t) { return (u.teams && u.teams.length ? u.teams : [normTeam(u.team)]).indexOf(t) >= 0; }
+// 누가 어느 팀을 입력하나. 관리자 = 고른 팀(안 고르면 자기 팀 → 첫 팀, 없는 팀을 고르면 BAD_TEAM), 활성 팀장 = 맡은 팀만(다른 팀은 FORBIDDEN_TEAM)
+// 2026-11-18 팀장 겸임 2차: 맡은 팀 = 소속팀 + 겸임팀. 안 고르면 맡은 팀 중 실적-고객사에 있는 첫 팀(소속팀 먼저). myTeams = 화면 팀 버튼용
 // me = usersOf() 한 줄 또는 null, teams = teamsOf(실적-고객사)
 function leadTeam(me, isAdmin, reqTeam, teams) {
   const want = reqTeam ? normTeam(reqTeam) : '';
@@ -636,10 +640,12 @@ function leadTeam(me, isAdmin, reqTeam, teams) {
     return team ? { ok: true, team: team } : { ok: false, error: 'NO_TEAM' };
   }
   if (!me || !me.active || me.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
-  const own = normTeam(me.team);
-  if (want && want !== own) return { ok: false, error: 'FORBIDDEN_TEAM' };
-  if (teams.indexOf(own) < 0) return { ok: false, error: 'NO_TEAM' };
-  return { ok: true, team: own };
+  const mine = me.teams && me.teams.length ? me.teams : [normTeam(me.team)];
+  const myTeams = mine.filter(function (t) { return teams.indexOf(t) >= 0; });
+  if (want && mine.indexOf(want) < 0) return { ok: false, error: 'FORBIDDEN_TEAM' };
+  const team = want || myTeams[0];
+  if (!team || teams.indexOf(team) < 0) return { ok: false, error: 'NO_TEAM' };
+  return { ok: true, team: team, myTeams: myTeams };
 }
 
 // ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 활성 '담당' 이름, 사용 끄기 = 경고만, 구매사명·팀·순서 잠금,
@@ -817,7 +823,7 @@ function stage3Jobs(p) {
     const md = managerDoneMap(p.progressRows, cur.year, cur.month, wk, t);
     const base = { team: t, year: cur.year, month: cur.month, entry: cur };
     if (names.every(function (n) { return md[n]; })) {
-      const leaders = users.filter(function (u) { return u.role === '팀장' && normTeam(u.team) === t && mailable(u); });
+      const leaders = users.filter(function (u) { return u.role === '팀장' && leadsTeam_(u, t) && mailable(u); }); // 겸임 팀장은 맡은 팀 전부
       const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
       jobs.push(Object.assign({ key: 'confirm_' + cur.year + '_' + cur.month + '_' + wk + '_' + t, kind: 'confirm', hour: s.팀장마감시각, proxy: !leaders.length, recipients: to,
         done: names.map(function (n) { return { name: n, at: md[n].at }; }) }, base));

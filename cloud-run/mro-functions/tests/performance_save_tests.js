@@ -136,7 +136,7 @@ const real = require('../lib/sheetsClient');
 stub('lib/sheetsClient.js', Object.assign({}, real, { getSheetsClient: async function () { return {}; },
   batchGetValues: async function (c, id, ranges) {
     return ranges.map(decodeURIComponent).map(function (r) {
-      if (id !== 'F26') return { values: r.indexOf('!A2:J') > 0 ? SHEET.mroUsers.map(function (x) { return x.slice(); }) : SHEET.mroSettings };
+      if (id !== 'F26') return { values: r.indexOf('!A2:L') > 0 ? SHEET.mroUsers.map(function (x) { return x.slice(); }) : SHEET.mroSettings };
       return { values: readRange(SHEET.F26, r) };
     });
   } }));

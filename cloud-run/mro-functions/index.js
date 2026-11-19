@@ -1502,8 +1502,8 @@ exports.getCustomersTest = async (req, res) => {
 // row 번호를 넣어주지 않으므로, viewer(호출자 본인) 조회에는 rowsToUsers()를 그대로 쓰고,
 // 응답에 넣을 사용자 목록은 원본 행 배열(rawUserRows)을 직접 순회해 만든다 — rowsToUsers()
 // 자체는 건드리지 않는다(다른 배포된 함수들이 그대로 쓰고 있음).
-// 사용자 현황 목록 전용 범위 — K열(최종접속)까지. 다른 함수가 쓰는 POLL_USER_RANGE(A2:I)는 그대로
-// (COMPETENCY_USER_RANGE A2:J처럼 필요한 함수만 넓힌 상수를 따로 두는 기존 방식).
+// 사용자 현황 목록 전용 범위 — K열(최종접속)까지(2026-11-18부터 L열 겸임팀까지). POLL_USER_RANGE도 2026-11-18부터 A2:L(K는 읽기만)
+// (COMPETENCY_USER_RANGE처럼 필요한 함수만 넓힌 상수를 따로 두는 기존 방식 — 2026-11-18부터 둘 다 A2:L).
 const USERS_LIST_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L'); // 2026-11-18: L열 겸임팀까지
 exports.getUsersTest = async (req, res) => {
   setCors(res);
@@ -4063,7 +4063,7 @@ exports.getCompetencyTest = async (req, res) => {
 //   인사평가 파일 쪽은 날 문자열을 .map(encodeURIComponent)로 한 번만 인코딩한다(ping과 같음).
 // A1 규약: 탭 이름은 항상 작은따옴표로 감싼다(competency.quoteTab) — ping에서 실제 동작 확인됨.
 // =====================================================================
-const COMPETENCY_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:J'); // J = 사무소(4-5절)
+const COMPETENCY_USER_RANGE = encodeURIComponent(SHEET_USER_NAME + '!A2:L'); // J = 사무소(4-5절), L = 겸임팀(2026-11-18 팀장 겸임 2차)
 
 async function competencyView_(req, res, auth, t0, timings, view, year) {
   const body = req.body || {};
@@ -4072,7 +4072,7 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
   timings.mroSheetMs = Date.now() - m0;
   const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
   });
   const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
   if (!viewer) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, timings, error: 'USER_NOT_FOUND' }); return; }
@@ -4103,7 +4103,7 @@ async function competencyView_(req, res, auth, t0, timings, view, year) {
   timings.competencySheetMs = Date.now() - c0;
   const base = { ok: true, view: view, year: targetYear,
     years: competency.yearsFromSettings((mro[1] && mro[1].values) || [], competency.seoulYear(nowMs)), yearMode: yr.mode, graceDay: graceDay,
-    viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office } };
+    viewer: { name: viewer.name, role: viewer.role, team: viewer.team, office: viewer.office, teams: viewer.role === '팀장' ? viewer.teams : undefined } }; // 2026-11-18 겸임 팀장 = 맡은 팀 목록(화면 '중부·영업지원' 표시)
   const criteriaRows = competency.criteriaRows(loaded.get('criteria') || []);
   if (view === 'criteria') {
     // 평가 기준 보기 "기록 있음": 기준표에 연결된 세부 항목 이름(시트 정보를 못 읽으면 응답에서 빠지고 화면은 고정 목록)
@@ -4182,7 +4182,7 @@ async function competencyBackfillRead_(year, timings) {
   const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
   timings.mroSheetMs = Date.now() - m0;
   const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
   });
   const targetYear = Number(year) || competency.seoulYear();
   const fileId = competency.findFileId((mro[1] && mro[1].values) || [], targetYear);
@@ -4329,7 +4329,7 @@ async function competencyReply_(req, res, auth, t0, timings) {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4] };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
@@ -4403,7 +4403,7 @@ async function competencyCreate_(req, res, auth, t0, timings) {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
@@ -4498,7 +4498,7 @@ async function competencyEdit_(req, res, auth, t0, timings, action) {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
@@ -4589,7 +4589,7 @@ async function competencyReplyEdit_(req, res, auth, t0, timings, action) {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4] };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === String(auth.email || '').trim().toLowerCase(); });
     if (!viewer) return { ok: false, error: 'USER_NOT_FOUND' };
@@ -4670,7 +4670,7 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const norm = function (e) { return String(e || '').trim().toLowerCase(); };
     const viewer = users.find(function (u) { return norm(u.email) === norm(auth.email); });
@@ -4708,7 +4708,7 @@ async function competencyEditReq_(req, res, auth, t0, timings, action) {
       let author = viewer;
       if (!isReq) {
         author = users.find(function (u) { return norm(u.email) === plan.authorEmail; });
-        if (!author || String(author.team || '').trim() !== String(viewer.team || '').trim()) return { ok: false, error: 'NOT_YOUR_TEAM' };
+        if (!author || (viewer.teams || [String(viewer.team || '').trim()]).indexOf(String(author.team || '').trim()) < 0) return { ok: false, error: 'NOT_YOUR_TEAM' }; // 겸임 팀장 = 맡은 팀 전부
         if (isReview && author.status !== '활성') return { ok: false, error: 'MEMBER_LEFT' };
       }
       const w0 = Date.now();
@@ -4814,7 +4814,7 @@ exports.getPerformanceTest = async (req, res) => {
     const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
     timings.mroSheetMs = Date.now() - m0;
     const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+      return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
     });
     const settingRows = (mro[1] && mro[1].values) || [];
     const targetYear = Number(year) || competency.seoulYear();
@@ -4890,7 +4890,7 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
   const mro = await batchGetValues(client, SPREADSHEET_ID, [COMPETENCY_USER_RANGE, POLL_SETTINGS_RANGE]);
   timings.mroSheetMs = Date.now() - m0;
   const users = ((mro[0] && mro[0].values) || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
   });
   const me = String(auth.email || '').trim().toLowerCase();
   const viewer = users.find(function (u) { return String(u.email || '').trim().toLowerCase() === me; });
@@ -4932,6 +4932,9 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
   const criteria = performance.parseCriteria((vr[3] && vr[3].values) || []);
   const base = { ok: true, view: view, year: y, years: competency.yearsFromSettings(settingRows, thisYear),
     viewer: { name: viewer.name, role: role, team: viewer.team, office: viewer.office }, preview: preview, previewIgnored: previewIgnored };
+  // 2026-11-18 팀장 겸임 2차: 겸임 팀장(미리보기 아님)은 맡은 팀마다 따로 본다 — body.team이 맡은 팀이면 그 팀, 아니면 소속팀. myTeams = 화면 팀 버튼
+  const leadTeams = !preview && role === '팀장' && Array.isArray(viewer.teams) && viewer.teams.length > 1 ? viewer.teams : null;
+  if (leadTeams) base.myTeams = leadTeams;
 
   if (view === 'criteria') {
     res.status(200).json(Object.assign(base, { serverMs: Date.now() - t0, timings,
@@ -4944,6 +4947,7 @@ async function performanceView_(req, res, auth, t0, timings, view, year) {
   const closeRows = (vr[2] && vr[2].values) || [];
   const teams = performance.teamsOf(users);
   let team = String(viewer.team || '').trim();
+  if (leadTeams && leadTeams.indexOf(String(body.team || '').trim()) >= 0) team = String(body.team).trim();
   if (view === 'team') team = teams.indexOf(String(body.team || '').trim()) >= 0 ? String(body.team).trim() : (teams[0] || '');
   const mode = performance.unitModeOf(modes, team);
   const out = performance.buildView({
@@ -5009,12 +5013,13 @@ function perfLeadTeam_(viewer, users, isAdmin, reqTeam) {
   const own = String(viewer.team || '').trim(), want = String(reqTeam || '').trim();
   if (isAdmin) return { ok: true, team: want && performance.teamsOf(users).indexOf(want) >= 0 ? want : own };
   if (viewer.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
-  if (want && want !== own) return { ok: false, error: 'FORBIDDEN_TEAM' };
-  return { ok: true, team: own };
+  const mine = Array.isArray(viewer.teams) && viewer.teams.length ? viewer.teams : [own]; // 2026-11-18 겸임 팀장 = 맡은 팀 전부
+  if (want && mine.indexOf(want) < 0) return { ok: false, error: 'FORBIDDEN_TEAM' };
+  return { ok: true, team: want || own, myTeams: mine.length > 1 ? mine : undefined };
 }
 function perfUsers_(values) {
   return (values || []).filter(function (r) { return r && r[0]; }).map(function (r) {
-    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '' };
+    return { email: r[0], name: r[1], role: r[2], team: r[3], status: r[4], office: r[9] || '', teams: teamsLib.teamsOf(r[3], r[teamsLib.EXTRA_COL]) };
   });
 }
 // 인사평가 파일: 인사평가설정 + 성과-월실적 A2:L(L = 비고, 3-다) + 성과-마감 A2:F (서식 없이, 1번)
@@ -5486,7 +5491,7 @@ async function weeklySalesInput_(req, res, auth, t0, timings) {
   const nowEn = weeklyEntry_(en.year, undefined, undefined, f.settings, nowMs);
   view.edit = nowEn.ok ? { month: nowEn.month, customers: weeklySales.customerEditList(f.customers, lead.team, f.weekly, nowEn.year, nowEn.month), managers: weeklySales.managersOf(mro.userRows, lead.team) } : null;
   res.status(200).json(Object.assign({ ok: true, serverMs: Date.now() - t0, timings, view: 'input', year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry),
-    isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각, leadHour: f.settings.팀장마감시각 }, view));
+    isCurrent: en.isCurrent, deadlineHour: f.settings.담당마감시각, leadHour: f.settings.팀장마감시각 }, view, { myTeams: !isAdmin && lead.myTeams && lead.myTeams.length > 1 ? lead.myTeams : undefined })); // 2026-11-18 겸임 팀장 팀 버튼
 }
 // 담당이 입력하는 팀 = 자기 팀(실적-고객사에 있는 팀만)
 function weeklyMgrTeam_(me, teams) {

@@ -303,6 +303,7 @@ function teamsOf(users) {
   const s = {};
   (users || []).forEach(function (u) {
     if (cell(u.status) === '활성' && ['일반', '담당', '팀장'].indexOf(cell(u.role)) >= 0 && cell(u.team)) s[cell(u.team)] = true;
+    if (cell(u.status) === '활성' && cell(u.role) === '팀장' && Array.isArray(u.teams)) u.teams.forEach(function (t) { if (cell(t)) s[cell(t)] = true; }); // 2026-11-18 겸임팀(팀원이 아직 없어도 팀장이 맡은 팀)
   });
   return Object.keys(s).sort(function (a, b) { return a.localeCompare(b, 'ko'); });
 }

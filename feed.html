@@ -828,6 +828,21 @@ font-size: 13px; padding: 2px 4px; display: none;
 /* 주간 실적 3단계 (2026-11-17): 입력 방식 고르기 · 담당 입력 현황 · 담당 원래 값 */
 .wi-seg { display: inline-flex; border: 1px solid #cfc8e2; border-radius: 8px; overflow: hidden; } .wi-seg button { border: 0; background: #fff; padding: 6px 12px; font: inherit; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
 .wi-seg button.on { background: var(--accent); color: #fff; font-weight: 700; } .wi-seg button:disabled { cursor: default; }
+/* 2026-11-18 겸임 팀장 [맡은 팀] 버튼 · 입력 방식 [바꾸기] 글자 버튼 */
+.wi-link { border: 0; background: none; padding: 2px 4px; font: inherit; font-size: 12.5px; color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; } .wi-link:disabled { opacity: .5; cursor: default; }
+.wi-teams { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; } .wi-teams .lbl { align-self: center; font-size: 13px; font-weight: 700; margin-right: 2px; } .wi-teams .wi-mode { flex-basis: 100%; }
+.wi-teams button { flex: 1 1 0; max-width: 200px; min-width: 0; text-align: left; border: 1.5px solid #cfc8e2; background: #fff; border-radius: 10px; padding: 8px 14px; font: inherit; cursor: pointer; }
+.wi-teams button b { display: block; font-size: 15px; color: var(--text); } .wi-teams button small { font-size: 12px; color: var(--text-muted); } .wi-teams button small.done { color: #2e8b57; } .wi-teams button small.ing { color: #b07d0a; }
+.wi-teams button.on { border-color: var(--accent); background: #f3effb; box-shadow: inset 0 -3px 0 var(--accent); cursor: default; } .wi-teams button.on b { color: var(--accent); }
+/* 2026-11-19 누름 느낌 · 처리 중 · 결과 안내 */
+.wi-seg button:active:not(:disabled), .wi-teams button:active:not(:disabled), .wi-link:active:not(:disabled) { transform: scale(.96); }
+.wi-seg button, .wi-teams button { transition: transform .08s, background .15s, border-color .15s; } .wi-teams button:hover:not(:disabled) { border-color: var(--accent); }
+.wi-seg button.busy, .wi-teams button.busy { background: #ece6f8; color: var(--accent); border-color: var(--accent); }
+.wi-spin { display: inline-block; width: 11px; height: 11px; margin-right: 5px; vertical-align: -1px; border: 2px solid #cfc3ec; border-top-color: var(--accent); border-radius: 50%; animation: wiSpin .7s linear infinite; }
+@keyframes wiSpin { to { transform: rotate(360deg); } }
+.wi-note { margin: -2px 0 10px; padding: 7px 12px; border-radius: 8px; background: #e9f6ee; color: #1f6b41; font-size: 13px; font-weight: 600; animation: wiNoteIn .25s ease-out; transition: opacity .3s; } .wi-note.out { opacity: 0; }
+@keyframes wiNoteIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) { .wi-teams .lbl, .wi-teams .wi-mode { flex-basis: 100%; } .wi-teams button { flex: 1 1 40%; max-width: none; } } /* 휴대폰: 팀 버튼 한 줄에 2개씩(관리자 4팀 = 2줄) */
 .wi-mgr { border: 1px solid #e2dfec; border-radius: 10px; background: #fff; padding: 10px 14px; margin: 6px 0 8px; font-size: 13px; } .wi-mgr b.n { color: var(--accent); }
 .wi-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .wi-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 700; background: #f1f0ec; color: var(--text-muted); border: 1px solid #e2e0da; }
@@ -4960,10 +4975,12 @@ root.innerHTML = `<div class="settings-panel">${head}${body}${total}
 // - criteria : 평가 기준 보기 — 성과평가(60%).
 // 팀장 [실적 입력]·[팀 설정] 탭은 자리만(3단계). 연도 칸은 역량평가와 같은 모양(.cy-sel) — 파일 있는 해가 2개 이상일 때만.
 let perfReq_ = 0, perfYear_ = null, perfTeam_ = '', perfRes_ = null;
+let perfLeadTeam_ = ''; // 2026-11-18 겸임 팀장: 지금 고른 맡은 팀(서버 myTeams가 올 때만). 빈칸 = 예전과 같음(소속팀)
 async function perfFetch_(body) {
 try {
 const controller = new AbortController();
 const timeoutId = setTimeout(function () { controller.abort(); }, 20000);
+if (perfLeadTeam_ && body.team === undefined && (body.view === 'mine' || body.view === 'input')) body.team = perfLeadTeam_; // 겸임 팀장: 고른 팀
 const res = await fetch(CLOUD_RUN_GET_PERFORMANCE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
 clearTimeout(timeoutId);
 return compRateLimit_(res); // 역량평가와 같은 '요청이 잠시 많아요' 처리
@@ -4990,10 +5007,17 @@ return;
 }
 perfRes_ = res;
 if (res.view === 'team') perfTeam_ = res.team;
+if (res.view === 'mine') perfLeadTeam_ = Array.isArray(res.myTeams) && res.myTeams.length > 1 ? res.team : '';
 perfRender_(res);
 }
 function perfPickYear_(v) { const y = Number(v); perfYear_ = (!Number.isInteger(y) || y === Number(compSeoulToday_().slice(0, 4))) ? null : y; loadPerfPage(); }
 function perfPickTeam_(t) { perfTeam_ = t; loadPerfPage(); }
+// 겸임 팀장 팀 바꾸기: 실적 입력에 저장 안 한 값이 있으면 탭 바꾸기와 같이 한 번 더 눌러야 바뀜
+function perfPickLeadTeam_(t) {
+if (t === perfLeadTeam_) return;
+if (perfLeadTab_ === 'input' && perfInDirty_() && perfIn_ && !perfIn_.leaveTeamOk) { perfIn_.leaveTeamOk = true; perfIn_.msg = { warn: true, text: '저장하지 않은 값이 있어요. 그래도 팀을 바꾸려면 팀 버튼을 한 번 더 눌러 주세요.' }; perfInRender_(); return; }
+perfLeadTeam_ = t; perfIn_ = null; perfTeamSet_ = null; loadPerfPage();
+}
 // 숫자 모양: 금액 = 천원 정수(쉼표), 비율 = 소수 첫째 자리 버림(서버 pctFloor1과 같음 — 99.97%를 100.0%로 보이지 않게)
 function perfNum_(n) { return (n === null || n === undefined || !isFinite(n)) ? '—' : Math.round(n).toLocaleString('ko-KR'); }
 function perfPct_(r) { return (r === null || r === undefined || !isFinite(r)) ? '—' : (Math.floor(Math.round(r * 1e10) / 1e10 * 1000) / 10).toFixed(1) + '%'; }
@@ -5013,6 +5037,11 @@ if (res.previewIgnored) h += `<div class="cy-band cy-yellow">⚠️ 미리보기
 if (teamView) {
 h += `<div class="pf-chips">${(res.teams || []).map(function (t) {
 return `<button type="button" class="pf-chip ${t.team === res.team ? 'on' : ''}" onclick="perfPickTeam_('${escapeHtml(t.team).replace(/'/g, '&#39;')}')">${escapeHtml(teamLabel(t.team))}<small>${escapeHtml(t.mode)} · ${t.closeMonth ? t.closeMonth + '월 마감' : '마감 없음'}</small></button>`;
+}).join('')}</div>`;
+}
+if (lead && Array.isArray(res.myTeams) && res.myTeams.length > 1) { // 2026-11-18 겸임 팀장: 맡은 팀 버튼(임원 팀 칩과 같은 모양). 순위·점수·마감은 팀마다 따로
+h += `<div class="pf-chips">${res.myTeams.map(function (t) {
+return `<button type="button" class="pf-chip ${t === res.team ? 'on' : ''}" onclick="perfPickLeadTeam_('${escapeHtml(t).replace(/'/g, '&#39;')}')">${escapeHtml(teamLabel(t))}<small>${t === res.team ? escapeHtml(res.mode) + ' · ' + (res.closeMonth ? res.closeMonth + '월 마감' : '마감 없음') : '맡은 팀 · 눌러서 보기'}</small></button>`;
 }).join('')}</div>`;
 }
 const basis = res.closeMonth
@@ -5081,6 +5110,7 @@ async function perfSaveFetch_(body) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(function () { controller.abort(); }, 45000);
+    if (perfLeadTeam_ && body.team === undefined) body.team = perfLeadTeam_; // 겸임 팀장: 고른 팀에 저장·마감(서버가 맡은 팀인지 다시 확인)
     const res = await fetch(CLOUD_RUN_SAVE_PERFORMANCE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ sessionToken: session ? session.sessionToken : null, idempotencyKey: generateIdempotencyKey_() }, body)), signal: controller.signal }).then(function (r) { return r.json(); });
     clearTimeout(timeoutId);
     return compRateLimit_(res);
@@ -5311,7 +5341,7 @@ async function loadPerfTeamSet_() {
   const el = document.getElementById('pf-lead-body');
   if (!el) return;
   if (!res || !res.ok) { el.innerHTML = `<div class="feed-empty">${escapeHtml(compErrorText_(res, '팀원 목록'))}</div>`; return; }
-  const members = (Array.isArray(res.members) ? res.members : []).filter(function (m) { return m.status === 'active'; })
+  const members = (Array.isArray(res.members) ? res.members : []).filter(function (m) { return m.status === 'active' && (!perfLeadTeam_ || m.team === perfLeadTeam_); }) // 겸임 팀장: 고른 팀 팀원만
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ko'); });
   const sel = {}, orig = {};
   members.forEach(function (m) { sel[m.email] = m.office || ''; orig[m.email] = m.office || ''; });
@@ -6906,6 +6936,8 @@ compLeadRes_ = res;
 compLeadTabs_ = tabs;
 renderCompLead_();
 }
+// 2026-11-18 팀장 겸임 2차: 맡은 팀이 둘 이상인 팀장 = 두 팀 팀원을 한 목록에(임원 화면처럼 팀 구분 줄). 기준은 팀마다 같음(재홍님 확인)
+function compLeadMulti_(res) { const v = (res && res.viewer) || {}; return v.role === '팀장' && Array.isArray(v.teams) && v.teams.length > 1; }
 function toggleCompLeadLeft_(on) { compLeadIncludeLeft_ = !!on; loadCompLeadPage(true); }
 function compLeadRows_(res, key) { return (Array.isArray(res.records) ? res.records : []).filter(function (r) { return r.tab === key; }); }
 function compLeadCount_(rows, st) { let n = 0; rows.forEach(function (r) { if (r.reviewState === st) n++; }); return n; }
@@ -6960,7 +6992,7 @@ return `<td>${escapeHtml(m.name || '')}${left}</td>`;
 // 팀 순서 = members에 처음 나온 순서. ncol = 표 칸 수(구분 줄이 표 폭 전체를 차지하게).
 function compLeadTableRows_(res, rowFn, ncol) {
 const members = Array.isArray(res.members) ? res.members : [];
-if ((res.viewer || {}).role !== '임원') return members.map(rowFn).join('');
+if ((res.viewer || {}).role !== '임원' && !compLeadMulti_(res)) return members.map(rowFn).join('');
 const teams = [];
 members.forEach(function (m) { if (teams.indexOf(m.team) < 0) teams.push(m.team); });
 return teams.map(function (tm) {
@@ -7062,7 +7094,7 @@ const meta = left ? `총 ${mineAll.length}` : (t.hasReply ? `계획 ${compLeadCo
 return `<div class="ca-group${left ? ' ct-left' : ''}" data-email="${escapeHtml(m.email || '')}"><div class="ca-group-head"><span class="ca-group-name">${escapeHtml(m.name || '')}</span>${left ? '<span class="ct-left-tag">퇴사</span>' : ''}<span class="ca-group-meta">${meta}</span></div>${mine.map(function (rec) { return compRecordCard_(t, rec, { prLabel: prText, lead: true, decide: isLeadRole && !left, review: isLeadRole && !left }); }).join('')}</div>`;
 };
 let groups;
-if ((res.viewer || {}).role === '임원') {
+if ((res.viewer || {}).role === '임원' || compLeadMulti_(res)) { // 겸임 팀장도 팀 › 팀원
 // 임원: 팀 › 팀원 (팀 순서 = members에 처음 나온 순서)
 const teams = [];
 members.forEach(function (m) { if (teams.indexOf(m.team) < 0) teams.push(m.team); });
@@ -7108,7 +7140,7 @@ compLeadTab_ = (withPr || withAny || compLeadTabs_[0]).key;
 const members = Array.isArray(res.members) ? res.members : [];
 const nActive = members.filter(function (m) { return m.status === 'active'; }).length;
 const nLeft = members.length - nActive;
-const sub = (isExec ? '전체 팀' : teamLabel(viewer.team || '')) + ' · 재직 팀원 ' + nActive + '명' + (nLeft ? ' · 퇴사 ' + nLeft + '명' : '');
+const sub = (isExec ? '전체 팀' : (compLeadMulti_(res) ? viewer.teams.map(teamLabel).join('·') : teamLabel(viewer.team || ''))) + ' · 재직 팀원 ' + nActive + '명' + (nLeft ? ' · 퇴사 ' + nLeft + '명' : '');
 const head = `<div class="ct-head"><div><div class="settings-row-title" style="font-size:16px; margin:4px 0 2px;">역량평가 <span style="color:var(--text-muted); font-weight:400;">· 40%</span></div>
 <div class="settings-row-desc">${escapeHtml(String(res.year || ''))}년 · ${escapeHtml(sub)}${isExec ? ' · 보기 전용' : ''}</div></div>
 <div class="cy-right">${compYearSelHtml_(res, 'team')}<label class="ct-left-toggle"><input type="checkbox" ${compLeadIncludeLeft_ ? 'checked' : ''} onchange="toggleCompLeadLeft_(this.checked)"> 퇴사자 포함</label></div></div>${compYearBandHtml_(res)}`; // diff ②-2: 연도 칸(퇴사자 포함 위) + 띠
@@ -7925,6 +7957,7 @@ function doLogout() {
 // =====================================================================
 const CLOUD_RUN_GET_WEEKLY_SALES_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/getWeeklySalesTest';
 let wkReq_ = 0, wkSel_ = {}, wkRes_ = null, wkTab_ = 'all';
+let wkModeOpen_ = false; // 2026-11-18 입력 방식 줄 펼침(기본 접힘 — 모든 팀). loadWeeklyPage보다 위에 둠
 async function wkFetch_(body) {
 try {
 const controller = new AbortController();
@@ -7944,6 +7977,7 @@ return compErrorText_(res, '주간 실적');
 // 3단계: 담당(관리자 아님)은 전사 보기 없이 [우리 팀 입력]만 — 지금 보고 주차의 자기 고객사
 function wkMgrOnly_() { return !!session && session.email !== ADMIN_EMAIL && session.role === '담당'; }
 async function loadWeeklyPage() {
+wkModeOpen_ = false; // 2026-11-19 재홍님: 입력 방식은 모든 팀 기본 접기 — 화면을 새로 그릴 때마다(메뉴·주차 이동·저장·완료 뒤) 다시 접힘
 const root = document.getElementById('weekly-view');
 if (wkMgrOnly_()) {
 wkTab_ = 'in';
@@ -8082,6 +8116,7 @@ wkMarkSeen_(res); // 2단계: 4팀 완료 주차를 열면 이 기기의 NEW 해
 // ---------------------------------------------------------------------
 const CLOUD_RUN_SAVE_WEEKLY_SALES_URL = 'https://asia-northeast3-mro-market-intelligence.cloudfunctions.net/saveWeeklySalesTest';
 let wkIn_ = null, wkInTeam_ = '', wkInReq_ = 0, wkAddOpen_ = false, wkBusy_ = false, wkInMsg_ = '', wkBadgeKey_ = null;
+let wkPending_ = null, wkNote_ = null; // 2026-11-19 재홍님 '눌렀는지 모르겠다': 누른 버튼 {kind:'mode'|'team', value} = '바꾸는 중…' · 끝나면 그 자리 아래 초록 안내 {where, text}(6초)
 let wkEditOpen_ = false, wkCe_ = {}, wkInRendered_ = null; // 고객사 정보 고치기: 창 열림 · 바꾼 칸 {구매사명: {칸: 값}} · 마지막으로 그린 입력 데이터(같은 데이터를 다시 그릴 때 입력 중인 숫자 유지)
 const WK_SEEN_KEY_ = 'mro_weekly_seen';
 function wkWeekArg_(res) { return res.gamagam ? '가마감' : String(res.label || '').replace('주차', ''); }
@@ -8132,14 +8167,21 @@ const prevL = d.prevLabel ? escapeHtml(d.prevLabel) : '지난 주차';
 const curL = d.gamagam ? '가마감(예상 마감)' : escapeHtml(d.label);
 const three = d.mode === '3단계', asMgr = d.role === 'manager', hh = String(d.deadlineHour === undefined ? 15 : d.deadlineHour).padStart(2, '0') + ':00';
 let x = `<div class="wi-bar">`;
-if (d.isAdmin) x += `<span style="font-size:13px;font-weight:700">입력할 팀</span><select class="cy-sel" aria-label="입력할 팀" onchange="wkInTeam_=this.value;wkAddOpen_=false;wkEditOpen_=false;wkCe_={};wkInMsg_='';loadWeeklyInput_()">${d.teams.map(function (t) { return `<option value="${escapeHtml(t)}" ${t === d.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
+// 2026-11-18 재홍님: 관리자 [입력할 팀]도 드롭다운 대신 겸임 팀장과 같은 큰 팀 버튼(입력 방식 줄 아래, wkTeamBarHtml_)
 if (asMgr) x += `<span class="wi-mode"><b>${escapeHtml(String(d.year))}년 ${escapeHtml(String(d.month))}월 ${escapeHtml(d.label)}</b> · 입력 ${escapeHtml(wkMd_(d.openDate || d.inputDate))}~${escapeHtml(wkMd_(d.inputDate))} ${hh} · 입력 방식: <b>3단계</b> (담당 입력 → 팀장 확정 → 임원·팀장 열람)</span></div>`;
 else {
 // 3단계 ①⑨: 팀장·관리자가 고름 → 시트 실적-설정 '입력방식_{팀}'. 화면 값 = 시트 값(다음 보고부터), 이번 주차에 적용 중인 방식은 따로 안내
 const sheetMode = d.nextMode || d.mode || '2단계';
-const seg = ['2단계', '3단계'].map(function (m) { return `<button class="${sheetMode === m ? 'on' : ''}" ${wkBusy_ || sheetMode === m ? 'disabled' : ''} onclick="wkSetMode_('${m}')">${m === '2단계' ? '2단계 · 팀장 입력' : '3단계 · 담당 입력 → 팀장 확정'}</button>`; }).join('');
-x += `<span style="font-size:13px;font-weight:700">입력 방식</span><span class="wi-seg">${seg}</span><span class="wi-mode">· 바꾸면 시트 ‘실적-설정’의 입력방식_${escapeHtml(d.team)}가 바뀌고, 다음 보고 주차부터 적용돼요${d.nextMode ? ` · <b>이 주차는 ${escapeHtml(d.mode)}</b>로 진행` : ''}</span></div>`;
+const seg = ['2단계', '3단계'].map(function (m) { const busy = wkPending_ && wkPending_.kind === 'mode' && wkPending_.value === m; return `<button class="${sheetMode === m ? 'on' : ''}${busy ? ' busy' : ''}" ${wkBusy_ || sheetMode === m ? 'disabled' : ''} onclick="wkSetMode_('${m}')">${busy ? '<span class="wi-spin"></span>바꾸는 중…' : (m === '2단계' ? '2단계 · 팀장 입력' : '3단계 · 담당 입력 → 팀장 확정')}</button>`; }).join(''); // 2026-11-19 재홍님: 눌렀는지 보이게
+// 2026-11-18 재홍님: 거의 안 바꾸는 입력 방식은 한 줄로 접어 두고 [바꾸기 ▾]를 눌러야 버튼이 보임(매번 누르는 [맡은 팀]은 그 아래·표 가까이)
+const mLabel = function (m) { return m === '3단계' ? '3단계 · 담당 입력 → 팀장 확정' : '2단계 · 팀장 입력'; };
+x += wkModeOpen_
+? `<span style="font-size:13px;font-weight:700">입력 방식</span><span class="wi-seg">${seg}</span><button class="wi-link" onclick="wkModeOpen_=false;wkRenderInput_()">접기</button><span class="wi-mode" style="flex-basis:100%">· 바꾸면 시트 ‘실적-설정’의 입력방식_${escapeHtml(d.team)}가 바뀌고, 다음 보고 주차부터 적용돼요${d.nextMode ? ` · <b>이 주차는 ${escapeHtml(d.mode)}</b>로 진행` : ''}</span></div>`
+: `<span class="wi-mode">입력 방식 <b>${escapeHtml(mLabel(sheetMode))}</b>${d.nextMode ? ` · 이 주차는 ${escapeHtml(d.mode)}로 진행` : ''}</span><button class="wi-link" ${wkBusy_ ? 'disabled' : ''} onclick="wkModeOpen_=true;wkRenderInput_()">바꾸기 ▾</button></div>`;
 }
+if (wkNote_ && wkNote_.where === 'mode') x += `<div class="wi-note">${escapeHtml(wkNote_.text)}</div>`; // 누른 자리 바로 아래 결과(2026-11-19)
+x += wkTeamBarHtml_(d); // 2026-11-18 겸임 팀장: [맡은 팀] 버튼(입력 방식 줄 아래, 표 가까이)
+if (wkNote_ && wkNote_.where === 'team') x += `<div class="wi-note">${escapeHtml(wkNote_.text)}</div>`;
 const myTeam = session && session.team ? String(session.team).replace(/(지역팀|팀)$/, '') : '';
 if (d.isAdmin && d.team !== myTeam) x += `<div class="wi-proxy">👤 관리자 대리 입력 — <b>${escapeHtml(d.team)}</b> 팀 숫자를 대신 넣고 있어요. 저장·완료 기록에 관리자 이메일이 남고, 화면에는 ‘관리자 대리’로 보여요.</div>`;
 const doneWord = three ? '팀 확정' : '입력 완료';
@@ -8215,18 +8257,51 @@ if (wkInMsg_) x += `<div class="${/^✓/.test(wkInMsg_) ? 'wi-st' : 'wi-err'}" s
 box.innerHTML = x;
 if (keep) keep.forEach(function (e, i) { [['wi-s-', e.sales], ['wi-p-', e.profit], ['wi-n-', e.note]].forEach(function (z) { const el = document.getElementById(z[0] + i); if (el && !el.disabled) el.value = z[1]; }); });
 wkInRendered_ = d;
+if (wkNote_) { const n = wkNote_; setTimeout(function () { if (wkNote_ !== n) return; wkNote_ = null; const el = document.querySelector('#wk-in .wi-note'); if (el) { el.classList.add('out'); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 300); } }, 6000); }
 if (d.edit && wkEditOpen_) wkCeStatus_();
+}
+// 2026-11-18 팀장 겸임 2차(재홍님 선택: 팀 버튼 전환): 맡은 팀이 둘 이상인 팀장 = [맡은 팀] 버튼, 관리자 = [입력할 팀] 버튼(전 팀, 예전 드롭다운 대신 — 재홍님 통일 요청).
+// 팀마다 저장·완료·입력 방식은 따로(서버 myTeams·teams·team). 팀이 하나뿐이면 버튼 없음
+function wkTeamBarHtml_(d) {
+const list = d.isAdmin ? d.teams : d.myTeams;
+if (!Array.isArray(list) || list.length < 2) return '';
+const st = {}; ((wkRes_ && wkRes_.teams) || []).forEach(function (t) { st[t.team] = t.status; }); // 위 '팀 입력 현황' 카드와 같은 상태
+const word = { done: '✓ 완료', ing: '✎ 입력 중', none: '— 미입력' };
+return `<div class="wi-teams"><span class="lbl">${d.isAdmin ? '입력할 팀' : '맡은 팀'}</span>${list.map(function (t) { const busy = wkPending_ && wkPending_.kind === 'team' && wkPending_.value === t; return `<button class="${t === d.team ? 'on' : ''}${busy ? ' busy' : ''}" ${wkBusy_ || wkPending_ || t === d.team ? 'disabled' : ''} onclick="wkPickTeam_('${escapeHtml(t).replace(/'/g, '&#39;')}')"><b>${escapeHtml(t)}</b><small class="${busy ? '' : (st[t] || 'none')}">${busy ? '<span class="wi-spin"></span>불러오는 중…' : (st[t] ? word[st[t]] : '— 미입력')}</small></button>`; }).join('')}<span class="wi-mode">팀마다 저장·[입력 완료]가 따로예요</span></div>`;
+}
+// 입력칸이 처음 그린 값과 다른가(팀 바꾸기 전에 저장할지)
+function wkInDirty_() {
+if (!wkIn_ || !wkIn_.canEdit) return false;
+const v = function (id) { const el = document.getElementById(id); return el ? el.value : null; };
+return wkIn_.rows.some(function (r, i) { const s = v('wi-s-' + i), p = v('wi-p-' + i), n = v('wi-n-' + i); return (s !== null && s !== wkFmtIn_(r.sales)) || (p !== null && p !== wkFmtIn_(r.profit)) || (n !== null && n !== (r.note || '')); });
+}
+// 팀 바꾸기: 고친 숫자가 있으면 먼저 그 팀에 저장(고객사 추가·입력 방식 바꾸기와 같은 방식) → 고른 팀 표로
+async function wkPickTeam_(t) {
+if (wkBusy_ || !wkIn_ || t === wkIn_.team) return;
+const from = wkIn_.team, entries = wkInDirty_() ? wkInEntries_() : null; // 다시 그리기 전에 먼저 읽기
+wkInMsg_ = ''; wkNote_ = null; wkPending_ = { kind: 'team', value: t }; wkRenderInput_(); // 누른 버튼에 '불러오는 중…'(2026-11-19)
+if (entries) {
+wkBusy_ = true; wkRenderInput_();
+const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_()));
+if (!r0 || !r0.ok) { wkBusy_ = false; wkPending_ = null; wkInMsg_ = '팀을 바꾸기 전에 ' + from + ' 숫자를 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; }
+}
+wkInTeam_ = t; wkAddOpen_ = false; wkEditOpen_ = false; wkCe_ = {}; wkModeOpen_ = false; wkPending_ = null;
+wkNote_ = { where: 'team', text: entries ? '✓ ' + from + ' 숫자를 저장하고 ' + t + ' 표로 바꿨어요.' : '✓ ' + t + ' 표로 바꿨어요.' };
+if (entries) { await wkAfter_(''); return; } // 위 팀 카드 상태도 새로
+await loadWeeklyInput_();
 }
 function wkTodayIso_() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10); } // 서울 날짜
 // 3단계 ① 입력 방식 바꾸기(다음 보고 주차부터) · ⑧ 팀장 [대신 입력 완료]
 async function wkSetMode_(m) {
 if (wkBusy_ || !wkIn_) return;
 const entries = wkIn_.canEdit ? wkInEntries_() : null; // 다시 그리기 전에 먼저 읽기
-wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
-if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '바꾸기 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
+wkBusy_ = true; wkInMsg_ = ''; wkNote_ = null; wkPending_ = { kind: 'mode', value: m }; wkRenderInput_();
+if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkPending_ = null; wkInMsg_ = '바꾸기 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
 const r = await wkPost_({ action: 'setMode', year: wkIn_.year, team: wkIn_.team, mode: m });
-if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '입력 방식을 바꾸지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
-await wkAfter_('✓ 입력 방식을 ' + r.to + '로 바꿨어요(시트 실적-설정 입력방식_' + r.team + '). 다음 보고 주차부터 적용돼요.');
+if (!r || !r.ok) { wkBusy_ = false; wkPending_ = null; wkInMsg_ = '입력 방식을 바꾸지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
+wkModeOpen_ = false; wkPending_ = null;
+wkNote_ = { where: 'mode', text: '✓ ' + r.team + ' 입력 방식을 ' + r.to + '로 바꿨어요(시트 실적-설정 입력방식_' + r.team + '). 다음 보고 주차부터 적용돼요.' };
+await wkAfter_('');
 }
 async function wkProxy_(gi) {
 if (wkBusy_ || !wkIn_) return;

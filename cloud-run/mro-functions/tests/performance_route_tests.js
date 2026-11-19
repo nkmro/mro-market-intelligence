@@ -17,7 +17,7 @@ function data(spreadsheetId, ranges) {
   calls.push({ id: spreadsheetId, ranges: dec });
   if (spreadsheetId !== FILE) {
     return dec.map(function (r) {
-      if (r.indexOf('!A2:J') > 0) return { values: [
+      if (r.indexOf('!A2:L') > 0) return { values: [
         [ADMIN, '관리자', '팀장', '가팀', '활성'], ['m1@x', '김가', '일반', '가팀', '활성', '', '', '', '', '나사무소'],
         ['m2@x', '이가', '담당', '가팀', '활성', '', '', '', '', '다사무소'], ['lead@x', '팀장나', '팀장', '나팀', '활성'],
         ['n1@x', '서나', '일반', '나팀', '활성', '', '', '', '', '나사무소'], ['ex@x', '임원가', '임원', '본사', '활성'],
