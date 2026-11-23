@@ -452,7 +452,7 @@ t('E17 updateCustomers: 잠금을 잡은 뒤·푼 앞, 시트 다시 읽은 뒤�
   sv.indexOf('weeklyFile_(client, mro.fileId)') < sv.indexOf("if (b.action === 'updateCustomers')"));
 t('E18 updateCustomers: 쓰기 perfBatchWrite_ 1번, 팀 weeklyLeadTeam_, 담당 managersOf, 적용월 = 이번 보고 달(weeklyEntry_ 월 없이)', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') &&
   br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes('weeklyEntry_(year, undefined, undefined, f.settings, nowMs)') && br.includes('month: nowEn.month'));
-t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers', 'proxyComplete', 'setMode']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
+t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
 t('E20 실적-고객사 읽기 범위 3곳 모두 A2:L, 고객사 추가 쓰기 A:L', (IX.match(/TAB_CUSTOMERS\) \+ '!A2:L'/g) || []).length === 3 && !IX.includes("TAB_CUSTOMERS) + '!A2:K'") && IX.includes("'!A' + plan.row + ':L' + plan.row"));
 // 확인 1: 16시 알림의 '고객사 N곳'은 이력 줄을 한 곳으로 셈(11월 기준 동부 사용 중 = 가나정밀·다라금속·자차신규 3곳, 원본 줄로 세면 4)
 const RJ = ws.reminderJobs({ nowMs: Date.parse('2026-11-16T16:05:00+09:00'), settings: ws.readSettings([]), customers: CEC, progressRows: [], weeklyRows: [], users: CEU.concat([['e2@nkmro.com', '동팀장', '팀장', '동부', '활성']]), adminEmail: '' });
@@ -516,6 +516,19 @@ t('Q12 입력 탭: 방식 고르기(wkSetMode_)·담당 현황·대신 입력 �
 const sm3 = uiGrab('wkSetMode_'), px3 = uiGrab('wkProxy_');
 t('Q13 방식 바꾸기·대신 완료도 입력칸을 다시 그리기 전에 읽고 먼저 저장', sm3.indexOf('wkInEntries_()') < sm3.indexOf('wkRenderInput_()') && sm3.indexOf("action: 'save'") < sm3.indexOf("action: 'setMode'") &&
   px3.indexOf('wkInEntries_()') < px3.indexOf('wkRenderInput_()') && px3.indexOf("action: 'save'") < px3.indexOf("action: 'proxyComplete'"));
+// 2026-11-20 재홍님 승인: [대신 입력 완료] 한 번 더 확인 · 팀장이 대신 완료한 것만 팀장 [취소](proxyReopen)
+const pu = uiGrab('wkProxyUndo_'), ri5 = uiGrab('wkRenderInput_');
+t('Q13b 대신 완료: 첫 클릭은 확인만(wkPxAsk_), [대신 완료]에서 wkProxy_, [그만두기]는 -1', ri5.includes('onclick="wkPxAsk_ = ${gi}; wkRenderInput_()">✓ 대신 입력 완료</button>') && ri5.includes('wkPxAsk_ === gi') &&
+  ri5.includes('onclick="wkProxy_(${gi})">대신 완료</button>') && ri5.includes('onclick="wkPxAsk_ = -1; wkRenderInput_()">그만두기</button>') && uiGrab('wkProxy_').includes('wkPxAsk_ = -1;'));
+t('Q13c [취소]는 ✓ 칩 중 팀장이 대신 완료한 것(g.done.proxy)만, 팀 확정 전(canProxy)만', ri5.includes("g.done.proxy && d.canProxy ? `<button class=\"wi-px undo\"") && ri5.includes('onclick="wkProxyUndo_(${gi})">취소</button>'));
+t('Q13d [취소]도 입력칸을 다시 그리기 전에 읽고 먼저 저장 → proxyReopen, 대신 완료가 아니면 안 보냄', pu.indexOf('wkInEntries_()') < pu.indexOf('wkRenderInput_()') && pu.indexOf("action: 'save'") < pu.indexOf("action: 'proxyReopen'") && pu.includes('!g.done.proxy) return'));
+t('Q13e 설명 한 줄(대신 입력 완료가 무엇인지·[취소])과 NOT_PROXY 문구', ri5.includes('class="wi-pxhelp"') && FH.includes("NOT_PROXY: '담당 본인이 [입력 완료]한 거라"));
+const pb = sv.slice(sv.indexOf("if (asMgr || b.action === 'proxyComplete' || b.action === 'proxyReopen')"), sv.indexOf("if (b.action === 'complete') {"));
+t('E22 proxyReopen: 담당 한 사람 기록 분기 · 완료가 아님(완료 취소 줄) · 담당 본인이 한 완료면 NOT_PROXY · 담당은 못 보냄', pb.length > 0 && pb.includes("const complete = b.action !== 'reopen' && b.action !== 'proxyReopen';") &&
+  pb.includes("if (!complete && !mdone[who]) return { ok: false, error: 'NOT_DONE', field: who };") && pb.indexOf("error: 'NOT_DONE'") < pb.indexOf("error: 'NOT_PROXY'") && pb.indexOf("error: 'NOT_PROXY'") < pb.indexOf('perfBatchWrite_(') &&
+  pb.includes("mdone[who].by === String((mus.find(function (u) { return u.name === who; }) || {}).email || '').trim().toLowerCase()") && sv.includes("['save', 'complete', 'reopen'].indexOf(b.action) >= 0"));
+// 2026-11-23 재홍님 승인: 인사평가 설정 '기존 기록 정리'(1회용, 채울 칸 0 확인) 화면 제거 — 쓰기 공통 compSaveFetch_는 남김
+t('Q13f 기존 기록 정리 화면·CSS 없음, compSaveFetch_는 그대로', !FH.includes('compBackfill') && !FH.includes('cs-bf-') && !FH.includes('COMP_BF_') && FH.includes('async function compSaveFetch_(body, ms) {') && !uiGrab('renderCompSettings_').includes('기존 기록 정리'));
 // 3단계 서버(정적): 담당은 save·complete·reopen만, 잠금 앞에서 권한 확인
 t('E21 담당 권한은 save·complete·reopen만, FORBIDDEN이 잠금 앞', sv.includes("['save', 'complete', 'reopen'].indexOf(b.action) >= 0") && sv.indexOf("if (!isAdmin && !asMgr && !(mro.me") < sv.indexOf('acquireLock('));
 // 금요일 입력 시작 화면(정적): 상단·주차 막대 기간 표시, 예상치 안내, 마감 뒤 재촉(2안, 잠금 없음), 담당 '이번 주 2단계' 안내

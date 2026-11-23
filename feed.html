@@ -480,17 +480,6 @@ font-size: 13px; padding: 2px 4px; display: none;
 .csp-days { width: 70px; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; text-align: right; }
 .csp-chg { color: var(--accent); font-weight: 700; }
 .cs-sec { font-size: 13px; font-weight: 700; color: var(--accent); margin: 18px 0 0; padding-top: 4px; }
-/* 2-가 기존 기록 정리(관리자): 팀 칸 점검 · 미리보기 표 · 채우기 */
-.cs-ok { color: var(--text); font-weight: 600; }
-.cs-warn { color: var(--danger); font-weight: 600; }
-.cs-bf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 4px; }
-.cs-bf-msg { font-size: 13px; margin: 8px 0; line-height: 1.5; }
-.cs-bf-msg.err { color: var(--danger); }
-.cs-bf-wrap { overflow-x: auto; }
-.cs-bf-table { border-collapse: collapse; font-size: 13px; margin: 6px 0; min-width: 320px; }
-.cs-bf-table th, .cs-bf-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-.cs-bf-table th { font-size: 12px; color: var(--text-muted); font-weight: 600; }
-.cs-bf-table td.n { text-align: right; }
 @media (max-width: 480px) { .cs-val { width: 132px; } }
 .cc-section { font-size: 12px; font-weight: 700; color: var(--text-muted); margin: 14px 0 6px; }
 .cc-comp { border-top: 1px solid var(--border); padding: 12px 0; }
@@ -849,7 +838,13 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wi-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .wi-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 700; background: #f1f0ec; color: var(--text-muted); border: 1px solid #e2e0da; }
 .wi-chip.done { background: #e3f3ea; color: #1d6b43; border-color: #e3f3ea; } .wi-chip.ing { background: #fff7e0; color: #8a5a00; border-color: #f0d58a; }
-.wi-px { border: 1px solid #b9b2d3; background: #fff; color: var(--accent); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.wi-px { border: 1.5px solid var(--accent); background: #fff; color: var(--accent); border-radius: 8px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; box-shadow: 0 1px 0 rgba(58,47,110,.25); }
+.wi-px:hover:not(:disabled) { background: var(--accent); color: #fff; } .wi-px:disabled { opacity: .5; cursor: default; }
+/* 2026-11-20 재홍님 승인: 대신 입력 완료 = 두 번 확인(칩 안에서), ✓(대신) 칩에 [취소] */
+.wi-px.go { background: var(--accent); color: #fff; } .wi-px.no { border-color: #c9c5d8; color: var(--text-muted); box-shadow: none; }
+.wi-px.undo { border-width: 1px; border-color: #9cc9ae; color: #1d6b43; padding: 1px 8px; font-size: 11.5px; box-shadow: none; } .wi-px.undo:hover:not(:disabled) { background: #1d6b43; color: #fff; }
+.wi-chip.ask { background: #f2eaf6; color: var(--accent); border-color: var(--accent); }
+.wi-pxhelp { margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .wi-ms { font-size: 11.5px; font-weight: 700; } .wi-ms.done { color: #2e8b57; } .wi-ms.ing { color: #b07a00; } .wi-ms.none, .wi-ms.lead { color: var(--text-muted); font-weight: 400; }
 .wi-orig { font-size: 11px; color: #b07a00; text-align: right; margin-top: 2px; } .pf-in.wi-chgd { background: #fff7d6; border-color: #e6c55a; }
 .wi-me { background: #fff7e0; border: 1px solid #f0d58a; color: #6b4a00; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0; }
@@ -4692,7 +4687,6 @@ root.innerHTML = `<div class="settings-panel">
 <div class="cs-sec">탭 이모지 <span class="settings-row-desc" style="font-weight:400;">· 기록 탭 ${tabs.length}개 자동 인식</span></div>${emojis || '<div class="cm-empty">기록 탭을 찾지 못했어요.</div>'}
 <div id="cs-perf-sec"><div class="cs-sec">성과평가</div><div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div></div>
 ${extra ? `<div class="cs-sec">그 밖의 줄</div>${extra}` : ''}
-${compBackfillSectionHtml_(tabs)}
 </div>`;
 loadCompPerfSettings_(false);
 }
@@ -4823,26 +4817,7 @@ async function compPerfSave_() {
   compPerf_.msg = { ok: true, text: '성과평가 설정을 저장했어요 (' + ch.list.join(', ') + '). 다른 화면은 새로 열면 반영돼요.' };
   loadCompPerfSettings_(true);
 }
-// ==== 인사평가 설정 › 기존 기록 정리 (2-가, 설계서 v1.19 4-3) — 관리자만 보이는 화면(이 설정 화면 자체가 관리자 전용) ====
-// 서버 saveCompetencyTest action=backfill: preview(시트에 안 씀) → apply(빈 칸만, 잠금·중복 방지, 미리보기 칸 수와 다르면 멈춤).
-// 팀 칸 점검은 이 화면을 열 때 이미 받은 ping 응답(teamColumnOk·warnings)으로 그림 — 서버를 더 부르지 않음.
-const COMP_BF_STATUS_ = { ok: '정상', left: '퇴사(비활성)', unregistered: '미등록', unknownEmail: '모르는 이메일', duplicate: '동명이인' };
-const COMP_BF_ORDER_ = ['ok', 'left', 'unregistered', 'unknownEmail', 'duplicate'];
-function compBackfillSectionHtml_(tabs) {
-// 모두 정상이면 한 줄("모두 정상"), 아니면 문제 있는 탭만 한 줄씩
-const bad = tabs.filter(function (t) { return t.teamColumnOk !== true; });
-const teamRows = !bad.length
-? compSettingRowHtml_("'팀' 칸 위치", "기록 탭 " + tabs.length + "개 · '기록ID' 바로 왼쪽이면 정상", '<span class="cs-ok">모두 정상</span>')
-: bad.map(function (t) {
-const w = (t.warnings || []).filter(function (x) { return /'팀'/.test(x); })[0] || '점검 결과 없음(서버 업데이트 전)';
-return compSettingRowHtml_(t.label + " 탭 '팀' 칸", "'기록ID' 바로 왼쪽이면 정상", `<span class="cs-warn">${escapeHtml(w)}</span>`);
-}).join('');
-return `<div class="cs-sec">기존 기록 정리 <span class="settings-row-desc" style="font-weight:400;">· 빈 칸만 채움</span></div>
-<div class="settings-row-desc" style="margin-top:4px;">시트에 이미 있는 기록에 기록ID · 작성자이메일 · 팀(동부)을 채웁니다. 값이 있는 칸은 그대로 두고, 기록일시는 비워 둡니다. 퇴사·미등록은 기록ID·팀만, 동명이인은 채우지 않습니다.</div>
-${teamRows}
-<div class="cs-bf-bar"><button class="btn-secondary" id="cs-bf-preview-btn" onclick="compBackfillPreview_()">미리보기</button><span class="settings-row-desc">시트에 쓰지 않고 채울 칸만 셉니다</span></div>
-<div id="cs-bf-out"></div>`;
-}
+// 역량평가 쓰기 공통(saveCompetencyTest). 2026-11-23 재홍님 승인: '기존 기록 정리'(backfill, 관리자 1회용) 화면은 정리 완료(채울 칸 0)로 뺌 — 서버 action은 그대로
 async function compSaveFetch_(body, ms) {
 try {
 const controller = new AbortController();
@@ -4851,57 +4826,6 @@ const res = await fetch(CLOUD_RUN_SAVE_COMPETENCY_URL, { method: 'POST', headers
 clearTimeout(timeoutId);
 return compRateLimit_(res);
 } catch (e) { return null; }
-}
-function compBackfillErrText_(res) {
-if (!res) return '응답을 받지 못했어요. 채워졌을 수도 있으니 먼저 미리보기로 확인해 주세요.';
-const m = { FORBIDDEN: '관리자만 할 수 있어요.', LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 해 주세요.', DUPLICATE_IN_PROGRESS_RETRY_LATER: '같은 요청을 처리하는 중이에요. 잠시 후 미리보기로 확인해 주세요.',
-PLAN_CHANGED: '미리보기 뒤에 시트가 바뀌어 채우지 않았어요. 아래 새 미리보기를 확인하고 다시 눌러 주세요.', HEADER_NOT_READY: '탭 머리글이 맞지 않아 채우지 않았어요. 아래 문제를 시트에서 고친 뒤 다시 미리보기를 눌러 주세요.',
-PARTIAL_WRITE: '일부 칸만 채워졌을 수 있어요. 미리보기로 남은 칸을 확인해 주세요.' };
-if (m[res.error]) return m[res.error];
-if (['SESSION_EXPIRED', 'SESSION_NOT_FOUND', 'SHEET_ACCESS_FAILED', 'COMPETENCY_SETTINGS_MISSING'].indexOf(res.error) >= 0) return compErrorText_(res);
-return '처리하지 못했어요. (' + (res.error || 'SERVER_ERROR') + ')';
-}
-// 미리보기 결과(서버가 apply 실패 때도 같은 모양을 함께 돌려줌) → 요약 · 사람별 표 · 동명이인 · 머리글 문제 · 채우기 버튼
-function compBackfillPlanHtml_(res) {
-const s = res.summary || { cells: {} }; const cells = Number(res.cells) || 0;
-const people = (Array.isArray(res.people) ? res.people : []).slice().sort(function (a, b) { return COMP_BF_ORDER_.indexOf(a.status) - COMP_BF_ORDER_.indexOf(b.status) || (b.rows - a.rows); });
-const rows = people.map(function (p) { return `<tr><td>${escapeHtml(COMP_BF_STATUS_[p.status] || p.status)}</td><td>${escapeHtml(p.name)}</td><td class="n">${Number(p.rows) || 0}</td><td class="n">${Number(p.cells) || 0}</td></tr>`; }).join('');
-const sc = s.cells || {};
-// 퇴사·미등록·모르는 이메일 줄은 작성자이메일을 채우지 않는 규칙(4-3) — "정리 끝난 줄" 안에서 몇 줄인지 따로 알림(2026-10-27 재홍님 지적)
-const noEmail = Math.min(Number(s.complete) || 0, (Number(s.left) || 0) + (Number(s.unregistered) || 0) + (Number(s.unknownEmail) || 0));
-const head = `<div class="cs-bf-msg">이름 있는 줄 <b>${Number(s.rows) || 0}</b> · 채울 칸 <b>${cells}</b> (기록ID ${Number(sc['기록ID']) || 0} · 작성자이메일 ${Number(sc['작성자이메일']) || 0} · 팀 ${Number(sc['팀']) || 0})${s.complete ? ` · 정리 끝난 줄 ${Number(s.complete)}${noEmail ? ` (그중 작성자이메일을 일부러 비운 줄 ${noEmail} — 퇴사·미등록)` : ''}` : ''}</div>`;
-const dup = (Array.isArray(res.duplicates) ? res.duplicates : []).map(function (d) { return `${escapeHtml(d.name)}(${Number(d.users) || 0}명) ${Number(d.rows) || 0}줄`; }).join(', ');
-const dupHtml = dup ? `<div class="cs-bf-msg err">동명이인 — 채우지 않음: ${dup}. 이 줄은 시트에서 작성자이메일을 직접 넣어 주세요.</div>` : '';
-const probs = (Array.isArray(res.headerProblems) ? res.headerProblems : []).map(function (p) { return `<li>${escapeHtml(p.tab)}: ${escapeHtml(p.problem)}</li>`; }).join('');
-const probHtml = probs ? `<div class="cs-bf-msg err">탭 머리글을 먼저 고쳐야 채울 수 있어요.<ul style="margin:4px 0 0 18px; padding:0;">${probs}</ul></div>` : '';
-const btn = !res.canApply ? '' : (cells > 0
-? `<div class="cs-bf-bar"><button class="btn-primary" id="cs-bf-apply-btn" onclick="compBackfillApply_(${cells})">빈 칸 채우기 (${cells}칸)</button><span class="settings-row-desc">시트 사본을 먼저 만들어 두세요</span></div>`
-: '<div class="cs-bf-msg">채울 칸이 없어요.</div>');
-return `${head}${people.length ? `<div class="cs-bf-wrap"><table class="cs-bf-table"><tr><th>상태</th><th>이름</th><th>줄</th><th>채울 칸</th></tr>${rows}</table></div>` : ''}${dupHtml}${probHtml}${btn}`;
-}
-async function compBackfillPreview_() {
-const out = document.getElementById('cs-bf-out'); const b = document.getElementById('cs-bf-preview-btn');
-if (!out) return;
-if (b) b.disabled = true;
-out.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>시트를 읽는 중...</div>`;
-const res = await compSaveFetch_({ action: 'backfill', mode: 'preview' }, 30000);
-if (b) b.disabled = false;
-out.innerHTML = (res && res.ok) ? compBackfillPlanHtml_(res) : `<div class="cs-bf-msg err">${escapeHtml(compBackfillErrText_(res))}</div>`;
-}
-async function compBackfillApply_(cells) {
-if (!confirm(`빈 칸 ${cells}칸을 채울까요? 인사평가 시트에 바로 씁니다. 이미 값이 있는 칸은 그대로 둡니다.`)) return;
-const out = document.getElementById('cs-bf-out'); const b = document.getElementById('cs-bf-apply-btn'); const pb = document.getElementById('cs-bf-preview-btn');
-if (b) { b.disabled = true; b.textContent = '채우는 중...'; }
-if (pb) pb.disabled = true;
-const res = await compSaveFetch_({ action: 'backfill', mode: 'apply', idempotencyKey: generateIdempotencyKey_(), expectCells: cells }, 45000);
-if (pb) pb.disabled = false;
-if (!out) return;
-if (res && res.ok) {
-out.innerHTML = `<div class="cs-bf-msg"><b>✓ ${Number(res.updatedCells) || 0}칸을 채웠어요.</b> 미리보기를 다시 누르면 남은 칸(동명이인 등)을 볼 수 있어요.</div>`;
-return;
-}
-// 실패: 서버가 새로 읽은 계획(summary 등)을 함께 주면 그 표를 아래에 다시 그림(채우기 버튼 포함 — 새 칸 수로)
-out.innerHTML = `<div class="cs-bf-msg err">${escapeHtml(compBackfillErrText_(res))}</div>` + (res && res.summary ? compBackfillPlanHtml_(res) : '');
 }
 async function loadCompCriteriaPage() {
 const root = document.getElementById('comp-criteria-view');
@@ -8142,7 +8066,7 @@ BAD_NUMBER: '숫자 칸에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LON
 DUPLICATE_CUSTOMER: '같은 팀에 같은 이름의 고객사가 이미 있어요.', BAD_NAME: '구매사명을 1~60자로 넣어 주세요.', FIELD_TOO_LONG: '계열·발주 형태·사무소는 40자까지예요.',
 BAD_TEAM: '없는 팀이에요. 새로고침 후 다시 골라 주세요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
 LOCKED_FIELD: '구매사명·팀·순서는 바꿀 수 없어요(순서는 관리자가 시트에서).', BAD_FIELD: '바꿀 수 없는 칸이에요.', BAD_ORDER: '순서는 1~9999 숫자로 넣어 주세요.', NO_CHANGES: '바꾼 칸이 없어요.',
-BAD_MANAGER: '이 팀 활성 담당 목록에 없는 이름이에요. 새로고침 후 다시 골라 주세요.',
+BAD_MANAGER: '이 팀 활성 담당 목록에 없는 이름이에요. 새로고침 후 다시 골라 주세요.', NOT_PROXY: '담당 본인이 [입력 완료]한 거라 팀장이 취소할 수 없어요. 담당이 자기 화면에서 [완료 취소]를 눌러야 해요.',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 새로고침해서 확인해 주세요.' };
 function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (res.field ? ' (' + res.field + ')' : '') : wkErrorText_(res); }
 async function loadWeeklyInput_() {
@@ -8205,11 +8129,12 @@ const mgrs = three && !asMgr ? (d.managers || []) : [];
 if (three && !asMgr) {
 const nDone = mgrs.filter(function (g) { return g.done; }).length;
 const chips = mgrs.map(function (g, gi) {
-if (g.done) return `<span class="wi-chip done">✓ ${escapeHtml(g.name)} · ${escapeHtml(String(g.done.at).slice(11))}${g.done.proxy ? ' (대신)' : ''}</span>`;
-const px = d.canProxy ? `<button class="wi-px" ${wkBusy_ ? 'disabled' : ''} onclick="wkProxy_(${gi})">대신 입력 완료</button>` : '';
+if (g.done) return `<span class="wi-chip done">✓ ${escapeHtml(g.name)} · ${escapeHtml(String(g.done.at).slice(11))}${g.done.proxy ? ' (대신)' : ''}${g.done.proxy && d.canProxy ? `<button class="wi-px undo" ${wkBusy_ ? 'disabled' : ''} onclick="wkProxyUndo_(${gi})">취소</button>` : ''}</span>`;
+if (d.canProxy && wkPxAsk_ === gi) return `<span class="wi-chip ask">${escapeHtml(g.name)} 담당을 대신 완료할까요? <button class="wi-px go" ${wkBusy_ ? 'disabled' : ''} onclick="wkProxy_(${gi})">대신 완료</button><button class="wi-px no" ${wkBusy_ ? 'disabled' : ''} onclick="wkPxAsk_ = -1; wkRenderInput_()">그만두기</button></span>`; // 2026-11-20: 한 번 더 확인(실수 방지)
+const px = d.canProxy ? `<button class="wi-px" ${wkBusy_ ? 'disabled' : ''} onclick="wkPxAsk_ = ${gi}; wkRenderInput_()">✓ 대신 입력 완료</button>` : '';
 return g.saved ? `<span class="wi-chip ing">✎ ${escapeHtml(g.name)} · 저장 ${g.saved}/${g.total}곳${px}</span>` : `<span class="wi-chip">— ${escapeHtml(g.name)} · 미입력${px}</span>`;
 }).join('');
-x += `<div class="wi-mgr"><b>담당 입력 현황 <b class="n">${nDone} / ${mgrs.length}명 완료</b></b> <span class="pf-mut">· 담당 마감 ${hh}${d.leadRows ? ` · 담당 없는 고객사 ${d.leadRows}곳은 팀장 입력` : ''}</span>${mgrs.length ? `<div class="wi-chips">${chips}</div>` : `<div class="pf-mut" style="margin-top:6px">이번 달 담당이 지정된 고객사가 없어요(실적-고객사 F열 · 활성 ‘담당’ 이름). 팀장이 모든 줄을 넣어요.</div>`}</div>`;
+x += `<div class="wi-mgr"><b>담당 입력 현황 <b class="n">${nDone} / ${mgrs.length}명 완료</b></b> <span class="pf-mut">· 담당 마감 ${hh}${d.leadRows ? ` · 담당 없는 고객사 ${d.leadRows}곳은 팀장 입력` : ''}</span>${mgrs.length ? `<div class="wi-chips">${chips}</div>${d.canProxy && mgrs.some(function (g) { return !g.done || g.done.proxy; }) ? `<div class="wi-pxhelp">ⓘ <b>[✓ 대신 입력 완료]</b>는 담당이 직접 [입력 완료]를 못 할 때 팀장이 대신 눌러 주는 버튼이에요. 누르면 그 담당 화면은 잠기고(담당 마감 알림 메일도 안 가요), 잘못 눌렀으면 ✓ 칩의 <b>[취소]</b>로 되돌릴 수 있어요.</div>` : ''}` : `<div class="pf-mut" style="margin-top:6px">이번 달 담당이 지정된 고객사가 없어요(실적-고객사 F열 · 활성 ‘담당’ 이름). 팀장이 모든 줄을 넣어요.</div>`}</div>`;
 }
 const mgrSt = function (r) {
 if (!r.manager) return `<span class="wi-ms lead">${r.managerRaw ? escapeHtml(r.managerRaw) + ' · 계정 없음' : '(담당 없음)'} 팀장 입력</span>`;
@@ -8305,15 +8230,28 @@ wkModeOpen_ = false; wkPending_ = null;
 wkNote_ = { where: 'mode', text: '✓ ' + r.team + ' 입력 방식을 ' + r.to + '로 바꿨어요(시트 실적-설정 입력방식_' + r.team + '). 다음 보고 주차부터 적용돼요.' };
 await wkAfter_('');
 }
+let wkPxAsk_ = -1; // 2026-11-20: [대신 입력 완료]를 한 번 누르면 그 칩에서 한 번 더 확인
 async function wkProxy_(gi) {
 if (wkBusy_ || !wkIn_) return;
+wkPxAsk_ = -1;
 const g = (wkIn_.managers || [])[gi]; if (!g) return;
 const entries = wkIn_.canEdit ? wkInEntries_() : null;
 wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
 if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '대신 완료 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
 const r = await wkPost_(Object.assign({ action: 'proxyComplete', manager: g.name }, wkInBase_()));
 if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '대신 입력 완료를 하지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
-await wkAfter_('✓ ' + g.name + ' 담당을 대신 [입력 완료]했어요(실적-진행에 팀장 이메일로 남아요).');
+await wkAfter_('✓ ' + g.name + ' 담당을 대신 [입력 완료]했어요(실적-진행에 팀장 이메일로 남아요). 잘못 눌렀으면 ✓ 칩의 [취소]를 눌러 주세요.');
+}
+// 2026-11-20 재홍님 승인: 팀장이 [대신 입력 완료]한 것만 팀장이 되돌림(담당 본인이 한 완료는 담당이 [완료 취소])
+async function wkProxyUndo_(gi) {
+if (wkBusy_ || !wkIn_) return;
+const g = (wkIn_.managers || [])[gi]; if (!g || !g.done || !g.done.proxy) return;
+const entries = wkIn_.canEdit ? wkInEntries_() : null; // 입력 중인 칸이 다시 그리기로 지워지지 않게 먼저 저장(wkProxy_와 같음)
+wkBusy_ = true; wkInMsg_ = ''; wkRenderInput_();
+if (entries) { const r0 = await wkPost_(Object.assign({ action: 'save', entries: entries }, wkInBase_())); if (!r0 || !r0.ok) { wkBusy_ = false; wkInMsg_ = '취소 전에 저장하지 못했어요: ' + wkErr_(r0); wkRenderInput_(); return; } }
+const r = await wkPost_(Object.assign({ action: 'proxyReopen', manager: g.name }, wkInBase_()));
+if (!r || !r.ok) { wkBusy_ = false; wkInMsg_ = '대신 완료를 취소하지 못했어요: ' + wkErr_(r); wkRenderInput_(); return; }
+await wkAfter_('✓ ' + g.name + ' 담당의 대신 완료를 취소했어요. 이제 ' + g.name + ' 담당이 다시 입력할 수 있어요.');
 }
 // ---- 고객사 정보 고치기 (2026-11-17 재홍님 확정: 담당 = 이 팀 활성 '담당' 이름 목록, 사용 끄기 = 경고만, 구매사명·팀 잠금) ----
 const WK_CE_LABEL_ = { series: '계열', orderType: '발주 형태', office: '사무소', manager: '담당', note: '비고', active: '사용' };

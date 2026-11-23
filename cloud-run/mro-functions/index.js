@@ -5509,7 +5509,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'setMode'].indexOf(b.action) < 0) {
+    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode'].indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -5617,14 +5617,15 @@ exports.saveWeeklySalesTest = async (req, res) => {
           if (n !== plan.writes.reduce(function (a, w) { return a + w.values.length; }, 0)) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
           return { ok: true, updatedCells: n, rows: plan.writes.length };
         }
-        // 3단계 담당 한 사람 기록: 담당 [입력 완료]·[완료 취소], 팀장 [대신 입력 완료] — 팀 완료·NEW·결과 메일과 무관
-        if (asMgr || b.action === 'proxyComplete') {
+        // 3단계 담당 한 사람 기록: 담당 [입력 완료]·[완료 취소], 팀장 [대신 입력 완료]·[취소](2026-11-20 재홍님 승인: 팀장이 대신 완료한 것만) — 팀 완료·NEW·결과 메일과 무관
+        if (asMgr || b.action === 'proxyComplete' || b.action === 'proxyReopen') {
           if (isDone) return { ok: false, error: 'ALREADY_DONE' }; // 팀 확정 뒤에는 담당 기록을 바꾸지 않음(팀장이 팀 [완료 취소] 먼저)
           const who = asMgr ? myName : String(b.manager || '').trim();
           if (!counts[who]) return { ok: false, error: asMgr ? 'NO_ROWS' : 'BAD_MANAGER', field: who };
-          const complete = b.action !== 'reopen';
+          const complete = b.action !== 'reopen' && b.action !== 'proxyReopen';
           if (complete && mdone[who]) return { ok: false, error: 'ALREADY_DONE', field: who };
           if (!complete && !mdone[who]) return { ok: false, error: 'NOT_DONE', field: who };
+          if (b.action === 'proxyReopen' && mdone[who].by === String((mus.find(function (u) { return u.name === who; }) || {}).email || '').trim().toLowerCase()) return { ok: false, error: 'NOT_PROXY', field: who }; // 담당 본인이 한 완료는 담당이 [완료 취소]
           const stage = complete ? '입력 완료' : weeklySales.STAGE_REOPEN;
           const pw = weeklySales.planProgress({ progressRows: f.progress, year: en.year, month: en.month, entry: en.entry, team: lead.team, stage: stage, manager: who, who: email, nowMs: nowMs, mail: '' });
           const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_PROGRESS) + '!A' + pw.row + ':I' + pw.row, values: [pw.values] }]);
