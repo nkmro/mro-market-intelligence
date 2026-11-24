@@ -5238,6 +5238,7 @@ exports.savePerformanceTest = async (req, res) => {
 // - 관리자만. 보기(view)·입력은 1-나 이후(getPerformanceTest의 1-가 ping → 1-나 view와 같은 순서).
 // =====================================================================
 const weeklySales = require('./lib/weeklySales');
+const confirmedSales = require('./lib/confirmedSales'); // 2026-11-23 확정 실적
 exports.getWeeklySalesTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -5258,6 +5259,11 @@ exports.getWeeklySalesTest = async (req, res) => {
     // 2단계: [우리 팀 입력] 탭(팀장·관리자) — 아래 weeklySalesInput_
     if (view === 'input') {
       await weeklySalesInput_(req, res, auth, t0, timings);
+      return;
+    }
+    // 2026-11-23 확정 실적: 관리자·임원(최종 확정된 달만)·팀장·담당(자기 고객사) — 아래 confirmedView_
+    if (view === 'confirmed') {
+      await confirmedView_(req, res, auth, t0, timings);
       return;
     }
     // 2단계: 메뉴 NEW — 가장 최근 '4팀 완료' 주차 키만(Firestore 문서 1개, 시트 안 읽음, 숫자 없음)
@@ -5500,6 +5506,132 @@ function weeklyMgrTeam_(me, teams) {
   return teams.indexOf(own) >= 0 ? { ok: true, team: own } : { ok: false, error: 'NO_TEAM' };
 }
 
+// ==== 실적 관리 › 확정 실적 (2026-11-23 재홍님 승인, 2단계 서버) — lib/confirmedSales.js ====
+// 같은 실적관리 파일의 탭 3개(실적-고객사연결·실적-확정·실적-확정진행) + 설정·고객사·연간계획을 한 번에 읽는다. 머리줄이 다르면 쓰지 않음
+const CF_ACTIONS = ['cfPreview', 'cfUpload', 'cfSave', 'cfConfirm', 'cfCancel', 'cfFinal'];
+async function cfFile_(client, fileId) {
+  const q = competency.quoteTab;
+  let vr;
+  try {
+    vr = await batchGetValues(client, fileId, [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:L', q(weeklySales.TAB_PLAN) + '!A2:AO',
+      q(confirmedSales.TAB_LINK) + '!A2:E', q(confirmedSales.TAB_CONF) + '!A2:O', q(confirmedSales.TAB_CPROG) + '!A2:G']
+      .concat(confirmedSales.CF_TABS.map(function (t) { return q(t) + '!1:1'; })).map(encodeURIComponent), { unformatted: true });
+  } catch (e) {
+    const status = (e && e.response && e.response.status) || (e && e.code) || null;
+    const msg = String((e && e.response && e.response.data && e.response.data.error && e.response.data.error.message) || (e && e.message) || e);
+    return { ok: false, error: status === 400 && /parse range/i.test(msg) ? 'CF_TAB_MISSING' : 'SHEET_ACCESS_FAILED', httpStatus: status, tabs: confirmedSales.CF_TABS };
+  }
+  const v = function (i) { return (vr[i] && vr[i].values) || []; };
+  const heads = confirmedSales.CF_TABS.map(function (t, i) { return confirmedSales.checkHeaders(t, v(6 + i)[0]); });
+  const bad = heads.filter(function (h) { return !h.ok; });
+  if (bad.length) return { ok: false, error: 'CF_HEADER', tabs: bad.map(function (h) { return h.tab; }) };
+  return { ok: true, settings: weeklySales.readSettings(v(0)), customers: v(1), planRows: v(2), linkRows: v(3), confRows: v(4), progRows: v(5) };
+}
+// 볼 수 있는 팀: 관리자·임원 = 고른 팀(없으면 자기 팀 → 첫 팀), 팀장 = 맡은 팀(겸임 포함), 담당 = 자기 팀
+function cfTeam_(me, isAdmin, reqTeam, teams) {
+  const want = reqTeam ? weeklySales.normTeam(reqTeam) : '';
+  const own = me ? weeklySales.normTeam(me.team) : '';
+  if (isAdmin || (me && me.role === '임원')) {
+    if (want) return teams.indexOf(want) >= 0 ? { ok: true, team: want, choices: teams } : { ok: false, error: 'BAD_TEAM', field: want };
+    const team = teams.indexOf(own) >= 0 ? own : teams[0];
+    return team ? { ok: true, team: team, choices: teams } : { ok: false, error: 'NO_TEAM' };
+  }
+  const mine = me && me.role === '팀장' && me.teams && me.teams.length ? me.teams : [own];
+  const choices = mine.filter(function (t) { return teams.indexOf(t) >= 0; });
+  if (want && choices.indexOf(want) < 0) return { ok: false, error: 'FORBIDDEN_TEAM' };
+  const team = want || choices[0];
+  return team ? { ok: true, team: team, choices: choices } : { ok: false, error: 'NO_TEAM' };
+}
+// getWeeklySalesTest view=confirmed { year?, month?, team? } — 관리자 전체 · 담당 자기 고객사 · 팀장 자기 팀(자기에게 배정된 줄만 고침) · 임원 최종 확정된 달만
+async function confirmedView_(req, res, auth, t0, timings) {
+  const b = req.body || {};
+  const fail = function (error, extra) { res.status(200).json(Object.assign({ ok: false, serverMs: Date.now() - t0, timings, error: error }, extra || {})); };
+  const email = String(auth.email || '').trim().toLowerCase(), isAdmin = email === ADMIN_EMAIL, nowMs = Date.now();
+  const year = Number(b.year) || competency.seoulYear(nowMs);
+  const client = await getSheetsClient();
+  const m0 = Date.now();
+  const mro = await weeklyMro_(client, email, year);
+  timings.mroSheetMs = Date.now() - m0;
+  const me = mro.me;
+  if (!isAdmin && !(me && me.active && ['임원', '팀장', '담당'].indexOf(me.role) >= 0)) return fail('FORBIDDEN');
+  if (!mro.fileId) return fail('SALES_FILE_MISSING', { year: year });
+  const s0 = Date.now();
+  const f = await cfFile_(client, mro.fileId);
+  timings.salesSheetMs = Date.now() - s0;
+  if (!f.ok) return fail(f.error, { tabs: f.tabs, httpStatus: f.httpStatus });
+  const teams = weeklySales.teamsOf(f.customers);
+  const lead = cfTeam_(me, isAdmin, b.team, teams);
+  if (!lead.ok) return fail(lead.error, { field: lead.field });
+  const exec = !isAdmin && me.role === '임원';
+  let months = confirmedSales.monthsOf(f.confRows, year, lead.team);
+  if (exec) months = months.filter(function (m) { return !!confirmedSales.stateOf(f.progRows, year, m, lead.team).final; }); // 임원 = 최종 확정된 달만
+  const want = Number(b.month);
+  const month = months.indexOf(want) >= 0 ? want : months[months.length - 1];
+  const base = { ok: true, serverMs: Date.now() - t0, timings, view: 'confirmed', year: year, team: lead.team, teams: lead.choices, months: months,
+    isAdmin: isAdmin, canUpload: isAdmin, minNote: f.settings.확정비고최소글자 };
+  if (!month) { res.status(200).json(Object.assign(base, { month: null, data: null })); return; }
+  const data = confirmedSales.buildView({ year: year, month: month, team: lead.team, customers: f.customers, planRows: f.planRows, confRows: f.confRows, progRows: f.progRows,
+    minNote: f.settings.확정비고최소글자, me: me ? me.name : '', scope: !isAdmin && me.role === '담당' ? 'mine' : 'all' });
+  res.status(200).json(Object.assign(base, { month: month, data: data }));
+}
+// saveWeeklySalesTest 확정 실적 동작. 관리자: cfPreview·cfUpload·cfFinal(+ 모든 줄 저장·아무 담당 확정 취소). 담당·팀장(배정된 줄): cfSave·cfConfirm·cfCancel(자기 확정)
+// 잠금(주간 실적과 같은 잠금) 안에서 시트를 다시 읽고, 쓰기 1번(batchUpdate)
+async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) {
+  const me = mro.me;
+  if (!isAdmin && !(me && me.active && ['팀장', '담당'].indexOf(me.role) >= 0)) return { ok: false, error: 'FORBIDDEN' };
+  if (['cfPreview', 'cfUpload', 'cfFinal'].indexOf(b.action) >= 0 && !isAdmin) return { ok: false, error: 'FORBIDDEN' };
+  if (!mro.fileId) return { ok: false, error: 'SALES_FILE_MISSING', year: Number(b.year) || null };
+  const holderId = crypto.randomUUID();
+  const gotLock = await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS });
+  if (!gotLock) return { ok: false, error: 'LOCK_TIMEOUT' };
+  try {
+    const s0 = Date.now();
+    const f = await cfFile_(client, mro.fileId);
+    timings.salesSheetMs = Date.now() - s0;
+    if (!f.ok) return f;
+    const teams = weeklySales.teamsOf(f.customers);
+    const lead = cfTeam_(me, isAdmin, confirmedSales.cfTeam(b.team || ''), teams);
+    if (!lead.ok) return lead;
+    const q = competency.quoteTab, w0 = Date.now(), myName = me ? me.name : '';
+    const common = { year: b.year, month: b.month, team: lead.team, confRows: f.confRows, progRows: f.progRows, who: email, nowMs: nowMs };
+    const write = async function (data, want) {
+      if (!data.length) return { ok: true, updatedCells: 0 };
+      const n = await perfBatchWrite_(mro.fileId, data);
+      timings.writeMs = Date.now() - w0;
+      return n < want ? { ok: false, error: 'PARTIAL_WRITE', updatedCells: n } : { ok: true, updatedCells: n };
+    };
+    const cells = function (ws) { return ws.reduce(function (a, w) { return a + w.values.filter(function (v) { return v !== ''; }).length; }, 0); }; // 빈칸 쓰기(줄 비움)는 세지 않음
+    if (b.action === 'cfPreview' || b.action === 'cfUpload') {
+      const plan = confirmedSales.planUpload(Object.assign({}, common, { items: b.items, links: b.links, customers: f.customers, linkRows: f.linkRows, userRows: mro.userRows }));
+      const summary = { team: plan.team, unlinked: plan.unlinked, weeklyNames: plan.weeklyNames, diff: plan.diff, reopen: plan.reopen, finalUndone: plan.finalUndone,
+        first: plan.first, changedAny: plan.changedAny, warnings: plan.warnings, unclosedTotal: plan.unclosedTotal };
+      if (!plan.ok && plan.error !== 'UNLINKED') return { ok: false, error: plan.error, field: plan.field };
+      if (b.action === 'cfPreview') return Object.assign({ ok: true, preview: true }, summary); // 미리보기: 못 이은 고객사가 있어도 목록을 보여 줌(쓰기 없음)
+      if (!plan.ok) return { ok: false, error: 'UNLINKED', unlinked: plan.unlinked };
+      const data = plan.linkWrites.map(function (w) { return { range: q(confirmedSales.TAB_LINK) + '!' + w.range, values: [w.values] }; })
+        .concat(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; }))
+        .concat(plan.progWrites.map(function (w) { return { range: q(confirmedSales.TAB_CPROG) + '!' + w.range, values: [w.values] }; }));
+      const r = await write(data, cells(plan.linkWrites) + cells(plan.writes) + cells(plan.progWrites));
+      return Object.assign(r, r.ok ? summary : {});
+    }
+    if (b.action === 'cfSave') {
+      const plan = confirmedSales.planEdit(Object.assign({}, common, { edits: b.edits, me: myName, isAdmin: isAdmin }));
+      if (!plan.ok) return plan;
+      const r = await write(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; }), cells(plan.writes));
+      return Object.assign(r, { rows: plan.rows });
+    }
+    // 확정 = 자기 이름. 확정 취소 = 자기 이름(관리자는 고른 담당도). 최종 확정 = 관리자
+    const plan = b.action === 'cfConfirm' ? confirmedSales.planConfirm(Object.assign({}, common, { manager: myName, minNote: f.settings.확정비고최소글자 }))
+      : b.action === 'cfCancel' ? confirmedSales.planCancel(Object.assign({}, common, { manager: isAdmin && b.manager ? b.manager : myName }))
+      : confirmedSales.planFinal(common);
+    if (!plan.ok) return plan;
+    const r = await write([{ range: q(confirmedSales.TAB_CPROG) + '!' + plan.write.range, values: [plan.write.values] }], cells([plan.write]));
+    return Object.assign(r, { stage: plan.write.values[3] });
+  } finally {
+    await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId);
+  }
+}
+
 // POST /saveWeeklySalesTest { sessionToken, idempotencyKey, action, year, month, week, team, entries | customer | changes }
 exports.saveWeeklySalesTest = async (req, res) => {
   setCors(res);
@@ -5510,7 +5642,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode', 'saveSettings'].indexOf(b.action) < 0) {
+    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode', 'saveSettings'].indexOf(b.action) < 0 && CF_ACTIONS.indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -5521,6 +5653,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
       const m0 = Date.now();
       const mro = await weeklyMro_(client, email, year);
       timings.mroSheetMs = Date.now() - m0;
+      if (CF_ACTIONS.indexOf(b.action) >= 0) return await confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings); // 확정 실적(권한·잠금은 그 안에서)
       // 3단계: 담당은 save·complete·reopen만(자기 고객사, 지금 보고 주차). 그 밖은 팀장·관리자
       const asMgr = !isAdmin && !!(mro.me && mro.me.active && mro.me.role === '담당') && ['save', 'complete', 'reopen'].indexOf(b.action) >= 0;
       if (!isAdmin && !asMgr && !(mro.me && mro.me.active && mro.me.role === '팀장')) return { ok: false, error: 'FORBIDDEN' };

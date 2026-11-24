@@ -453,7 +453,7 @@ t('E17 updateCustomers: 잠금을 잡은 뒤·푼 앞, 시트 다시 읽은 뒤�
 t('E18 updateCustomers: 쓰기 perfBatchWrite_ 1번, 팀 weeklyLeadTeam_, 담당 managersOf, 적용월 = 이번 보고 달(weeklyEntry_ 월 없이)', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') &&
   br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes('weeklyEntry_(year, undefined, undefined, f.settings, nowMs)') && br.includes('month: nowEn.month'));
 t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode', 'saveSettings']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
-t('E20 실적-고객사 읽기 범위 3곳 모두 A2:L, 고객사 추가 쓰기 A:L', (IX.match(/TAB_CUSTOMERS\) \+ '!A2:L'/g) || []).length === 3 && !IX.includes("TAB_CUSTOMERS) + '!A2:K'") && IX.includes("'!A' + plan.row + ':L' + plan.row"));
+t('E20 실적-고객사 읽기 범위 4곳(2026-11-24 확정 실적 cfFile_ 추가) 모두 A2:L, 고객사 추가 쓰기 A:L', (IX.match(/TAB_CUSTOMERS\) \+ '!A2:L'/g) || []).length === 4 && !IX.includes("TAB_CUSTOMERS) + '!A2:K'") && IX.includes("'!A' + plan.row + ':L' + plan.row"));
 // 확인 1: 16시 알림의 '고객사 N곳'은 이력 줄을 한 곳으로 셈(11월 기준 동부 사용 중 = 가나정밀·다라금속·자차신규 3곳, 원본 줄로 세면 4)
 const RJ = ws.reminderJobs({ nowMs: Date.parse('2026-11-16T16:05:00+09:00'), settings: ws.readSettings([]), customers: CEC, progressRows: [], weeklyRows: [], users: CEU.concat([['e2@nkmro.com', '동팀장', '팀장', '동부', '활성']]), adminEmail: '' });
 t('R12 16시 알림 고객사 수 = 그 달 기준 한 곳씩(동부 3곳)', RJ.find(function (j) { return j.team === '동부'; }).total === 3);
