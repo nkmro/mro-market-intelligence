@@ -846,7 +846,9 @@ font-size: 13px; padding: 2px 4px; display: none;
 /* 실적 관리 › 확정 실적 (2026-11-24 시안 승인) */
 .cf-wrap { max-width: none; }
 .main.main-wide { max-width: 1240px; } /* 확정 실적 표(구매사명·매출 3칸·이익 3칸·비고)가 잘리지 않게 이 화면만 넓힘 */
-.cf-nav { display: flex; gap: 14px; flex-wrap: wrap; }
+.cf-busy { opacity: .5; pointer-events: none; transition: opacity .15s; } /* 연도·월·팀을 바꾸는 동안 */
+.cf-wrap .wk-card .cf-step { margin: 12px 0 0; justify-content: center; }
+.cf-wrap .wk-nav:not(:disabled):hover, .cf-pills button:hover:not(.on) { background: var(--accent-soft); }
 .cf-pills { margin: 4px 0 6px; flex-wrap: wrap; } .cf-pills button { border-radius: 7px; }
 .cf-step { display: flex; gap: 6px; align-items: center; margin: 8px 0 12px; flex-wrap: wrap; font-size: 12.5px; }
 .cf-step span { padding: 4px 12px; border-radius: 999px; background: #f1f0ec; color: #6b6f6a; font-weight: 700; }
@@ -8119,6 +8121,7 @@ function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (
 // 엑셀 올리기: 브라우저가 파일을 직접 읽어(외부 도구 없음 — 압축은 브라우저 내장 DecompressionStream('deflate-raw')) 실적부서명 → 팀, 매출마감일 → 달, 구매사명별 합계(천원)만 서버로 보냄. 원본 줄은 보내지 않음
 // (2026-11-24 확인: 당사 시스템 엑셀은 칸 글자를 inlineStr로 저장 — ExcelJS 4.4.0은 이 칸을 빈칸으로 읽어 쓰지 않음)
 // 화면·출력에 담당·사무소는 없음(재홍님 2026-11-23). 매출은 고칠 수 없음, 이익·비고만
+const CF_FIRST_YEAR_ = 2026; // 확정 실적을 시작한 해(이보다 앞 연도로는 가지 않음)
 const CF_COLS_ = { name: '구매사명', buyer: '구매담당', dept: '실적부서명', sales: '매출금액_원화', cost: '매입금액_원화', saleDate: '매출마감일', costDate: '매입마감일' };
 let cf_ = { year: null, month: null, team: null, res: null, edits: {}, msg: null, busy: false, up: null }, cfReq_ = 0;
 const CF_ERR_ = {
@@ -8150,11 +8153,11 @@ async function loadConfirmedPage(keepMsg) {
   if (!cf_.res) root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
   const res = await wkFetch_({ view: 'confirmed', year: cf_.year || undefined, month: cf_.month || undefined, team: cf_.team || undefined });
   if (reqNo !== cfReq_) return;
-  if (!res || !res.ok) { cf_.res = null; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
-  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.busy = false;
+  if (!res || !res.ok) { cf_.res = null; cf_.loading = false; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
+  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.busy = false; cf_.loading = false;
   cfRender_();
 }
-function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; loadConfirmedPage(); }
+function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; cf_.loading = true; cfRender_(); loadConfirmedPage(); } // 누르면 바로 흐리게 + 불러오는 중
 function cfMe_() { return session ? session.email === ADMIN_EMAIL : false; }
 // 이 줄을 지금 고칠 수 있나: 최종 확정 전, 그 줄 담당이 확정 전, (내 줄 또는 관리자)
 function cfCanEdit_(s, d) { return !d.final && !s.done && (s.mine || cf_.res.isAdmin); }
@@ -8177,13 +8180,21 @@ function cfSteps_(d) {
 function cfRender_() {
   const root = document.getElementById('confirmed-view'), r = cf_.res; if (!root || !r) return;
   const d = r.data, me = session ? session.name : '';
-  const pills = function (list, cur, key, fmt) { return list.length > 1 ? `<div class="pf-tabs cf-pills">${list.map(function (v) { return `<button type="button" class="${v === cur ? 'on' : ''}" onclick="cfPick_({ ${key}: ${typeof v === 'number' ? v : "'" + cfAttr_(v) + "'"} })">${escapeHtml(fmt(v))}</button>`; }).join('')}</div>` : ''; };
-  const ny = new Date().getFullYear();
-  const years = [ny - 1, ny].indexOf(r.year) >= 0 ? [ny - 1, ny] : [r.year, ny];
-  let h = `<div class="pf-wrap cf-wrap"><div class="pf-head"><div class="settings-row-title" style="font-size:16px;">확정 실적</div></div>
-<div class="pf-mut" style="font-size:13px;margin:2px 0 4px;">${d ? escapeHtml(r.year + '년 ' + r.month + '월 · 매출마감월 기준 · ' + r.team) : escapeHtml(r.year + '년 · ' + r.team)}${!r.isAdmin && d && d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine; }); }) ? ' · 👤 ' + escapeHtml(me) + ' 담당' : ''} · 단위 천원</div>
-${pills(r.teams || [], r.team, 'team', function (t) { return t; })}<div class="cf-nav">${pills(years, r.year, 'year', function (y) { return y + '년'; })}${pills(r.months || [], r.month, 'month', function (m) { return m + '월'; })}</div>
-${cfSteps_(d)}`;
+  // 2026-11-25 재홍님: 버튼이 눌리는 것 같지 않다 → 주간 실적과 같은 머리(‹ 제목 › + 연도·월·팀 고르기 목록), 바꾸는 동안 흐리게 + "불러오는 중"
+  const me2 = !r.isAdmin && d && d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine; }); });
+  const ms = r.months || [], mi = ms.indexOf(r.month), ny = new Date().getFullYear();
+  const prev = mi > 0 ? '{ month: ' + ms[mi - 1] + ' }' : (r.year > CF_FIRST_YEAR_ ? '{ year: ' + (r.year - 1) + ' }' : '');
+  const next = mi >= 0 && mi < ms.length - 1 ? '{ month: ' + ms[mi + 1] + ' }' : (r.year < ny ? '{ year: ' + (r.year + 1) + ' }' : '');
+  const years = []; for (let y = Math.min(r.year, ny); y <= ny; y++) if (y >= CF_FIRST_YEAR_) years.push(y);
+  const yearSel = years.length >= 2 ? `<select class="cy-sel" aria-label="연도" onchange="cfPick_({ year: Number(this.value) })">${years.map(function (y) { return `<option value="${y}" ${y === r.year ? 'selected' : ''}>${y}년</option>`; }).join('')}</select>` : '';
+  const monthSel = ms.length ? `<select class="cy-sel" aria-label="월" onchange="cfPick_({ month: Number(this.value) })">${ms.map(function (m) { return `<option value="${m}" ${m === r.month ? 'selected' : ''}>${m}월</option>`; }).join('')}</select>` : '';
+  const teamSel = (r.teams || []).length > 1 ? `<select class="cy-sel" aria-label="팀" onchange="cfPick_({ team: this.value })">${r.teams.map(function (t) { return `<option value="${cfAttr_(t)}" ${t === r.team ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>` : '';
+  let h = `<div class="pf-wrap cf-wrap${cf_.loading ? ' cf-busy' : ''}"><div class="wk-card"><div class="wk-top">
+<button class="wk-nav" ${prev ? `onclick="cfPick_(${prev})"` : 'disabled'} aria-label="이전 달">‹</button>
+<div class="wk-title">${cf_.loading ? '<span class="mro-spinner"></span> 불러오는 중…' : escapeHtml(d ? r.year + '년 ' + r.month + '월 확정 실적' : r.year + '년 확정 실적')}<small>매출마감월 기준 · ${escapeHtml(r.team)}${me2 ? ' · 👤 ' + escapeHtml(me) + ' 담당' : ''} · 단위 천원</small></div>
+<button class="wk-nav" ${next ? `onclick="cfPick_(${next})"` : 'disabled'} aria-label="다음 달">›</button>
+<div class="wk-meta"><span class="wk-sel">${yearSel}${monthSel}${teamSel}</span></div></div>
+${cfSteps_(d)}</div>`;
   if (r.isAdmin) h += cfUpHtml_(d);
   if (!d) {
     h += cf_.up ? '' : `<div class="feed-empty">${r.isAdmin ? '아직 올린 확정 실적이 없어요. 위에서 당사 시스템 매출마감 엑셀을 올려 주세요.' : (r.months && !r.months.length && session && session.role === '임원' ? '아직 최종 확정된 달이 없어요.' : '아직 올린 확정 실적이 없어요.')}</div>`;
