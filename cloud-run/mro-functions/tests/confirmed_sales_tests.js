@@ -109,13 +109,35 @@ const IX = require('fs').readFileSync(require('path').join(__dirname, '..', 'ind
 const sv = IX.slice(IX.indexOf('exports.saveWeeklySalesTest'), IX.indexOf('async function runWeeklySalesMail_'));
 const ca = IX.slice(IX.indexOf('async function confirmedAction_'), IX.indexOf('// POST /saveWeeklySalesTest'));
 t('X1 저장: CF 동작은 기존 권한 확인 앞에서 confirmedAction_으로(담당도 들어올 수 있게)', sv.includes('CF_ACTIONS.indexOf(b.action) < 0) {') && sv.indexOf('return await confirmedAction_(') < sv.indexOf("const asMgr = !isAdmin && !!(mro.me"));
-t('X2 confirmedAction_: 올리기·미리보기·최종 확정은 관리자만(잠금 앞), 잠금 안에서 시트 다시 읽기, 쓰기는 perfBatchWrite_ 한 곳', ca.indexOf("['cfPreview', 'cfUpload', 'cfFinal'].indexOf(b.action) >= 0 && !isAdmin") < ca.indexOf('acquireLock(') &&
+t('X2 confirmedAction_: 올리기·미리보기는 관리자만(잠금 앞), 잠금 안에서 시트 다시 읽기, 쓰기는 perfBatchWrite_ 한 곳', ca.indexOf("['cfPreview', 'cfUpload'].indexOf(b.action) >= 0 && !isAdmin") < ca.indexOf('acquireLock(') &&
   ca.indexOf('acquireLock(') < ca.indexOf('cfFile_(client') && (ca.match(/perfBatchWrite_\(/g) || []).length === 1 && ca.includes('releaseLock(firestore, WEEKLY_LOCK_NAME, holderId)'));
+t('X7 최종 확정 = 그 팀 팀장 + 관리자(2026-11-24 재홍님): 팀장·관리자 외 FORBIDDEN(잠금 앞), 팀장은 cfTeam_으로 맡은 팀만, 화면에 canFinal', ca.indexOf("if (b.action === 'cfFinal' && !isAdmin && me.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };") >= 0 &&
+  ca.indexOf("if (b.action === 'cfFinal' && !isAdmin") < ca.indexOf('acquireLock(') && ca.indexOf('cfTeam_(me, isAdmin,') > ca.indexOf('acquireLock(') && IX.includes("canFinal: isAdmin || me.role === '팀장'"));
 t('X3 확정 = 자기 이름만, 취소 = 관리자만 다른 담당', ca.includes("planConfirm(Object.assign({}, common, { manager: myName,") && ca.includes('manager: isAdmin && b.manager ? b.manager : myName'));
 const gv = IX.slice(IX.indexOf('async function confirmedView_'), IX.indexOf('async function confirmedAction_'));
 t('X4 보기: 임원 = 최종 확정된 달만, 담당 = mine, 관리자·임원·팀장·담당 외 FORBIDDEN', gv.includes("months.filter(function (m) { return !!confirmedSales.stateOf(f.progRows, year, m, lead.team).final; })") && gv.includes("scope: !isAdmin && me.role === '담당' ? 'mine' : 'all'") &&
   gv.includes("['임원', '팀장', '담당'].indexOf(me.role) >= 0"));
 t('X5 탭이 없으면 CF_TAB_MISSING, 머리줄 다르면 CF_HEADER', IX.includes("'CF_TAB_MISSING'") && IX.includes("error: 'CF_HEADER'"));
 t('X6 getWeeklySalesTest view=confirmed 배선', IX.includes("if (view === 'confirmed') {\n      await confirmedView_(req, res, auth, t0, timings);"));
+// 9) 화면(feed.html, 2026-11-24 3단계) — 엑셀 합계·바뀐 값·배선
+const FH = require('fs').readFileSync(require('path').join(__dirname, '..', '..', '..', 'feed.html'), 'utf8');
+function uiGrab(name) { const i = FH.indexOf('function ' + name + '('); const st = FH.lastIndexOf('\n', i) + 1; let d = 0; const j = FH.indexOf('{', i); for (let k = j; k < FH.length; k++) { if (FH[k] === '{') d++; else if (FH[k] === '}') { d--; if (!d) return FH.slice(st, k + 1); } } }
+const colsLine = FH.slice(FH.indexOf('const CF_COLS_'), FH.indexOf('\n', FH.indexOf('const CF_COLS_')));
+const agg = new Function(colsLine + ';' + uiGrab('cfCell_') + ';' + uiGrab('cfAggregate_') + '; return cfAggregate_;')();
+const HEAD = ['상태명', '구매담당', '실적부서명', '매출금액_원화', '매입금액_원화', '구매사명', '매출마감일', '매입마감일'];
+let g = agg([HEAD, ['x', '구매일', '동부지역', '1,000,400', '900,000', '가사', '2026/10/16', '2026/11/03'], ['x', '구매이', '동부지역', '500000', '0', '가사 ', '2026/10/31', ''], ['x', '', '서부지역', '2000', '1000', '나사', '2026/10/02', '2026/11/01']]);
+t('F1 엑셀 합계: 팀(동부지역→동부)·구매사명별(앞뒤 빈칸 합침)·천원 반올림·이익=매출-매입·미마감 줄·구매담당 줄 수', g.rows === 3 && g.year === 2026 && g.month === 10 && Object.keys(g.teams).join() === '동부,서부' &&
+  JSON.stringify(g.teams['동부']) === JSON.stringify([{ name: '가사', sales: 1500, profit: 600, unclosed: 1, buyers: { 구매일: 1, 구매이: 1 } }]) && g.teams['서부'][0].sales === 2);
+t('F2 매출마감월이 둘 이상이면 거절, 머리줄 칸이 없으면 칸 이름을 알려 줌, 엑셀 날짜 숫자도 읽음', /여러 개/.test(agg([HEAD, ['x', 'a', '동부', '1', '1', '가', '2026/10/01', ''], ['x', 'a', '동부', '1', '1', '가', '2026/11/01', '']]).error) &&
+  /매입마감일/.test(agg([HEAD.slice(0, 7), ['x']]).error) && agg([HEAD, ['x', 'a', '동부', '1000', '0', '가', '46310', '']]).month === 10);
+t('F3 엑셀 읽기: 외부 도구 없이 zip(deflate-raw)·inlineStr·공유 글자', FH.includes("new DecompressionStream('deflate-raw')") && FH.includes("if (t === 'inlineStr')") && FH.includes("if (t === 's') v = shared[Number(v)]") && !FH.includes('exceljs.min.js'));
+t('F4 메뉴: 주간 실적 다음·실적 설정 앞, 관리자·임원·팀장·담당(주간 실적과 같은 조건), 화면만 넓힘', FH.indexOf('id="nav-weekly"') < FH.indexOf('id="nav-confirmed"') && FH.indexOf('id="nav-confirmed"') < FH.indexOf('id="nav-sales-settings"') &&
+  FH.includes("document.getElementById('nav-confirmed').style.display = 'flex';") && FH.includes("if (view === 'confirmed') {\nloadConfirmedPage();") && FH.includes("classList.toggle('main-wide', view === 'confirmed')"));
+t('F5 화면에 담당·사무소 칸 없음(표 머리), 매출은 입력 칸 없음', !uiGrab('cfTable_').includes('사무소') && !/<th[^>]*>담당/.test(uiGrab('cfTable_')) && (uiGrab('cfTable_').match(/class="cf-in/g) || []).length === 1);
+const chg = new Function('cf_', uiGrab('cfChanges_') + '; return cfChanges_();');
+const RES = { data: { groups: [{ subs: [{ name: 'A', edited: false, profit: 100, sysProfit: 100, note: '메모' }, { name: 'B', edited: true, profit: 90, sysProfit: 100, note: '' }] }] } };
+t('F6 바뀐 값: 쉼표 무시·시스템 값 그대로는 안 보냄·고친 값을 시스템 값으로 되돌리면 보냄·비고', JSON.stringify(chg({ res: RES, edits: { A: { profit: '100', note: '메모' }, B: { profit: '1,00' } } })) === JSON.stringify([{ name: 'B', profit: '100' }]) &&
+  JSON.stringify(chg({ res: RES, edits: { A: { profit: '1,234', note: ' 새 메모 ' } } })) === JSON.stringify([{ name: 'A', profit: '1234', note: '새 메모' }]));
+t('F7 [최종 확정] 버튼 = canFinal(팀장·관리자), 단계 이름 "③ 팀장 최종 확정"', uiGrab('cfBar_').includes('if (r.canFinal && !d.final) {') && uiGrab('cfSteps_').includes('③ 팀장 최종 확정') && !FH.includes('관리자 최종 확정'));
 console.log(`confirmed_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

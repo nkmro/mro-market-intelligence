@@ -843,6 +843,35 @@ font-size: 13px; padding: 2px 4px; display: none;
 /* 2026-11-20 재홍님 승인: 대신 입력 완료 = 두 번 확인(칩 안에서), ✓(대신) 칩에 [취소] */
 .wi-px.go { background: var(--accent); color: #fff; } .wi-px.no { border-color: #c9c5d8; color: var(--text-muted); box-shadow: none; }
 .wi-px.undo { border-width: 1px; border-color: #9cc9ae; color: #1d6b43; padding: 1px 8px; font-size: 11.5px; box-shadow: none; } .wi-px.undo:hover:not(:disabled) { background: #1d6b43; color: #fff; }
+/* 실적 관리 › 확정 실적 (2026-11-24 시안 승인) */
+.cf-wrap { max-width: none; }
+.main.main-wide { max-width: 1240px; } /* 확정 실적 표(구매사명·매출 3칸·이익 3칸·비고)가 잘리지 않게 이 화면만 넓힘 */
+.cf-nav { display: flex; gap: 14px; flex-wrap: wrap; }
+.cf-pills { margin: 4px 0 6px; flex-wrap: wrap; } .cf-pills button { border-radius: 7px; }
+.cf-step { display: flex; gap: 6px; align-items: center; margin: 8px 0 12px; flex-wrap: wrap; font-size: 12.5px; }
+.cf-step span { padding: 4px 12px; border-radius: 999px; background: #f1f0ec; color: #6b6f6a; font-weight: 700; }
+.cf-step span.on { background: var(--accent); color: #fff; } .cf-step span.ok { background: #e3f3ea; color: #1d6b43; } .cf-step i { color: #bbb; font-style: normal; }
+.cf-drop { border: 2px dashed #b9b2d3; border-radius: 12px; background: #faf9fd; padding: 18px; text-align: center; color: #555; font-size: 13.5px; margin-bottom: 8px; }
+.cf-drop.cf-drop-s { padding: 10px 14px; text-align: left; border-width: 1px; }
+.cf-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.cf-sum div { background: #fff; border: 1px solid #e2dfec; border-radius: 10px; padding: 10px 12px; font-size: 12px; color: #6b6f6a; }
+.cf-sum b { display: block; font-size: 17px; color: #222; margin-top: 2px; }
+.cf-warn { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7a5200; margin: 8px 0; }
+.cf-link { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; } .cf-link td { padding: 6px 8px; border-top: 1px solid #f0e6c4; }
+.cf-link select { font: inherit; font-size: 12.5px; padding: 3px 6px; border: 1px solid #c9c5d8; border-radius: 6px; max-width: 220px; }
+.cf-why { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 8px; } .cf-why summary { cursor: pointer; color: #8a5a00; font-weight: 700; }
+.cf-t td.grp { background: #f6f4fb; font-weight: 800; color: var(--accent); } .cf-t td.grp.sticky { border-left: 3px solid var(--accent); }
+.cf-t td.sys { padding-left: 22px !important; color: #333; } .cf-k { display: block; font-size: 10.5px; color: #b3413a; font-weight: 400; }
+.cf-in { width: 92px; text-align: right; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid #c9c5d8; border-radius: 6px; } .cf-in.chg { border-color: var(--accent); background: #f2eaf6; font-weight: 700; }
+.cf-orig { display: block; font-size: 10.5px; color: #9a9a9a; } .cf-orig.chg { color: #b3413a; }
+.cf-t td.cf-notecell { white-space: normal; min-width: 240px; }
+.cf-note { width: 100%; min-width: 220px; box-sizing: border-box; font: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid #c9c5d8; border-radius: 6px; } .cf-note.bad { border-color: #b3413a; background: #fdf3f1; }
+.cf-cnt { display: block; font-size: 10.5px; color: #1d6b43; text-align: right; } .cf-cnt.bad { color: #b3413a; } .cf-cnt.cf-left { text-align: left; margin-top: 3px; }
+.cf-rate.up { color: #1d6b43; font-weight: 700; } .cf-rate.dn { color: #b3413a; font-weight: 700; }
+.cf-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; } .cf-bar .pf-mut { font-size: 12.5px; }
+.cf-tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #fdecea; color: #b3413a; font-weight: 700; margin: 0 4px 0 0; } .cf-tag.cf-tag-g { background: #e3f3ea; color: #1d6b43; }
+.cf-x { border: 0; background: transparent; color: #1d6b43; font: inherit; font-size: 11.5px; text-decoration: underline; cursor: pointer; padding: 0 0 0 2px; }
+@media (max-width: 600px) { .cf-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wi-chip.ask { background: #f2eaf6; color: var(--accent); border-color: var(--accent); }
 .wi-pxhelp { margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .wi-ms { font-size: 11.5px; font-weight: 700; } .wi-ms.done { color: #2e8b57; } .wi-ms.ing { color: #b07a00; } .wi-ms.none, .wi-ms.lead { color: var(--text-muted); font-weight: 400; }
@@ -1150,6 +1179,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         <div class="nav-group-head" onclick="toggleNavGroup_('sales')"><span class="nav-group-caret">▼</span>실적 관리<span class="nav-group-new" id="nav-group-sales-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
           <div class="nav-item" id="nav-weekly" data-view="weekly" onclick="switchView('weekly')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><polyline points="7 16 10 13 13 15 17 11"></polyline></svg></span> 주간 실적</div>
+          <div class="nav-item" id="nav-confirmed" data-view="confirmed" onclick="switchView('confirmed')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></span> 확정 실적</div>
           <div class="nav-item" id="nav-sales-settings" data-view="sales-settings" onclick="switchView('sales-settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 실적 설정</div>
         </div>
       </div>
@@ -1218,6 +1248,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="perf-view" style="display:none;"></div>
 <div id="perf-criteria-view" style="display:none;"></div>
 <div id="weekly-view" style="display:none;"></div>
+<div id="confirmed-view" style="display:none;"></div>
 <div id="sales-settings-view" style="display:none;"></div>
     </div>
   </div>
@@ -1645,6 +1676,8 @@ document.getElementById('perf-view').style.display = view === 'perf' ? 'block' :
 document.getElementById('perf-criteria-view').style.display = view === 'perf-criteria' ? 'block' : 'none';
 document.getElementById('weekly-view').style.display = view === 'weekly' ? 'block' : 'none';
 document.getElementById('sales-settings-view').style.display = view === 'sales-settings' ? 'block' : 'none';
+document.getElementById('confirmed-view').style.display = view === 'confirmed' ? 'block' : 'none';
+document.querySelector('.main').classList.toggle('main-wide', view === 'confirmed');
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1700,6 +1733,9 @@ loadWeeklyPage();
 }
 if (view === 'sales-settings') {
 loadSalesSettingsPage();
+}
+if (view === 'confirmed') {
+loadConfirmedPage();
 }
 toggleDrawer(false);
 }
@@ -1973,6 +2009,7 @@ loadCompBadge_();
 if (session.email === ADMIN_EMAIL || ['임원', '팀장', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-group-sales').style.display = '';
 document.getElementById('nav-weekly').style.display = 'flex';
+document.getElementById('nav-confirmed').style.display = 'flex'; // 2026-11-24 확정 실적: 관리자·임원·팀장·담당(서버도 같은 사람만)
 if (session.email === ADMIN_EMAIL) document.getElementById('nav-sales-settings').style.display = 'flex'; // 2026-11-23 실적 설정: 관리자만(서버도 관리자만)
 if (!wkMgrOnly_()) loadWeeklyBadge_(); // 2단계: 4팀 완료 주차 NEW — 기다리지 않음(Firestore 1개, 시트 안 읽음)
 }
@@ -8077,6 +8114,326 @@ BAD_MANAGER: '이 팀 활성 담당 목록에 없는 이름이에요. 새로고�
 BAD_KEY: '줄 이름(키)이 비었어요. 새로고침 후 다시 해 주세요.', DUPLICATE_KEY: '같은 줄을 두 번 보냈어요. 새로고침 후 다시 해 주세요.', BAD_VALUE: '값이 규칙에 맞지 않아요.', UNKNOWN_KEY: '시트에 없는 줄이에요. 새 줄은 시트에서 직접 넣어 주세요(시트 우선).',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 새로고침해서 확인해 주세요.' };
 function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (res.field ? ' (' + res.field + ')' : '') : wkErrorText_(res); }
+// ==== 실적 관리 › 확정 실적 (2026-11-23 재홍님 승인 · 시안 6장 2026-11-24 승인, 3단계 화면) ====
+// 읽기: getWeeklySalesTest view=confirmed. 쓰기: saveWeeklySalesTest cfPreview·cfUpload(관리자) · cfSave·cfConfirm·cfCancel(담당·팀장 자기 줄, 관리자 전체) · cfFinal(관리자)
+// 엑셀 올리기: 브라우저가 파일을 직접 읽어(외부 도구 없음 — 압축은 브라우저 내장 DecompressionStream('deflate-raw')) 실적부서명 → 팀, 매출마감일 → 달, 구매사명별 합계(천원)만 서버로 보냄. 원본 줄은 보내지 않음
+// (2026-11-24 확인: 당사 시스템 엑셀은 칸 글자를 inlineStr로 저장 — ExcelJS 4.4.0은 이 칸을 빈칸으로 읽어 쓰지 않음)
+// 화면·출력에 담당·사무소는 없음(재홍님 2026-11-23). 매출은 고칠 수 없음, 이익·비고만
+const CF_COLS_ = { name: '구매사명', buyer: '구매담당', dept: '실적부서명', sales: '매출금액_원화', cost: '매입금액_원화', saleDate: '매출마감일', costDate: '매입마감일' };
+let cf_ = { year: null, month: null, team: null, res: null, edits: {}, msg: null, busy: false, up: null }, cfReq_ = 0;
+const CF_ERR_ = {
+  CF_TAB_MISSING: "실적관리 파일에 확정 실적 탭(실적-고객사연결·실적-확정·실적-확정진행)이 없어요. 관리자에게 알려 주세요.",
+  CF_HEADER: '확정 실적 탭 머리줄이 달라요. 관리자에게 알려 주세요.', UNLINKED: '주간 고객사와 연결이 안 된 고객사가 있어요. 모두 골라 주세요.',
+  BAD_LINK: '고른 주간 고객사가 목록에 없어요. 새로고침 후 다시 골라 주세요.', NO_DATA: '이 달에 올린 확정 실적이 없어요.', FINAL_DONE: '이미 최종 확정된 달이에요.',
+  SALES_LOCKED: '매출은 고칠 수 없어요(계산서 기준).', NOT_MY_CUSTOMER: '내 담당 고객사가 아니에요. 새로고침 후 다시 해 주세요.', MY_DONE: '이미 [확정]했어요. [확정 취소] 뒤에 고쳐 주세요.',
+  MANAGERS_NOT_DONE: '아직 [확정]하지 않은 담당이 있어요', NO_MANAGER: '담당이 정해지지 않은 고객사가 있어요(팀장 없음)', ALREADY_DONE: '이미 [확정]했어요.', NOT_DONE: '확정 상태가 아니에요.',
+  BAD_MONTH: '엑셀의 매출마감일을 읽지 못했어요.', NO_ROWS: '확정할 내 고객사가 없어요.', TOO_MANY: '고객사가 너무 많아요(2,000곳까지).', DUPLICATE_CUSTOMER: '같은 이름이 두 번 있어요.',
+  BAD_NUMBER: '이익에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LONG: '비고는 200자까지예요.', BAD_NAME: '구매사명이 비었거나 너무 길어요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
+  FORBIDDEN_TEAM: '볼 수 없는 팀이에요.', BAD_TEAM: '없는 팀이에요.', FORBIDDEN: '권한이 없어요.' };
+function cfErr_(res) {
+  if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.';
+  if (res.error === 'NOTE_SHORT') return '비고를 ' + res.min + '자 이상 써 주세요: ' + (res.names || []).join(', ');
+  if (CF_ERR_[res.error]) return CF_ERR_[res.error] + (res.names && res.names.length ? ': ' + res.names.join(', ') : '') + (res.field ? ' (' + res.field + ')' : '') + (res.tabs && res.error === 'CF_HEADER' ? ' (' + res.tabs.join(', ') + ')' : '');
+  return wkErr_(res);
+}
+function cfN_(n) { return (n === null || n === undefined || !isFinite(n)) ? '—' : Math.round(n).toLocaleString('ko-KR'); }
+function cfPct_(a, b) { return (b > 0 && a !== null && a !== undefined) ? (Math.floor(Math.round(a / b * 1e10) / 1e10 * 1000) / 10).toFixed(1) + '%' : '—'; }
+function cfRate_(a, b, cls) { const t = cfPct_(a, b); return `<td class="${cls || ''} cf-rate ${t === '—' ? '' : (a >= b ? 'up' : 'dn')}">${t}</td>`; }
+function cfLen_(s) { return Array.from(String(s || '').trim()).length; }
+function cfRe_(s) { return String(s || '').replace(/-?\d{4,}/g, function (n) { return Number(n).toLocaleString('ko-KR'); }); } // 다시확인 글자 안 숫자에 쉼표
+function cfAttr_(v) { return escapeHtml(String(v)).replace(/'/g, '&#39;'); }
+
+async function loadConfirmedPage(keepMsg) {
+  const root = document.getElementById('confirmed-view');
+  const reqNo = ++cfReq_;
+  if (!keepMsg) { cf_.msg = null; }
+  if (!cf_.res) root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+  const res = await wkFetch_({ view: 'confirmed', year: cf_.year || undefined, month: cf_.month || undefined, team: cf_.team || undefined });
+  if (reqNo !== cfReq_) return;
+  if (!res || !res.ok) { cf_.res = null; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
+  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.busy = false;
+  cfRender_();
+}
+function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; loadConfirmedPage(); }
+function cfMe_() { return session ? session.email === ADMIN_EMAIL : false; }
+// 이 줄을 지금 고칠 수 있나: 최종 확정 전, 그 줄 담당이 확정 전, (내 줄 또는 관리자)
+function cfCanEdit_(s, d) { return !d.final && !s.done && (s.mine || cf_.res.isAdmin); }
+function cfVal_(s, k) { const e = cf_.edits[s.name]; return e && k in e ? e[k] : (k === 'profit' ? cfN_(s.edited ? s.profit : s.sysProfit) : s.note); } // 이익 = 화면에 보이는 글자(쉼표 포함)
+function cfChanges_() {
+  const out = [], d = cf_.res && cf_.res.data; if (!d) return out;
+  d.groups.forEach(function (g) { g.subs.forEach(function (s) {
+    const e = cf_.edits[s.name]; if (!e) return;
+    const o = { name: s.name }; let ch = false;
+    if ('profit' in e) { const cur = s.edited ? String(s.profit) : '', v = String(e.profit).replace(/,/g, '').trim(); if (v !== cur && !(v === String(s.sysProfit) && cur === '')) { o.profit = v; ch = true; } }
+    if ('note' in e && String(e.note).trim() !== s.note) { o.note = String(e.note).trim(); ch = true; }
+    if (ch) out.push(o);
+  }); });
+  return out;
+}
+function cfSteps_(d) {
+  const cur = !d || !d.uploaded ? 0 : (d.final ? 3 : 1);
+  return `<div class="cf-step">${['① 관리자 엑셀 올리기', '② 담당 수정·확정', '③ 팀장 최종 확정'].map(function (t, i) { return `<span class="${i < cur ? 'ok' : i === cur ? 'on' : ''}">${i < cur ? '✓ ' : ''}${t}</span>${i < 2 ? '<i>›</i>' : ''}`; }).join('')}</div>`;
+}
+function cfRender_() {
+  const root = document.getElementById('confirmed-view'), r = cf_.res; if (!root || !r) return;
+  const d = r.data, me = session ? session.name : '';
+  const pills = function (list, cur, key, fmt) { return list.length > 1 ? `<div class="pf-tabs cf-pills">${list.map(function (v) { return `<button type="button" class="${v === cur ? 'on' : ''}" onclick="cfPick_({ ${key}: ${typeof v === 'number' ? v : "'" + cfAttr_(v) + "'"} })">${escapeHtml(fmt(v))}</button>`; }).join('')}</div>` : ''; };
+  const ny = new Date().getFullYear();
+  const years = [ny - 1, ny].indexOf(r.year) >= 0 ? [ny - 1, ny] : [r.year, ny];
+  let h = `<div class="pf-wrap cf-wrap"><div class="pf-head"><div class="settings-row-title" style="font-size:16px;">확정 실적</div></div>
+<div class="pf-mut" style="font-size:13px;margin:2px 0 4px;">${d ? escapeHtml(r.year + '년 ' + r.month + '월 · 매출마감월 기준 · ' + r.team) : escapeHtml(r.year + '년 · ' + r.team)}${!r.isAdmin && d && d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine; }); }) ? ' · 👤 ' + escapeHtml(me) + ' 담당' : ''} · 단위 천원</div>
+${pills(r.teams || [], r.team, 'team', function (t) { return t; })}<div class="cf-nav">${pills(years, r.year, 'year', function (y) { return y + '년'; })}${pills(r.months || [], r.month, 'month', function (m) { return m + '월'; })}</div>
+${cfSteps_(d)}`;
+  if (r.isAdmin) h += cfUpHtml_(d);
+  if (!d) {
+    h += cf_.up ? '' : `<div class="feed-empty">${r.isAdmin ? '아직 올린 확정 실적이 없어요. 위에서 당사 시스템 매출마감 엑셀을 올려 주세요.' : (r.months && !r.months.length && session && session.role === '임원' ? '아직 최종 확정된 달이 없어요.' : '아직 올린 확정 실적이 없어요.')}</div>`;
+    root.innerHTML = h + '</div>'; return;
+  }
+  if (cf_.up) { root.innerHTML = h + '</div>'; return; } // 올리기 미리보기 중에는 표를 숨김(헷갈리지 않게)
+  const mineAny = d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine; }); });
+  const reAny = d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine && s.recheck; }); });
+  if (reAny && !d.myDone && !d.final) h += `<div class="cf-warn"><b>↺ 관리자가 엑셀을 다시 올려 내 확정이 다시 열렸어요${d.lastUpload ? ' (' + escapeHtml(d.lastUpload.at.slice(5).replace('-', '/')) + ')' : ''}</b><br>"다시 확인" 표시된 고객사는 매출·시스템 이익이 바뀌어 이익이 새 시스템 값으로 돌아갔어요. 나머지 고객사는 고친 값·비고 그대로예요. 확인 뒤 다시 [확정]해 주세요.</div>`;
+  if (d.final) h += `<div class="cy-band pf-green">✓ 최종 확정됨 · ${escapeHtml(d.final.at)}</div>`;
+  if ((r.isAdmin || session.role === '팀장' || session.role === '임원') && d.managers.length) {
+    const nDone = d.managers.filter(function (m) { return m.done; }).length;
+    h += `<div class="wi-mgr"><b>담당 확정 현황 <b class="n">${nDone} / ${d.managers.length}명</b></b> <span class="pf-mut">${d.final ? '' : '· 모두 확정하면 팀장이 [최종 확정]'}</span><div class="wi-chips">${d.managers.map(function (m) {
+      return m.done ? `<span class="wi-chip done">✓ ${escapeHtml(m.name)}${m.at ? ' · ' + escapeHtml(m.at.slice(5).replace('-', '/')) : ''}${r.isAdmin && !d.final ? ` <button type="button" class="cf-x" onclick="cfCancel_('${cfAttr_(m.name)}')">취소</button>` : ''}</span>`
+        : `<span class="wi-chip ing">✎ ${escapeHtml(m.name)} · 확정 전</span>`; }).join('')}</div></div>`;
+  }
+  const anyEdit = d.groups.some(function (g) { return g.subs.some(function (s) { return cfCanEdit_(s, d); }); });
+  if (anyEdit) h += `<div class="pf-hint"><b>매출은 계산서 기준이라 고칠 수 없어요</b>(틀리면 시스템·계산서를 고친 뒤 관리자가 엑셀을 다시 올려요). 매입 마감 차이 등으로 <b>이익만 고칠 수 있고</b>, 고친 칸은 보라색·원래 시스템 값은 아래 작게 남아요. 고객사마다 <b>비고를 ${d.minNote}자 이상</b> 써 주세요(계획 대비 차이·고객사 특이사항).</div>`;
+  h += cfTable_(d, r.isAdmin || session.role !== '담당' ? (r.team + ' 합계') : '내 담당 합계');
+  if (!d.groups.length) h += `<div class="feed-empty">${mineAny || r.isAdmin ? '고객사가 없어요.' : '이번 달 내 담당 고객사가 없어요.'}</div>`;
+  h += cf_.msg ? `<div class="cy-band ${cf_.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(cf_.msg.text)}</div>` : '';
+  h += `<div class="cf-bar" id="cf-bar"></div></div>`;
+  root.innerHTML = h;
+  cfBar_();
+}
+function cfTable_(d, totLabel) {
+  let h = `<div class="pf-tablewrap"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
+  d.groups.forEach(function (g) {
+    h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="grp"></td></tr>`;
+    g.subs.forEach(function (s) {
+      const ed = cfCanEdit_(s, d), k = cfAttr_(s.name);
+      const re = s.recheck ? `<span class="cf-cnt bad cf-left"><span class="cf-tag">다시 확인</span>${escapeHtml(cfRe_(s.recheck))} · 비고가 맞는지 확인해 주세요</span>` : '';
+      let pv, nv;
+      if (ed) {
+        const v = cfVal_(s, 'profit'), chg = String(v).replace(/,/g, '').trim() !== String(s.sysProfit);
+        pv = `<input class="cf-in ${chg ? 'chg' : ''}" inputmode="numeric" value="${cfAttr_(v)}" oninput="cfEdit_('${k}', 'profit', this.value, this)" aria-label="${k} 이익"><span class="cf-orig ${chg ? 'chg' : ''}">시스템 ${cfN_(s.sysProfit)}</span>`;
+        const nt = cfVal_(s, 'note'), n = cfLen_(nt), bad = n < d.minNote;
+        nv = `<input class="cf-note ${bad ? 'bad' : ''}" maxlength="200" value="${cfAttr_(nt)}" placeholder="계획 대비 차이·고객사 특이사항 (${d.minNote}자 이상)" oninput="cfEdit_('${k}', 'note', this.value, this)" aria-label="${k} 비고"><span class="cf-cnt ${bad ? 'bad' : ''}">${n}/${d.minNote}자${bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''}</span>`;
+      } else {
+        pv = cfN_(s.profit) + (s.edited ? `<span class="cf-orig chg">시스템 ${cfN_(s.sysProfit)}</span>` : '');
+        nv = s.note ? escapeHtml(s.note) : '<span class="pf-mut">—</span>';
+      }
+      h += `<tr><td class="l sticky sys">${escapeHtml(s.name)}${s.unclosed ? `<span class="cf-k">매입 미마감 ${s.unclosed}줄</span>` : ''}</td><td></td><td>${cfN_(s.sales)}</td><td></td><td></td><td>${pv}</td><td></td><td class="l cf-notecell">${nv}${re}</td></tr>`;
+    });
+  });
+  const t = d.total;
+  h += `<tr><td class="l tot sticky">${escapeHtml(totLabel)}</td><td class="tot">${cfN_(t.planSales)}</td><td class="tot">${cfN_(t.sales)}</td>${cfRate_(t.sales, t.planSales, 'tot')}<td class="tot">${cfN_(t.planProfit)}</td><td class="tot">${cfN_(t.profit)}</td>${cfRate_(t.profit, t.planProfit, 'tot')}<td class="tot"></td></tr>`;
+  return h + '</table></div>';
+}
+// 입력 칸: 값만 기억하고 표는 다시 그리지 않음(커서 유지) — 칸 색·글자 수·아래 막대만 고침
+function cfEdit_(name, k, v, el) {
+  const e = cf_.edits[name] || (cf_.edits[name] = {}); e[k] = v; cf_.msg = null;
+  const d = cf_.res.data;
+  if (k === 'note' && el) { const n = cfLen_(v), bad = n < d.minNote; el.classList.toggle('bad', bad); const c = el.nextElementSibling; if (c) { c.className = 'cf-cnt' + (bad ? ' bad' : ''); c.textContent = n + '/' + d.minNote + '자' + (bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''); } }
+  if (k === 'profit' && el) { const s = cfSub_(name), chg = String(v).replace(/,/g, '').trim() !== String(s.sysProfit); el.classList.toggle('chg', chg); if (el.nextElementSibling) el.nextElementSibling.classList.toggle('chg', chg); }
+  cfBar_();
+}
+function cfSub_(name) { let f = null; cf_.res.data.groups.forEach(function (g) { g.subs.forEach(function (s) { if (s.name === name) f = s; }); }); return f; }
+function cfBar_() {
+  const el = document.getElementById('cf-bar'), r = cf_.res; if (!el || !r || !r.data) return;
+  const d = r.data, ch = cfChanges_(), busy = cf_.busy ? 'disabled' : '';
+  const mine = []; d.groups.forEach(function (g) { g.subs.forEach(function (s) { if (s.mine) mine.push(s); }); });
+  const short = mine.filter(function (s) { return cfLen_(cfVal_(s, 'note')) < d.minNote; });
+  let h = '';
+  if (d.groups.some(function (g) { return g.subs.some(function (s) { return cfCanEdit_(s, d); }); })) h += `<button type="button" class="pf-btn" ${ch.length && !cf_.busy ? '' : 'disabled'} onclick="cfSave_()">${cf_.busy ? '저장 중...' : '저장'}</button>`;
+  if (mine.length && !d.final) {
+    h += d.myDone ? `<button type="button" class="pf-btn" ${busy} onclick="cfCancel_('')">확정 취소</button><span class="pf-mut">✓ 내 고객사 확정함 · 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요</span>`
+      : `<button type="button" class="btn-primary" ${short.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfConfirm_()">확정</button><span class="pf-mut">${short.length ? '비고 ' + d.minNote + '자 미만 ' + short.length + '곳 — 모두 쓰면 [확정]할 수 있어요' : '비고 ' + mine.length + '곳 모두 ' + d.minNote + '자 이상 ✓ · 확정 뒤에도 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요'}${ch.length ? ' · [확정]하면 고친 값도 같이 저장돼요' : ''}</span>`;
+  }
+  if (r.canFinal && !d.final) {
+    const left = d.managers.filter(function (m) { return !m.done; }).map(function (m) { return m.name; });
+    h += `<button type="button" class="btn-primary" ${left.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfFinal_()">최종 확정</button><span class="pf-mut">${left.length ? escapeHtml(left.join('·')) + ' 담당 확정 뒤 누를 수 있어요' : '담당 모두 확정 ✓'}</span>`;
+  }
+  if (ch.length) h += `<span class="pf-mut"><span class="csp-chg">바뀐 곳 ${ch.length}곳</span></span>`;
+  el.innerHTML = h;
+}
+async function cfPost_(body) { cf_.busy = true; cfBar_(); const res = await wkPost_(Object.assign({ year: cf_.year, month: cf_.month, team: cf_.team }, body)); cf_.busy = false; return res; }
+async function cfSaveEdits_() {
+  const ch = cfChanges_(); if (!ch.length) return { ok: true, rows: 0 };
+  for (const c of ch) { if (c.profit !== undefined && c.profit !== '' && !/^-?\d+$/.test(c.profit)) return { ok: false, error: 'BAD_NUMBER', field: c.name }; if (c.note !== undefined && c.note.length > 200) return { ok: false, error: 'NOTE_TOO_LONG', field: c.name }; }
+  return cfPost_({ action: 'cfSave', edits: ch });
+}
+async function cfSave_() {
+  const res = await cfSaveEdits_();
+  cf_.msg = res && res.ok ? { ok: true, text: '저장했어요 (' + res.rows + '곳).' } : { text: cfErr_(res) };
+  if (res && res.ok) loadConfirmedPage(true); else cfRender_();
+}
+async function cfConfirm_() {
+  const sv = await cfSaveEdits_();
+  if (!sv || !sv.ok) { cf_.msg = { text: cfErr_(sv) }; cfRender_(); return; }
+  const res = await cfPost_({ action: 'cfConfirm' });
+  cf_.msg = res && res.ok ? { ok: true, text: '확정했어요. 팀장이 최종 확정하기 전까지 [확정 취소]로 다시 고칠 수 있어요.' } : { text: cfErr_(res) };
+  loadConfirmedPage(true);
+}
+async function cfCancel_(name) {
+  const res = await cfPost_(Object.assign({ action: 'cfCancel' }, name ? { manager: name } : {}));
+  cf_.msg = res && res.ok ? { ok: true, text: (name ? name + ' 담당 ' : '') + '확정을 취소했어요. 다시 고칠 수 있어요.' } : { text: cfErr_(res) };
+  loadConfirmedPage(true);
+}
+async function cfFinal_() {
+  const res = await cfPost_({ action: 'cfFinal' });
+  cf_.msg = res && res.ok ? { ok: true, text: '최종 확정했어요. 임원도 이 달을 볼 수 있어요.' } : { text: cfErr_(res) };
+  loadConfirmedPage(true);
+}
+
+// ---- 엑셀 올리기(관리자) ----
+function cfUpHtml_(d) {
+  const u = cf_.up;
+  if (!u) return `<div class="cf-drop cf-drop-s"><label class="pf-btn" style="display:inline-block;">📄 매출마감 엑셀 ${d ? '다시 ' : ''}올리기<input type="file" accept=".xlsx" style="display:none" onchange="cfFile_(this)"></label> <span class="pf-mut">당사 시스템에서 내려받은 매출마감 엑셀(.xlsx) · 관리자만${d ? ' · 같은 달을 다시 올리면 바뀐 고객사만 다시 열려요' : ''}</span></div>`;
+  if (u.loading) return `<div class="cf-drop"><span class="mro-spinner"></span> ${escapeHtml(u.loading)}</div>`;
+  if (u.error) return `<div class="cf-drop"><div class="cy-band cy-red">${escapeHtml(u.error)}</div><button type="button" class="pf-btn" onclick="cfUpClose_()">닫기</button></div>`;
+  const p = u.preview, teamNames = Object.keys(u.parsed.teams);
+  let h = `<div class="cf-drop" style="padding:14px">📄 <b>${escapeHtml(u.fileName)}</b> 읽음 · ${cfN_(u.parsed.rows)}줄${p && !p.first ? ' · <b>같은 ' + u.month + '월 ' + escapeHtml(u.team) + '를 다시 올려요</b>' + (cf_.res.data && cf_.res.data.final && cf_.res.month === u.month && cf_.res.team === u.team ? ' · 지금 상태: <b style="color:#1d6b43">최종 확정됨</b>' : '') : ''}</div>`;
+  if (teamNames.length > 1) h += `<div class="pf-tabs cf-pills">${teamNames.map(function (t) { return `<button type="button" class="${t === u.team ? 'on' : ''}" onclick="cfUpTeam_('${cfAttr_(t)}')">${escapeHtml(t)}</button>`; }).join('')}<span class="pf-mut" style="align-self:center;margin-left:6px;">파일 안 팀 — 팀마다 따로 올려요</span></div>`;
+  if (!p) return h + `<div class="feed-loading"><span class="mro-spinner"></span>미리보기 만드는 중...</div>`;
+  if (p.error) return h + `<div class="cy-band cy-red">${escapeHtml(cfErr_(p))}</div><div class="cf-bar"><button type="button" class="pf-btn" onclick="cfUpClose_()">닫기</button></div>`;
+  const items = u.parsed.teams[u.team];
+  const unclosed = items.reduce(function (a, it) { return a + it.unclosed; }, 0);
+  h += `<div class="cf-sum"><div>매출마감월<b>${u.year}년 ${u.month}월</b></div><div>팀(실적부서명)<b>${escapeHtml(u.team)}</b></div><div>시스템 고객사<b>${items.length}곳</b></div><div>매입 미마감 줄<b style="${unclosed ? 'color:#b3413a' : ''}">${unclosed}줄</b></div></div>`;
+  const D = p.diff;
+  if (!p.first) {
+    h += `<div class="cf-sum"><div>그대로<b>${D.same.length}곳</b></div><div>매출·이익 바뀜<b style="${D.changed.length ? 'color:#b3413a' : ''}">${D.changed.length}곳</b></div><div>새로 생김<b>${D.added.length}곳</b></div><div>파일에서 빠짐<b style="${D.removed.length ? 'color:#b3413a' : ''}">${D.removed.length}곳</b></div></div>`;
+    if (p.changedAny) h += `<div class="cf-warn"><b>⚠ 적용하기 전에 확인해 주세요</b><table class="cf-link">` + D.changed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">바뀜</span></td><td>매출 ${cfN_(c.from.sales)} → ${cfN_(c.to.sales)} · 시스템 이익 ${cfN_(c.from.profit)} → ${cfN_(c.to.profit)}</td><td style="text-align:right">이익 고친 값은 <b>지우고 새 시스템 값</b>으로 · 비고는 <b>남기고 "다시 확인"</b></td></tr>`; }).join('')
+      + D.added.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag cf-tag-g">새로</span></td><td>매출 ${cfN_(c.sales)} · 이익 ${cfN_(c.profit)}</td><td style="text-align:right">추가</td></tr>`; }).join('')
+      + D.removed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">빠짐</span></td><td>지난번 매출 ${cfN_(c.sales)}</td><td style="text-align:right">확정 실적에서 <b>지움</b>(이익·비고도 같이)</td></tr>`; }).join('') + `</table></div>`;
+    h += `<div class="pf-hint">${p.changedAny ? `<b>그대로인 ${D.same.length}곳</b>은 담당이 고친 이익·비고·확정을 그대로 둬요.${p.reopen.length ? ' 확정이 다시 열리는 담당: <b>' + escapeHtml(p.reopen.join('·')) + '</b>.' : ''}${p.finalUndone ? ' 바뀐 곳이 있으니 <b>최종 확정은 풀려요</b>.' : ''}` : '바뀐 고객사가 없어요. 적용해도 매입 미마감 줄 수만 새 값이 돼요.'}</div>`;
+  }
+  if (p.unlinked.length) h += `<div class="cf-warn"><b>⚠ 주간 실적 고객사와 연결이 안 된 시스템 고객사 ${p.unlinked.length}곳</b> — 고르면 그 아래로 묶여 계획·순서가 붙어요(실적-고객사연결 탭에 저장, 다음 달부터 자동)
+<table class="cf-link">${p.unlinked.map(function (x) { const v = u.links[x.name] || ''; return `<tr><td><b>${escapeHtml(x.name)}</b></td><td style="text-align:right">${cfN_(x.sales)}천원</td><td style="text-align:right"><select onchange="cfUpLink_('${cfAttr_(x.name)}', this.value)"><option value="">주간 고객사 고르기…</option>${p.weeklyNames.map(function (w) { return `<option value="${cfAttr_(w)}" ${v === w ? 'selected' : ''}>${escapeHtml(w)}</option>`; }).join('')}<option value="${cfAttr_(x.name)}" ${v === x.name ? 'selected' : ''}>(새 고객사로 따로)</option></select></td></tr>`; }).join('')}</table></div>`;
+  // 배정(관리자 미리보기에만): 담당별 곳 수 + 팀장이 맡게 된 곳
+  const cnt = {}; D.added.concat(D.changed).forEach(function (c) { if (c.manager) cnt[c.manager] = (cnt[c.manager] || 0) + 1; });
+  const why = { NO_OFFICE: '구매담당 사무소를 못 찾음', OFFICE_NONE: '그 사무소 담당 없음', OFFICE_MANY: '그 사무소 담당 2명 이상', NO_LEAD: '팀장도 없음 → 담당 빈칸' };
+  if (Object.keys(cnt).length) h += `<div class="pf-mut" style="font-size:12.5px;margin:6px 0;">배정${p.first ? '' : '(바뀜·새로)'}: ${Object.keys(cnt).map(function (m) { return escapeHtml(m) + ' ' + cnt[m] + '곳'; }).join(' · ')}</div>`;
+  if (p.warnings.length) h += `<details class="cf-why"><summary>팀장이 맡게 된 곳 ${p.warnings.length}곳</summary>${p.warnings.map(function (w) { return `<div>${escapeHtml(w.name)} — ${escapeHtml(why[w.why] || w.why)}${w.office ? ' (' + escapeHtml(w.office) + ')' : ''}${w.manager ? ' → ' + escapeHtml(w.manager) : ''}</div>`; }).join('')}</details>`;
+  const left = p.unlinked.filter(function (x) { return !u.links[x.name]; }).length;
+  h += `<div class="pf-hint">${u.month}월 <b>${escapeHtml(u.team)}</b>만 바뀌어요(다른 팀은 그대로). 원본 ${cfN_(u.parsed.rows)}줄은 저장하지 않고 고객사별 합계(천원)만 시트에 써요.</div>`;
+  if (u.applyErr) h += `<div class="cy-band cy-red">${escapeHtml(u.applyErr)}</div>`;
+  h += `<div class="cf-bar"><button type="button" class="btn-primary" ${left || u.busy || (!p.first && !p.changedAny && !D.same.length) ? 'disabled style="opacity:.5"' : ''} onclick="cfUpApply_()">${u.busy ? '적용 중...' : (p.first ? '올리기' : '적용하기')}</button><button type="button" class="pf-btn" onclick="cfUpClose_()">그만두기</button><span class="pf-mut">${left ? '연결 안 된 ' + left + '곳을 골라 주세요 · ' : ''}적용 전에는 아무것도 바뀌지 않아요</span></div>`;
+  return h;
+}
+function cfUpClose_() { cf_.up = null; cfRender_(); }
+function cfUpLink_(name, v) { cf_.up.links[name] = v; cf_.up.applyErr = null; cfRender_(); }
+function cfUpTeam_(t) { cf_.up.team = t; cf_.up.links = {}; cf_.up.preview = null; cfRender_(); cfUpPreview_(); }
+// .xlsx(zip) → { 파일 이름: Uint8Array } (필요한 파일만). 중앙 디렉터리로 위치·크기를 찾고, 압축(8)은 deflate-raw로 풂
+async function cfUnzip_(buf, want) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), out = {};
+  let e = -1; for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('NOT_ZIP');
+  let p = dv.getUint32(e + 16, true); const n = dv.getUint16(e + 10, true), td = new TextDecoder();
+  for (let k = 0; k < n; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('BAD_ZIP');
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+    const name = td.decode(u8.subarray(p + 46, p + 46 + nl)); p += 46 + nl + xl + cl;
+    if (want.indexOf(name) < 0) continue;
+    const start = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true), raw = u8.subarray(start, start + csize);
+    if (method === 0) out[name] = raw;
+    else if (method === 8) out[name] = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    else throw new Error('ZIP_METHOD');
+  }
+  return out;
+}
+function cfXmlText_(x) { return x.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, function (m, c) { return c.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }).replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(+d); }).replace(/&amp;/g, '&'); }
+function cfColIdx_(letters) { let n = 0; for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64); return n - 1; }
+// 첫 시트 → 표(줄마다 칸 배열). 글자 칸: inlineStr(<is><t>) · 공유 글자(t="s") · 그 밖은 <v> 값 그대로
+async function cfXlsxTable_(buf) {
+  const td = new TextDecoder(), base = await cfUnzip_(buf, ['xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/sharedStrings.xml']);
+  let sheet = 'xl/worksheets/sheet1.xml';
+  if (base['xl/workbook.xml'] && base['xl/_rels/workbook.xml.rels']) {
+    const rid = (/<sheet\b[^>]*\br:id="([^"]+)"/.exec(td.decode(base['xl/workbook.xml'])) || [])[1];
+    const rel = rid && new RegExp('<Relationship\\b[^>]*Id="' + rid + '"[^>]*>').exec(td.decode(base['xl/_rels/workbook.xml.rels']));
+    const t = rel && (/Target="([^"]+)"/.exec(rel[0]) || [])[1];
+    if (t) sheet = t.charAt(0) === '/' ? t.slice(1) : 'xl/' + t.replace(/^\.\//, '');
+  }
+  const shared = [];
+  if (base['xl/sharedStrings.xml']) { const sx = td.decode(base['xl/sharedStrings.xml']), re = /<si\b[^>]*>([\s\S]*?)<\/si>/g; let m; while ((m = re.exec(sx))) shared.push(cfXmlText_((m[1].match(/<t\b[^>]*>[\s\S]*?<\/t>/g) || []).join(''))); }
+  const sh = await cfUnzip_(buf, [sheet]);
+  if (!sh[sheet]) throw new Error('NO_SHEET');
+  const xml = td.decode(sh[sheet]), table = [], re = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const at = m[1], ref = /\br="([A-Z]+)(\d+)"/.exec(at); if (!ref || m[2] === undefined) continue;
+    const t = (/\bt="([^"]+)"/.exec(at) || [])[1], body = m[2];
+    let v;
+    if (t === 'inlineStr') v = cfXmlText_((body.match(/<t\b[^>]*>[\s\S]*?<\/t>/g) || []).join(''));
+    else { const vv = /<v>([\s\S]*?)<\/v>/.exec(body); v = vv ? cfXmlText_(vv[1]) : ''; if (t === 's') v = shared[Number(v)] || ''; }
+    const ri = Number(ref[2]) - 1; (table[ri] || (table[ri] = []))[cfColIdx_(ref[1])] = v;
+  }
+  return table;
+}
+function cfCell_(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+// 표(첫 줄 = 머리줄) → { rows, year, month, teams:{ 팀: [{ name, sales, profit, unclosed, buyers }] } } 또는 { error }
+function cfAggregate_(table) {
+  const head = (table[0] || []).map(cfCell_), ix = {};
+  Object.keys(CF_COLS_).forEach(function (k) { ix[k] = head.indexOf(CF_COLS_[k]); });
+  const miss = Object.keys(CF_COLS_).filter(function (k) { return ix[k] < 0; }).map(function (k) { return CF_COLS_[k]; });
+  if (miss.length) return { error: '엑셀에 이 칸이 없어요: ' + miss.join(', ') + ' (당사 시스템 매출마감 엑셀인지 확인해 주세요)' };
+  const num = function (v) { const s = cfCell_(v).replace(/,/g, ''); const n = Number(s); return s === '' || !isFinite(n) ? 0 : n; };
+  const acc = {}, months = {}; let rows = 0;
+  for (let i = 1; i < table.length; i++) {
+    const r = table[i] || [], name = cfCell_(r[ix.name]); if (!name) continue;
+    let sd = cfCell_(r[ix.saleDate]);
+    if (/^\d{5}(\.\d+)?$/.test(sd)) { const dd = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(sd)) * 86400000); sd = dd.getUTCFullYear() + '/' + (dd.getUTCMonth() + 1); } // 엑셀 날짜 숫자(다른 이름으로 저장한 파일)
+    const m = /^(\d{4})\D(\d{1,2})/.exec(sd); if (!m) return { error: (i + 1) + '번째 줄 매출마감일을 읽지 못했어요: ' + cfCell_(r[ix.saleDate]) };
+    const ym = m[1] + '-' + Number(m[2]); months[ym] = (months[ym] || 0) + 1;
+    const team = cfCell_(r[ix.dept]).replace(/(지역팀|팀)$/, '').replace(/지역$/, '') || '(부서 없음)';
+    const t = acc[team] || (acc[team] = {}), c = t[name] || (t[name] = { name: name, s: 0, c: 0, unclosed: 0, buyers: {} });
+    c.s += num(r[ix.sales]); c.c += num(r[ix.cost]);
+    if (!cfCell_(r[ix.costDate])) c.unclosed++;
+    const b = cfCell_(r[ix.buyer]); if (b) c.buyers[b] = (c.buyers[b] || 0) + 1;
+    rows++;
+  }
+  const ms = Object.keys(months);
+  if (!rows) return { error: '읽을 줄이 없어요.' };
+  if (ms.length > 1) return { error: '한 파일에 매출마감월이 여러 개예요(' + ms.map(function (x) { return x.replace('-', '년 ') + '월 ' + months[x] + '줄'; }).join(', ') + '). 한 달씩 올려 주세요.' };
+  const teams = {};
+  Object.keys(acc).forEach(function (t) { teams[t] = Object.keys(acc[t]).map(function (n) { const c = acc[t][n]; return { name: n, sales: Math.round(c.s / 1000), profit: Math.round((c.s - c.c) / 1000), unclosed: c.unclosed, buyers: c.buyers }; }); });
+  return { rows: rows, year: Number(ms[0].split('-')[0]), month: Number(ms[0].split('-')[1]), teams: teams };
+}
+async function cfFile_(input) {
+  const f = input.files && input.files[0]; input.value = ''; if (!f) return;
+  cf_.up = { fileName: f.name, loading: f.name + ' 읽는 중...', links: {} }; cfRender_();
+  let parsed;
+  try { parsed = cfAggregate_(await cfXlsxTable_(await f.arrayBuffer())); }
+  catch (e) { parsed = { error: '엑셀을 읽지 못했어요(.xlsx 파일인지 확인해 주세요).' }; }
+  if (parsed.error) { cf_.up = { error: parsed.error }; cfRender_(); return; }
+  const tn = Object.keys(parsed.teams);
+  cf_.up = { fileName: f.name, parsed: parsed, year: parsed.year, month: parsed.month, team: tn.indexOf(cf_.res.team) >= 0 ? cf_.res.team : tn[0], links: {}, preview: null };
+  cfRender_(); cfUpPreview_();
+}
+async function cfUpPreview_() {
+  const u = cf_.up; if (!u || !u.parsed) return;
+  const team = u.team;
+  const res = await wkPost_({ action: 'cfPreview', year: u.year, month: u.month, team: team, items: u.parsed.teams[team] });
+  if (cf_.up !== u || u.team !== team) return;
+  u.preview = res && res.ok ? res : (res || { error: 'NETWORK' });
+  cfRender_();
+}
+async function cfUpApply_() {
+  const u = cf_.up; if (!u || !u.preview || u.busy) return;
+  u.busy = true; cfRender_();
+  const res = await wkPost_({ action: 'cfUpload', year: u.year, month: u.month, team: u.team, items: u.parsed.teams[u.team], links: u.links });
+  u.busy = false;
+  if (!res || !res.ok) { u.applyErr = cfErr_(res); if (res && res.error === 'UNLINKED') u.preview = Object.assign({}, u.preview, { unlinked: res.unlinked }); cfRender_(); return; }
+  cf_.up = null; cf_.year = u.year; cf_.month = u.month; cf_.team = u.team;
+  cf_.msg = { ok: true, text: u.month + '월 ' + u.team + ' 확정 실적을 ' + (res.first ? '올렸어요' : '다시 올렸어요') + '. 담당이 이익·비고를 고치고 [확정]하면 돼요. (알림 메일은 다음 단계에서 붙여요)' };
+  loadConfirmedPage(true);
+}
 // ==== 실적 관리 › 실적 설정 (2026-11-23 재홍님 승인) — 관리자만. 실적관리 파일 '실적-설정' 탭을 그대로 보여 주고, 바꾼 줄의 값(B) 칸만 저장 ====
 // 시트 우선: 화면은 시트 값을 그대로 보여 준다(줄이 없으면 "시트에 줄 없음 → 기본", 잘못된 값이면 빨간 글씨로 "기본으로 동작").
 // 읽기: getWeeklySalesTest view=settings(settingRows·teams·settings). 저장: saveWeeklySalesTest action=saveSettings, changes=[{ key, value }] — 바꾼 키만.

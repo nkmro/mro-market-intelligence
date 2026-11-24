@@ -5568,18 +5568,20 @@ async function confirmedView_(req, res, auth, t0, timings) {
   const want = Number(b.month);
   const month = months.indexOf(want) >= 0 ? want : months[months.length - 1];
   const base = { ok: true, serverMs: Date.now() - t0, timings, view: 'confirmed', year: year, team: lead.team, teams: lead.choices, months: months,
-    isAdmin: isAdmin, canUpload: isAdmin, minNote: f.settings.확정비고최소글자 };
+    isAdmin: isAdmin, canUpload: isAdmin, canFinal: isAdmin || me.role === '팀장', minNote: f.settings.확정비고최소글자 }; // 2026-11-24 재홍님: 최종 확정 = 그 팀 팀장 + 관리자
   if (!month) { res.status(200).json(Object.assign(base, { month: null, data: null })); return; }
   const data = confirmedSales.buildView({ year: year, month: month, team: lead.team, customers: f.customers, planRows: f.planRows, confRows: f.confRows, progRows: f.progRows,
     minNote: f.settings.확정비고최소글자, me: me ? me.name : '', scope: !isAdmin && me.role === '담당' ? 'mine' : 'all' });
   res.status(200).json(Object.assign(base, { month: month, data: data }));
 }
-// saveWeeklySalesTest 확정 실적 동작. 관리자: cfPreview·cfUpload·cfFinal(+ 모든 줄 저장·아무 담당 확정 취소). 담당·팀장(배정된 줄): cfSave·cfConfirm·cfCancel(자기 확정)
+// saveWeeklySalesTest 확정 실적 동작. 관리자: cfPreview·cfUpload(+ 모든 줄 저장·아무 담당 확정 취소). 담당·팀장(배정된 줄): cfSave·cfConfirm·cfCancel(자기 확정)
+// cfFinal(최종 확정) = 그 팀 팀장(맡은 팀만 — cfTeam_) + 관리자 (2026-11-24 재홍님)
 // 잠금(주간 실적과 같은 잠금) 안에서 시트를 다시 읽고, 쓰기 1번(batchUpdate)
 async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) {
   const me = mro.me;
   if (!isAdmin && !(me && me.active && ['팀장', '담당'].indexOf(me.role) >= 0)) return { ok: false, error: 'FORBIDDEN' };
-  if (['cfPreview', 'cfUpload', 'cfFinal'].indexOf(b.action) >= 0 && !isAdmin) return { ok: false, error: 'FORBIDDEN' };
+  if (['cfPreview', 'cfUpload'].indexOf(b.action) >= 0 && !isAdmin) return { ok: false, error: 'FORBIDDEN' };
+  if (b.action === 'cfFinal' && !isAdmin && me.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };
   if (!mro.fileId) return { ok: false, error: 'SALES_FILE_MISSING', year: Number(b.year) || null };
   const holderId = crypto.randomUUID();
   const gotLock = await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS });
@@ -5620,7 +5622,7 @@ async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) 
       const r = await write(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; }), cells(plan.writes));
       return Object.assign(r, { rows: plan.rows });
     }
-    // 확정 = 자기 이름. 확정 취소 = 자기 이름(관리자는 고른 담당도). 최종 확정 = 관리자
+    // 확정 = 자기 이름. 확정 취소 = 자기 이름(관리자는 고른 담당도). 최종 확정 = 그 팀 팀장·관리자
     const plan = b.action === 'cfConfirm' ? confirmedSales.planConfirm(Object.assign({}, common, { manager: myName, minNote: f.settings.확정비고최소글자 }))
       : b.action === 'cfCancel' ? confirmedSales.planCancel(Object.assign({}, common, { manager: isAdmin && b.manager ? b.manager : myName }))
       : confirmedSales.planFinal(common);
