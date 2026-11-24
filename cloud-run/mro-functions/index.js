@@ -5267,7 +5267,7 @@ exports.getWeeklySalesTest = async (req, res) => {
       res.status(200).json({ ok: true, serverMs: Date.now() - t0, timings, key: d ? d.key : null, year: d ? d.year : null, month: d ? d.month : null, label: d ? d.label : null });
       return;
     }
-    if (view !== 'ping') {
+    if (view !== 'ping' && view !== 'settings') { // settings: 2026-11-23 실적 관리 › 실적 설정(관리자) — ping과 같은 읽기 + 시트 줄 그대로
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', view: view || null });
       return;
     }
@@ -5310,7 +5310,8 @@ exports.getWeeklySalesTest = async (req, res) => {
     res.status(200).json({
       ok: tabs.every(function (t) { return t.ok; }) && settings.bad.length === 0,
       serverMs: Date.now() - t0, timings, year: targetYear, fileId: fileId,
-      tabs: tabs, settings: settings, link: link, now: now
+      tabs: tabs, settings: settings, link: link, now: now,
+      settingRows: (vr[n] && vr[n].values) || [], teams: weeklySales.teamsOf((vr[n + 1] && vr[n + 1].values) || []) // 실적 설정 화면: 키·값·설명 그대로(새 줄도 자동으로) · 팀 입력 방식 줄
     });
   } catch (err) {
     res.status(500).json({ ok: false, serverMs: Date.now() - t0, error: String((err && err.message) || err) });
@@ -5509,7 +5510,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
     const auth = await authenticateSession(firestore, b.sessionToken);
     if (!auth.ok) { res.status(auth.status).json(authFailureResponseBody_(Date.now() - t0, auth)); return; }
     const timings = Object.assign({}, auth.timings);
-    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode'].indexOf(b.action) < 0) {
+    if (['save', 'complete', 'reopen', 'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode', 'saveSettings'].indexOf(b.action) < 0) {
       res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'NOT_IMPLEMENTED', action: b.action || null }); return;
     }
     if (!b.idempotencyKey) { res.status(200).json({ ok: false, serverMs: Date.now() - t0, error: 'MISSING_FIELDS' }); return; }
@@ -5523,6 +5524,7 @@ exports.saveWeeklySalesTest = async (req, res) => {
       // 3단계: 담당은 save·complete·reopen만(자기 고객사, 지금 보고 주차). 그 밖은 팀장·관리자
       const asMgr = !isAdmin && !!(mro.me && mro.me.active && mro.me.role === '담당') && ['save', 'complete', 'reopen'].indexOf(b.action) >= 0;
       if (!isAdmin && !asMgr && !(mro.me && mro.me.active && mro.me.role === '팀장')) return { ok: false, error: 'FORBIDDEN' };
+      if (b.action === 'saveSettings' && !isAdmin) return { ok: false, error: 'FORBIDDEN' }; // 실적 설정은 관리자만(2026-11-23)
       if (!mro.fileId) return { ok: false, error: 'SALES_FILE_MISSING', year: year };
       const holderId = crypto.randomUUID();
       const gotLock = await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS });
@@ -5572,6 +5574,36 @@ exports.saveWeeklySalesTest = async (req, res) => {
           const want = plan.writes.reduce(function (a, w) { return a + w.values.length; }, 0);
           if (n !== want) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
           return { ok: true, team: lead.team, month: plan.month, updatedCells: n, rows: plan.rows, warnings: plan.warnings };
+        }
+        // 2026-11-23 재홍님 승인: 실적 관리 › 실적 설정 [저장](관리자) — 바꾼 키만. 일반 키는 실적-설정 B칸(없는 알려진 키는 새 줄),
+        // 입력방식_{팀}은 아래 setMode와 같은 길(planSetMode + 실적-진행 기록 — ⑨ 다음 보고 주차부터). 쓰기 1번(batchUpdate)
+        if (b.action === 'saveSettings') {
+          const plan = weeklySales.planSaveSettings({ settingRows: f.settingRows, changes: b.changes });
+          if (!plan.ok) return plan;
+          const data = plan.writes.map(function (w) { return { range: q(weeklySales.TAB_SETTINGS) + '!' + w.range, values: [w.values] }; });
+          let want = plan.writes.reduce(function (a, w) { return a + w.values.length; }, 0);
+          const modeDone = [];
+          if (plan.modes.length) {
+            const nowEn = weeklyEntry_(year, undefined, undefined, f.settings, nowMs);
+            if (!nowEn.ok) return nowEn;
+            let rows = weeklySales.rowsAfter(f.settingRows, plan.writes), prog = f.progress.slice();
+            for (const m of plan.modes) {
+              if (teams.indexOf(m.team) < 0) return { ok: false, error: 'BAD_TEAM', field: m.team };
+              const sm = weeklySales.planSetMode({ settingRows: rows, settings: weeklySales.readSettings(rows), team: m.team, mode: m.mode });
+              if (!sm.ok) { if (sm.error === 'NO_CHANGES') continue; return sm; }
+              const pw = weeklySales.planProgress({ progressRows: prog, year: nowEn.year, month: nowEn.month, entry: nowEn.entry, team: m.team, stage: sm.stage, who: email, nowMs: nowMs, mail: '' });
+              data.push({ range: q(weeklySales.TAB_SETTINGS) + '!' + sm.write.range, values: [sm.write.values] }, { range: q(weeklySales.TAB_PROGRESS) + '!A' + pw.row + ':I' + pw.row, values: [pw.values] });
+              want += sm.write.values.length + weeklySales.PROGRESS_COLS;
+              rows = weeklySales.rowsAfter(rows, [sm.write]); // 같은 [저장] 안에서 새 줄이 겹치지 않게
+              prog = prog.concat([pw.values]);
+              modeDone.push({ team: m.team, from: sm.from, to: sm.to });
+            }
+          }
+          if (!data.length) return { ok: true, updatedCells: 0, keys: [], modes: [] };
+          const n = await perfBatchWrite_(mro.fileId, data);
+          timings.writeMs = Date.now() - w0;
+          if (n !== want) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
+          return { ok: true, updatedCells: n, keys: plan.keys, modes: modeDone };
         }
         // 3단계 ① 입력 방식 바꾸기(팀장 자기 팀 / 관리자 고른 팀): 실적-설정 '입력방식_{팀}' + 실적-진행 기록 한 줄(⑨ 다음 보고 주차부터 적용의 근거)
         if (b.action === 'setMode') {

@@ -31,7 +31,7 @@ HEADERS[TAB_SETTINGS] = ['키', '값', '설명'];
 // 실적-설정 키와 기본값(시트에 줄이 없을 때만 쓴다 — 시트 우선)
 const MODE_KEY_PREFIX = '입력방식_';
 const MODES = ['2단계', '3단계'];
-const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5, 결과메일대기분: 60, 입력시작일수: 3 }; // 결과메일대기분: 2026-11-17 재홍님 요청(4팀 완료 1시간 뒤)
+const DEFAULTS = { 입력요일: '월', 담당마감시각: 15, 팀장마감시각: 16, 메일사용: true, 첫주합침일수: 4, 가마감이월일수: 5, 결과메일대기분: 60, 입력시작일수: 3, 확정비고최소글자: 10 }; // 결과메일대기분: 2026-11-17 재홍님 요청(4팀 완료 1시간 뒤)
 const GAMAGAM = '가마감';
 
 function cell(v) { return String(v === undefined || v === null ? '' : v).trim(); }
@@ -104,15 +104,76 @@ function readSettings(rows) {
     if (v === null) { bad.push({ key: key, value: cell(map[key]), why: why }); out[key] = DEFAULTS[key]; }
     else out[key] = v;
   }
-  take('입력요일', function (v) { return cell(v) === '월' ? '월' : null; }, '지금은 월만 가능');
-  take('담당마감시각', function (v) { return intIn(v, 0, 23); }, '0~23 정수');
-  take('팀장마감시각', function (v) { return intIn(v, 0, 23); }, '0~23 정수');
-  take('메일사용', function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, 'TRUE 또는 FALSE');
-  take('첫주합침일수', function (v) { return intIn(v, 0, 6); }, '0~6 정수');
-  take('가마감이월일수', function (v) { return intIn(v, 1, 8); }, '1~8 정수 (8 = 넘기지 않음)');
-  take('결과메일대기분', function (v) { return intIn(v, 0, 1440); }, '0~1440 정수(분)');
-  take('입력시작일수', function (v) { return intIn(v, 0, 6); }, '0~6 정수 (3 = 전주 금요일부터)'); // 2026-11-18 재홍님 요청: 마감 월요일 며칠 전부터 입력이 열리나
+  SETTING_RULES.forEach(function (x) { take(x.key, x.parse, x.why); });
   return out;
+}
+// 실적-설정 키별 규칙(readSettings와 [실적 설정] 저장이 같은 규칙을 씀 — 2026-11-23 재홍님 승인: 실적 관리 › 실적 설정 메뉴)
+// desc = 시트에 그 줄이 없어 새로 넣을 때 C열(설명)
+const SETTING_RULES = [
+  { key: '입력요일', parse: function (v) { return cell(v) === '월' ? '월' : null; }, why: '지금은 월만 가능', desc: '주간 실적 마감 요일(지금은 월만)' },
+  { key: '담당마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '3단계 팀 담당 [입력 완료] 마감 시각(0~23)' },
+  { key: '팀장마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '팀장 [입력 완료]·[팀 확정] 마감 시각, 16시 알림(0~23)' },
+  { key: '메일사용', parse: function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, why: 'TRUE 또는 FALSE', desc: '주간 실적 메일 전체 켜기/끄기(TRUE/FALSE)' },
+  { key: '첫주합침일수', parse: function (v) { return intIn(v, 0, 6); }, why: '0~6 정수', desc: '달 첫 주가 이 일수 이하면 다음 주와 합침(0~6)' },
+  { key: '가마감이월일수', parse: function (v) { return intIn(v, 1, 8); }, why: '1~8 정수 (8 = 넘기지 않음)', desc: '말일이 월요일에서 이 일수 이상 남으면 가마감(1~8)' },
+  { key: '결과메일대기분', parse: function (v) { return intIn(v, 0, 1440); }, why: '0~1440 정수(분)', desc: '4팀 완료 뒤 결과 메일까지 기다리는 분(0~1440)' },
+  { key: '입력시작일수', parse: function (v) { return intIn(v, 0, 6); }, why: '0~6 정수 (3 = 전주 금요일부터)', desc: '마감 월요일 며칠 전부터 입력이 열리나(0~6)' }, // 2026-11-18 재홍님 요청
+  { key: '확정비고최소글자', parse: function (v) { return intIn(v, 0, 200); }, why: '0~200 정수', desc: '확정 실적: 담당 [확정] 전 고객사마다 써야 하는 비고 글자 수(0~200)' } // 2026-11-23 확정 실적
+];
+
+// [실적 설정] 저장 계획(관리자). p = { settingRows(실적-설정 A2:C 그대로), changes:[{ key, value }] }
+// - 알려진 키(SETTING_RULES): readSettings와 같은 규칙으로 검사, 시트 줄이 있으면 그 줄 B칸(같은 키가 여럿이면 아래 줄 = readSettings가 쓰는 줄), 없으면 새 줄 A~C
+// - 입력방식_{팀}: 여기서 쓰지 않고 modes로 돌려줌(서버가 planSetMode + 실적-진행 기록 — 입력 화면 [바꾸기]와 같은 길, ⑨ 다음 보고 주차부터)
+// - 그 밖의 키: 시트에 이미 있는 줄만 B칸을 고침(새 키는 시트에서 직접 넣음 — 시트 우선), 값은 글자 그대로
+// - 값이 지금과 같으면 쓰지 않음. 반환 { ok, writes:[{ range:'B5' | 'A9:C9', values }], modes:[{ team, mode }], keys }
+function planSaveSettings(p) {
+  const changes = p.changes || [];
+  if (!changes.length) return { ok: false, error: 'NO_CHANGES' };
+  const indexed = indexRows(p.settingRows), rowOf = {};
+  indexed.forEach(function (x) { const k = cell(x.v[0]); if (k) rowOf[k] = x; }); // 아래 줄이 이김
+  let next = nextFreeRow(indexed);
+  const writes = [], modes = [], keys = [], seen = {};
+  for (let i = 0; i < changes.length; i++) {
+    const key = cell(changes[i] && changes[i].key), raw = changes[i] ? changes[i].value : undefined;
+    if (!key || key === '키') return { ok: false, error: 'BAD_KEY', field: key };
+    if (seen[key]) return { ok: false, error: 'DUPLICATE_KEY', field: key };
+    seen[key] = true;
+    if (key.indexOf(MODE_KEY_PREFIX) === 0 && key.length > MODE_KEY_PREFIX.length) {
+      if (MODES.indexOf(cell(raw)) < 0) return { ok: false, error: 'BAD_VALUE', field: key, why: '2단계 또는 3단계' };
+      modes.push({ team: key.slice(MODE_KEY_PREFIX.length), mode: cell(raw) });
+      continue;
+    }
+    const rule = SETTING_RULES.find(function (x) { return x.key === key; }), hit = rowOf[key];
+    let val;
+    if (rule) {
+      val = rule.parse(raw);
+      if (val === null) return { ok: false, error: 'BAD_VALUE', field: key, why: rule.why };
+    } else {
+      if (!hit) return { ok: false, error: 'UNKNOWN_KEY', field: key };
+      val = cell(raw);
+      if (val.length > 200) return { ok: false, error: 'BAD_VALUE', field: key, why: '200자 이내' };
+    }
+    if (hit) {
+      if (cell(hit.v[1]) === cell(val) || (rule && rule.parse(hit.v[1]) === val)) continue; // 그대로
+      writes.push({ range: 'B' + hit.row, values: [val] });
+    } else {
+      writes.push({ range: 'A' + next + ':C' + next, values: [key, val, rule.desc] });
+      next++;
+    }
+    keys.push(key);
+  }
+  return { ok: true, writes: writes, modes: modes, keys: keys };
+}
+// 쓰기 계획을 읽은 값(A2:C)에 미리 반영한 사본 — 같은 [저장] 안에서 다음 계획(입력방식 새 줄 등)이 같은 줄을 고르지 않게
+function rowsAfter(settingRows, writes) {
+  const rows = (settingRows || []).map(function (r) { return (r || []).slice(); });
+  (writes || []).forEach(function (w) {
+    const m = /^([A-C])(\d+)/.exec(String(w.range)); if (!m) return;
+    const i = Number(m[2]) - 2; while (rows.length <= i) rows.push([]);
+    const r = rows[i]; let c = m[1].charCodeAt(0) - 65;
+    w.values.forEach(function (v) { r[c++] = v; });
+  });
+  return rows;
 }
 
 // ---- 날짜 (UTC 자정 ms로 계산 — 시간대와 무관한 달력 계산) ----
@@ -875,6 +936,7 @@ function confirmParts(job, r, appUrl) {
 }
 
 module.exports = {
+  SETTING_RULES, planSaveSettings, rowsAfter,
   FILE_KEY_PREFIX, TAB_CUSTOMERS, TAB_PLAN, TAB_WEEKLY, TAB_PROGRESS, TAB_SETTINGS, TABS, HEADERS, DEFAULTS, GAMAGAM,
   findFileId, checkHeaders, normTeam, readSettings, weekPlan, currentReport, seoulToday, crossCheck,
   STAGE_DONE, yearsFromSettings, num, buildReportView,

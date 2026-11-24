@@ -76,10 +76,10 @@ for (let y = 2026; y <= 2030; y++) for (let m = 1; m <= 12; m++) { const pl = ws
 t('F6 5년간 다음 주차 입력 시작이 앞 주차 마감보다 늦음(겹침 없음)', olap.length === 0, olap.join(','));
 
 // 3) 설정 읽기
-let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5], ['결과메일대기분', 60], ['입력시작일수', 3]]);
+let s = ws.readSettings([['입력방식_동부', '2단계'], ['입력방식_서부', '3단계'], ['입력요일', '월'], ['담당마감시각', 15], ['팀장마감시각', 16], ['메일사용', true], ['첫주합침일수', 4], ['가마감이월일수', 5], ['결과메일대기분', 60], ['확정비고최소글자', 10], ['입력시작일수', 3]]);
 t('S1 정상 값', s.bad.length === 0 && s.modes.동부 === '2단계' && s.modes.서부 === '3단계' && s.팀장마감시각 === 16 && s.메일사용 === true && s.usedDefault.length === 0);
 s = ws.readSettings([]);
-t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 8 && s.결과메일대기분 === 60 && s.입력시작일수 === 3 && s.bad.length === 0);
+t('S2 줄 없음 → 기본값 + usedDefault 표시', s.담당마감시각 === 15 && s.팀장마감시각 === 16 && s.usedDefault.length === 9 && s.결과메일대기분 === 60 && s.확정비고최소글자 === 10 && s.입력시작일수 === 3 && s.bad.length === 0);
 t('S5 결과메일대기분: 0~1440, 잘못되면 기본 60', ws.readSettings([['결과메일대기분', 0]]).결과메일대기분 === 0 && ws.readSettings([['결과메일대기분', '90']]).결과메일대기분 === 90 && ws.readSettings([['결과메일대기분', '2000']]).결과메일대기분 === 60 && ws.readSettings([['결과메일대기분', '2000']]).bad.length === 1);
 const H1MS = Date.parse('2026-11-17T16:09:00+09:00');
 t('S6 결과 메일 때: 완료 16:09 → 17:02 기다림, 18:02 보냄, 대기 0분이면 17:02 보냄, 완료 시각 없으면 바로', !ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T18:02:00+09:00'), ws.readSettings([])) && ws.resultDue(H1MS, Date.parse('2026-11-17T17:02:00+09:00'), ws.readSettings([['결과메일대기분', 0]])) && ws.resultDue(null, H1MS, ws.readSettings([])));
@@ -447,12 +447,12 @@ t('E16b 고객사 추가: 적용월 = 이번 보고 달(11), 순서 = 최대+1(�
 // index.js 배선(정적): 잠금 안 · 쓰기 1번(batchUpdate) · 팀 고르기 · 담당/임원은 앞에서 FORBIDDEN · 적용월 = 이번 보고 달
 const IX = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.js'), 'utf8');
 const sv = IX.slice(IX.indexOf('exports.saveWeeklySalesTest'), IX.indexOf('async function runWeeklySalesMail_'));
-const br = sv.slice(sv.indexOf("if (b.action === 'updateCustomers')"), sv.indexOf("// 3단계 ① 입력 방식 바꾸기"));
+const br = sv.slice(sv.indexOf("if (b.action === 'updateCustomers')"), sv.indexOf("// 2026-11-23 재홍님 승인: 실적 관리 › 실적 설정 [저장]"));
 t('E17 updateCustomers: 잠금을 잡은 뒤·푼 앞, 시트 다시 읽은 뒤에 처리', sv.indexOf('acquireLock(') < sv.indexOf("if (b.action === 'updateCustomers')") && sv.indexOf("if (b.action === 'updateCustomers')") < sv.indexOf('releaseLock(') &&
   sv.indexOf('weeklyFile_(client, mro.fileId)') < sv.indexOf("if (b.action === 'updateCustomers')"));
 t('E18 updateCustomers: 쓰기 perfBatchWrite_ 1번, 팀 weeklyLeadTeam_, 담당 managersOf, 적용월 = 이번 보고 달(weeklyEntry_ 월 없이)', (br.match(/perfBatchWrite_\(/g) || []).length === 1 && br.includes('weeklyLeadTeam_(mro.me, isAdmin, b.team, teams)') &&
   br.includes('weeklySales.managersOf(mro.userRows, lead.team)') && br.includes('weeklyEntry_(year, undefined, undefined, f.settings, nowMs)') && br.includes('month: nowEn.month'));
-t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
+t('E19 동작 목록에 updateCustomers, 팀장·관리자 외 FORBIDDEN이 잠금 앞', sv.includes("'addCustomer', 'updateCustomers', 'proxyComplete', 'proxyReopen', 'setMode', 'saveSettings']") && sv.indexOf("return { ok: false, error: 'FORBIDDEN' }") < sv.indexOf('acquireLock('));
 t('E20 실적-고객사 읽기 범위 3곳 모두 A2:L, 고객사 추가 쓰기 A:L', (IX.match(/TAB_CUSTOMERS\) \+ '!A2:L'/g) || []).length === 3 && !IX.includes("TAB_CUSTOMERS) + '!A2:K'") && IX.includes("'!A' + plan.row + ':L' + plan.row"));
 // 확인 1: 16시 알림의 '고객사 N곳'은 이력 줄을 한 곳으로 셈(11월 기준 동부 사용 중 = 가나정밀·다라금속·자차신규 3곳, 원본 줄로 세면 4)
 const RJ = ws.reminderJobs({ nowMs: Date.parse('2026-11-16T16:05:00+09:00'), settings: ws.readSettings([]), customers: CEC, progressRows: [], weeklyRows: [], users: CEU.concat([['e2@nkmro.com', '동팀장', '팀장', '동부', '활성']]), adminEmail: '' });
@@ -538,6 +538,75 @@ const wr = new Function(uiGrab('wkMd2_') + ';' + uiGrab('wkRange_') + '; return 
 t('Q17 주차 막대 기간 줄임: 같은 달 "11/6~9", 달 바뀜 "1/29~2/1"', wr('2026-11-06', '2026-11-09') === '11/6~9' && wr('2027-01-29', '2027-02-01') === '1/29~2/1' && wr('2026-11-27', '2026-11-30') === '11/27~30');
 t('Q15 마감 뒤 재촉 문구(2안)·하루 넘으면 "N일 남음"', due.includes('⏰ 늦었어요! 지금 입력해 주시면 바로 결과가 모여요') && due.includes("dd + '일'") && ri4.includes('늦었어요! 지금 입력해 주시면 바로 결과가 모여요.'));
 t('Q16 예상치 안내(누적 기간 끝나기 전, 가마감 제외)·담당 2단계 주차 안내', ri4.includes('<b>예상치</b>로 넣어 두고') && ri4.includes('!d.gamagam && wkTodayIso_() <= d.to') && li4.includes("res.error === 'MODE_2STEP' && res.nextMode === '3단계' && res.next"));
+// 2026-11-23 재홍님 승인: 실적 관리 › 실적 설정(관리자) — SETTING_RULES / planSaveSettings / rowsAfter / 서버·화면 배선
+{
+const SR = [['입력요일', '월', ''], ['담당마감시각', 15, ''], ['메일사용', 'TRUE', ''], ['결과메일대기분', 60, ''], ['입력방식_동부', '3단계', ''], ['메모줄', 'abc', '자유 메모'], ['담당마감시각', 14, '아래 줄이 이김']];
+t('SS1 SETTING_RULES = readSettings 키 9개, 확정비고최소글자 0~200', ws.SETTING_RULES.length === 9 && ws.SETTING_RULES.every(function (x) { return x.desc && x.why; }) &&
+  ws.SETTING_RULES.find(function (x) { return x.key === '확정비고최소글자'; }).parse('201') === null && ws.SETTING_RULES.find(function (x) { return x.key === '확정비고최소글자'; }).parse('0') === 0);
+let ps = ws.planSaveSettings({ settingRows: SR, changes: [{ key: '담당마감시각', value: '13' }] });
+t('SS2 같은 키가 둘이면 아래 줄(8행) B칸만', ps.ok && ps.writes.length === 1 && ps.writes[0].range === 'B8' && ps.writes[0].values[0] === 13 && ps.keys[0] === '담당마감시각');
+ps = ws.planSaveSettings({ settingRows: SR, changes: [{ key: '확정비고최소글자', value: '12' }, { key: '첫주합침일수', value: '3' }] });
+t('SS3 시트에 없는 알려진 키 → 다음 빈 줄 A~C(키·값·설명), 둘이면 차례로', ps.ok && ps.writes[0].range === 'A9:C9' && ps.writes[0].values[0] === '확정비고최소글자' && ps.writes[0].values[1] === 12 && ps.writes[1].range === 'A10:C10');
+ps = ws.planSaveSettings({ settingRows: SR, changes: [{ key: '메일사용', value: 'FALSE' }, { key: '결과메일대기분', value: '60' }] });
+t('SS4 메일사용 FALSE → false, 그대로인 값은 건너뜀', ps.ok && ps.writes.length === 1 && ps.writes[0].range === 'B4' && ps.writes[0].values[0] === false && ps.keys.join() === '메일사용');
+t('SS5 범위 밖 → BAD_VALUE(why), 모르는 새 키 → UNKNOWN_KEY, 빈 키 → BAD_KEY, 같은 키 두 번 → DUPLICATE_KEY, 빈 목록 → NO_CHANGES',
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '결과메일대기분', value: '1441' }] }).why === '0~1440 정수(분)' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '새키', value: '1' }] }).error === 'UNKNOWN_KEY' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '', value: '1' }] }).error === 'BAD_KEY' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '키', value: '1' }] }).error === 'BAD_KEY' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '메모줄', value: 'a' }, { key: '메모줄', value: 'b' }] }).error === 'DUPLICATE_KEY' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [] }).error === 'NO_CHANGES');
+ps = ws.planSaveSettings({ settingRows: SR, changes: [{ key: '메모줄', value: ' xyz ' }, { key: '입력방식_서부', value: '3단계' }] });
+t('SS6 그 밖의 줄(시트에 있음) → 글자 그대로 B칸, 입력방식_ → modes로만(직접 쓰지 않음)', ps.ok && ps.writes.length === 1 && ps.writes[0].range === 'B7' && ps.writes[0].values[0] === 'xyz' && ps.modes.length === 1 && ps.modes[0].team === '서부' && ps.modes[0].mode === '3단계');
+t('SS7 입력방식 값 잘못 → BAD_VALUE, 그 밖의 줄 201자 → BAD_VALUE', ws.planSaveSettings({ settingRows: SR, changes: [{ key: '입력방식_서부', value: '4단계' }] }).error === 'BAD_VALUE' &&
+  ws.planSaveSettings({ settingRows: SR, changes: [{ key: '메모줄', value: 'x'.repeat(201) }] }).error === 'BAD_VALUE');
+const ra = ws.rowsAfter(SR, [{ range: 'A9:C9', values: ['확정비고최소글자', 12, 'd'] }, { range: 'B3', values: [11] }]);
+const sm = ws.planSetMode({ settingRows: ra, settings: ws.readSettings(ra), team: '서부', mode: '3단계' });
+t('SS8 rowsAfter: 새 줄·고친 칸을 미리 반영 → 이어서 입력방식 새 줄은 10행(겹치지 않음)·원본은 그대로', ra[7][0] === '확정비고최소글자' && ra[1][1] === 11 && SR[1][1] === 15 && sm.ok && sm.write.range === 'A10:C10');
+// SR = 서버가 넘기는 A2:C(첫 줄 = 2행, indexRows 규칙)
+t('SS9 readSettings는 SETTING_RULES로 읽음(새 키도 같은 규칙)', ws.readSettings([['확정비고최소글자', 'abc']]).bad[0].key === '확정비고최소글자' && ws.readSettings([['확정비고최소글자', 'abc']]).확정비고최소글자 === 10);
+const gx = IX.slice(IX.indexOf('exports.getWeeklySalesTest'), IX.indexOf('async function weeklySalesReport_'));
+t('SS10 읽기 view=settings: ping과 같은 관리자 확인 뒤, settingRows·teams를 돌려줌', gx.includes("if (view !== 'ping' && view !== 'settings')") && gx.indexOf("if (view !== 'ping' && view !== 'settings')") < gx.indexOf('!== ADMIN_EMAIL') && gx.includes('settingRows: (vr[n] && vr[n].values) || [], teams: weeklySales.teamsOf('));
+const sb = sv.slice(sv.indexOf("if (b.action === 'saveSettings') {"), sv.indexOf("// 3단계 ① 입력 방식 바꾸기"));
+t('SS11 저장 saveSettings: 관리자만(잠금 앞) · 잠금 안 · 쓰기 1번 · 입력방식은 planSetMode+planProgress · PARTIAL_WRITE 확인',
+  sv.includes("if (b.action === 'saveSettings' && !isAdmin) return { ok: false, error: 'FORBIDDEN' };") && sv.indexOf("if (b.action === 'saveSettings' && !isAdmin)") < sv.indexOf('acquireLock(') &&
+  sv.indexOf('acquireLock(') < sv.indexOf("if (b.action === 'saveSettings') {") && (sb.match(/perfBatchWrite_\(/g) || []).length === 1 &&
+  sb.includes('weeklySales.planSetMode(') && sb.includes('weeklySales.planProgress(') && sb.includes("error: 'PARTIAL_WRITE'") && sb.includes("if (teams.indexOf(m.team) < 0) return { ok: false, error: 'BAD_TEAM'"));
+// 화면(정적·동작)
+const navS = FH.slice(FH.indexOf('id="nav-group-sales"'), FH.indexOf('id="nav-group-hr"'));
+t('SS12 메뉴: 실적 관리 맨 아래(주간 실적 다음) · 관리자만 보이게 · 화면 칸·switchView 배선', navS.indexOf('id="nav-weekly"') < navS.indexOf('id="nav-sales-settings"') && navS.includes('switchView(\'sales-settings\')') &&
+  FH.includes("if (session.email === ADMIN_EMAIL) document.getElementById('nav-sales-settings').style.display = 'flex';") && FH.includes('<div id="sales-settings-view" style="display:none;"></div>') &&
+  FH.includes("document.getElementById('sales-settings-view').style.display = view === 'sales-settings' ? 'block' : 'none';") && FH.includes("if (view === 'sales-settings') {\nloadSalesSettingsPage();"));
+t('SS13 화면 안 오류 문구 4개(BAD_KEY·DUPLICATE_KEY·BAD_VALUE·UNKNOWN_KEY)', ['BAD_KEY', 'DUPLICATE_KEY', 'BAD_VALUE', 'UNKNOWN_KEY'].every(function (k) { return new RegExp('\\b' + k + ": '").test(FH); }));
+// 동작: 불러온 값 → 고친 키만 changes로
+const ssCode = ['loadSalesSettingsPage', 'ssChanges_', 'ssChangeText_', 'ssPick_', 'ssInput_', 'ssSave_'].map(uiGrab).join('\n');
+const SSROWS = FH.slice(FH.indexOf('const SS_ROWS_ = ['), FH.indexOf('let ss_ = null'));
+const sent = [];
+const sctx = { document: { getElementById: function () { return { innerHTML: '' }; } }, escapeHtml: String, wkErrorText_: function () { return 'E'; }, wkErr_: function (r) { return r.error; },
+  ssRender_: function () {}, ssBar_: function () {},
+  wkFetch_: async function () { return { ok: true, year: 2026, fileId: 'F', teams: ['동부', '서부'], settings: { bad: [{ key: '메일사용', value: 'abc', why: 'TRUE 또는 FALSE' }], modes: { 동부: '3단계' } },
+    settingRows: [['입력요일', '월'], ['담당마감시각', 15], ['메일사용', 'abc'], ['입력방식_동부', '3단계'], ['연도전환시작일', '1', '12월 며칠부터'], ['입력방식_중부', '2단계']] }; },
+  wkPost_: async function (b) { sent.push(b); return { ok: true, modes: [{ team: '서부', from: '2단계', to: '3단계' }] }; } };
+require('vm').createContext(sctx);
+await require('vm').runInContext(SSROWS + 'var ss_ = null, ssReq_ = 0;\n' + ssCode + `
+(async function () {
+  await loadSalesSettingsPage();
+  globalThis.__init = JSON.parse(JSON.stringify(ss_.init)); globalThis.__extra = ss_.extra.slice(); globalThis.__none = ssChanges_().length;
+  ssInput_('담당마감시각', '14'); ssInput_('결과메일대기분', '60'); ssPick_('입력방식_서부', '3단계'); ssPick_('메일사용', true); ssInput_('연도전환시작일', '2');
+  globalThis.__ch = ssChanges_();
+  await ssSave_();
+  globalThis.__msg = ss_.msg;
+})()`, sctx);
+const ch = sctx.__ch.map(function (c) { return c.key + '=' + c.value; }).join(',');
+t('SS14 처음 불러오면 바뀐 값 0, 줄 없는 숫자 = 기본값 글자, 잘못된 메일사용 = 안 고름(null), 입력방식 없는 팀 = 2단계', sctx.__none === 0 && sctx.__init.결과메일대기분 === '60' && sctx.__init.메일사용 === null &&
+  sctx.__init['입력방식_서부'] === '2단계' && sctx.__init['입력방식_동부'] === '3단계');
+t('SS15 그 밖의 줄 = 표에 없는 키(연도전환시작일) + 고객사에 없는 팀의 입력방식 줄(입력방식_중부)', sctx.__extra.join() === '연도전환시작일,입력방식_중부');
+t('SS16 [저장]은 바꾼 키만(기본값과 같은 결과메일대기분은 빠짐), 메일사용은 TRUE 글자', ch === '담당마감시각=14,메일사용=TRUE,입력방식_서부=3단계,연도전환시작일=2' && sent.length === 1 && sent[0].action === 'saveSettings' && sent[0].changes.length === 4);
+t('SS17 저장 뒤 초록 안내(입력 방식은 다음 보고 주차부터)', sctx.__msg && sctx.__msg.ok === true && sctx.__msg.text.includes('입력 방식은 다음 보고 주차부터'));
+sent.length = 0;
+await require('vm').runInContext(`(async function () { await loadSalesSettingsPage(); ssInput_('담당마감시각', '24'); await ssSave_(); globalThis.__msg2 = ss_.msg; })()`, sctx);
+t('SS18 범위 밖 숫자는 서버에 보내지 않고 안내', sent.length === 0 && sctx.__msg2 && !sctx.__msg2.ok && sctx.__msg2.text.includes('0~23'));
+}
 console.log(`weekly_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 })();

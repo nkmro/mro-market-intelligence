@@ -1150,6 +1150,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
         <div class="nav-group-head" onclick="toggleNavGroup_('sales')"><span class="nav-group-caret">▼</span>실적 관리<span class="nav-group-new" id="nav-group-sales-new" style="display:none;">NEW</span></div>
         <div class="nav-group-body">
           <div class="nav-item" id="nav-weekly" data-view="weekly" onclick="switchView('weekly')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><polyline points="7 16 10 13 13 15 17 11"></polyline></svg></span> 주간 실적</div>
+          <div class="nav-item" id="nav-sales-settings" data-view="sales-settings" onclick="switchView('sales-settings')" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span> 실적 설정</div>
         </div>
       </div>
       <div class="nav-group collapsed" id="nav-group-hr" data-group="hr" style="display:none;">
@@ -1217,6 +1218,7 @@ document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, 
 <div id="perf-view" style="display:none;"></div>
 <div id="perf-criteria-view" style="display:none;"></div>
 <div id="weekly-view" style="display:none;"></div>
+<div id="sales-settings-view" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -1642,6 +1644,7 @@ document.getElementById('comp-team-view').style.display = view === 'comp-team' ?
 document.getElementById('perf-view').style.display = view === 'perf' ? 'block' : 'none';
 document.getElementById('perf-criteria-view').style.display = view === 'perf-criteria' ? 'block' : 'none';
 document.getElementById('weekly-view').style.display = view === 'weekly' ? 'block' : 'none';
+document.getElementById('sales-settings-view').style.display = view === 'sales-settings' ? 'block' : 'none';
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';
@@ -1694,6 +1697,9 @@ loadPerfCriteriaPage();
 }
 if (view === 'weekly') {
 loadWeeklyPage();
+}
+if (view === 'sales-settings') {
+loadSalesSettingsPage();
 }
 toggleDrawer(false);
 }
@@ -1967,6 +1973,7 @@ loadCompBadge_();
 if (session.email === ADMIN_EMAIL || ['임원', '팀장', '담당'].indexOf(session.role) >= 0) {
 document.getElementById('nav-group-sales').style.display = '';
 document.getElementById('nav-weekly').style.display = 'flex';
+if (session.email === ADMIN_EMAIL) document.getElementById('nav-sales-settings').style.display = 'flex'; // 2026-11-23 실적 설정: 관리자만(서버도 관리자만)
 if (!wkMgrOnly_()) loadWeeklyBadge_(); // 2단계: 4팀 완료 주차 NEW — 기다리지 않음(Firestore 1개, 시트 안 읽음)
 }
 restoreNavGroups_();
@@ -8067,8 +8074,153 @@ DUPLICATE_CUSTOMER: '같은 팀에 같은 이름의 고객사가 이미 있어�
 BAD_TEAM: '없는 팀이에요. 새로고침 후 다시 골라 주세요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
 LOCKED_FIELD: '구매사명·팀·순서는 바꿀 수 없어요(순서는 관리자가 시트에서).', BAD_FIELD: '바꿀 수 없는 칸이에요.', BAD_ORDER: '순서는 1~9999 숫자로 넣어 주세요.', NO_CHANGES: '바꾼 칸이 없어요.',
 BAD_MANAGER: '이 팀 활성 담당 목록에 없는 이름이에요. 새로고침 후 다시 골라 주세요.', NOT_PROXY: '담당 본인이 [입력 완료]한 거라 팀장이 취소할 수 없어요. 담당이 자기 화면에서 [완료 취소]를 눌러야 해요.',
+BAD_KEY: '줄 이름(키)이 비었어요. 새로고침 후 다시 해 주세요.', DUPLICATE_KEY: '같은 줄을 두 번 보냈어요. 새로고침 후 다시 해 주세요.', BAD_VALUE: '값이 규칙에 맞지 않아요.', UNKNOWN_KEY: '시트에 없는 줄이에요. 새 줄은 시트에서 직접 넣어 주세요(시트 우선).',
 LOCK_TIMEOUT: '다른 저장이 진행 중이에요. 잠시 후 다시 눌러 주세요.', PARTIAL_WRITE: '일부만 저장됐을 수 있어요. 새로고침해서 확인해 주세요.' };
 function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (res.field ? ' (' + res.field + ')' : '') : wkErrorText_(res); }
+// ==== 실적 관리 › 실적 설정 (2026-11-23 재홍님 승인) — 관리자만. 실적관리 파일 '실적-설정' 탭을 그대로 보여 주고, 바꾼 줄의 값(B) 칸만 저장 ====
+// 시트 우선: 화면은 시트 값을 그대로 보여 준다(줄이 없으면 "시트에 줄 없음 → 기본", 잘못된 값이면 빨간 글씨로 "기본으로 동작").
+// 읽기: getWeeklySalesTest view=settings(settingRows·teams·settings). 저장: saveWeeklySalesTest action=saveSettings, changes=[{ key, value }] — 바꾼 키만.
+// 입력방식_{팀}은 서버가 입력 화면 [바꾸기]와 같은 길로 저장(실적-진행 기록, 다음 보고 주차부터). 표에 없는 줄은 '그 밖의 줄'에 자동으로 보임.
+const SS_ROWS_ = [
+{ sec: '입력 일정', key: '입력요일', label: '입력 요일', fixed: true, desc: '마감 요일(지금은 월만 가능)' },
+{ sec: '입력 일정', key: '입력시작일수', label: '입력 시작', unit: '일 전', min: 0, max: 6, desc: '마감 월요일 며칠 전부터 입력이 열리나(3 = 전주 금요일) · 0~6' },
+{ sec: '입력 일정', key: '담당마감시각', label: '담당 마감 시각', unit: '시', min: 0, max: 23, desc: '3단계 팀 담당의 [입력 완료] 마감 · 0~23' },
+{ sec: '입력 일정', key: '팀장마감시각', label: '팀장 마감 시각', unit: '시', min: 0, max: 23, desc: '팀장 [입력 완료]·[팀 확정] 마감, 16시 알림 메일 · 0~23' },
+{ sec: '입력 일정', key: '첫주합침일수', label: '첫 주 합침', unit: '일', min: 0, max: 6, desc: '달 첫 주가 이 일수 이하면 다음 주와 합쳐요 · 0~6' },
+{ sec: '입력 일정', key: '가마감이월일수', label: '가마감 넘기기', unit: '일', min: 1, max: 8, desc: '말일이 월요일에서 이 일수 이상 남으면 가마감 · 1~8(8 = 넘기지 않음)' },
+{ sec: '메일', key: '메일사용', label: '메일 보내기', bool: true, desc: '16시 알림·담당 마감 알림·결과 메일 전체' },
+{ sec: '메일', key: '결과메일대기분', label: '결과 메일 대기', unit: '분', min: 0, max: 1440, desc: '4팀 모두 완료 뒤 이 시간이 지나면 다음 정시 2분에 보내요 · 0~1440' },
+{ sec: '확정 실적', key: '확정비고최소글자', label: '비고 최소 글자', unit: '자', min: 0, max: 200, desc: '담당 [확정] 전에 고객사마다 써야 하는 비고 글자 수 · 0~200' }
+];
+const SS_DEF_ = { 입력요일: '월', 입력시작일수: 3, 담당마감시각: 15, 팀장마감시각: 16, 첫주합침일수: 4, 가마감이월일수: 5, 메일사용: true, 결과메일대기분: 60, 확정비고최소글자: 10 }; // 서버 DEFAULTS와 같음(화면 안내용)
+let ss_ = null, ssReq_ = 0;
+async function loadSalesSettingsPage(keepMsg) {
+const root = document.getElementById('sales-settings-view');
+const reqNo = ++ssReq_;
+const msg = keepMsg && ss_ ? ss_.msg : null;
+if (!keepMsg) root.innerHTML = `<div class="feed-loading"><span class="mro-spinner"></span>불러오는 중...</div>`;
+const res = await wkFetch_({ view: 'settings' });
+if (reqNo !== ssReq_) return;
+if (!res || !Array.isArray(res.settingRows)) {
+root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '실적 설정은 관리자만 볼 수 있어요.' : wkErrorText_(res))}</div>`;
+return;
+}
+// 시트 값: 같은 키가 여럿이면 아래 줄(서버 readSettings와 같음). 설명 = C열
+const sheet = {}, desc = {}, order = [];
+res.settingRows.forEach(function (r) {
+const k = String((r && r[0]) === undefined || (r && r[0]) === null ? '' : r[0]).trim();
+if (!k || k === '키') return;
+if (!(k in sheet)) order.push(k);
+sheet[k] = String(r[1] === undefined || r[1] === null ? '' : r[1]).trim();
+desc[k] = String(r[2] === undefined || r[2] === null ? '' : r[2]).trim();
+});
+const bad = {};
+((res.settings && res.settings.bad) || []).forEach(function (b) { bad[b.key] = b; });
+const init = {};
+SS_ROWS_.forEach(function (m) {
+if (m.fixed) return;
+if (m.bool) init[m.key] = bad[m.key] ? null : (m.key in sheet) ? sheet[m.key].toUpperCase() === 'TRUE' : SS_DEF_[m.key]; // 잘못된 값이면 아무것도 안 골라 둠 → 고르면 저장돼 시트가 고쳐짐
+else init[m.key] = (m.key in sheet) ? sheet[m.key] : String(SS_DEF_[m.key]);
+});
+const teams = Array.isArray(res.teams) ? res.teams : [];
+teams.forEach(function (t) { init['입력방식_' + t] = (res.settings && res.settings.modes && res.settings.modes[t]) || '2단계'; });
+const known = SS_ROWS_.map(function (m) { return m.key; });
+const extra = order.filter(function (k) { return known.indexOf(k) < 0 && !(k.indexOf('입력방식_') === 0 && teams.indexOf(k.slice(5)) >= 0); });
+extra.forEach(function (k) { init[k] = sheet[k]; });
+ss_ = { res: res, sheet: sheet, desc: desc, bad: bad, teams: teams, extra: extra, init: init, want: Object.assign({}, init), msg: msg, busy: false };
+ssRender_();
+}
+function ssChanges_() {
+const out = [];
+Object.keys(ss_.init).forEach(function (k) {
+const a = ss_.init[k], b = ss_.want[k];
+if (String(a).trim() !== String(b).trim()) out.push({ key: k, value: typeof b === 'boolean' ? (b ? 'TRUE' : 'FALSE') : String(b).trim() });
+});
+return out;
+}
+function ssChangeText_(c) {
+const a = ss_.init[c.key];
+const isB = SS_ROWS_.some(function (m) { return m.bool && m.key === c.key; });
+const show = function (v) { return v === null ? '잘못된 값' : typeof v === 'boolean' ? (v ? '켜짐' : '꺼짐') : (String(v) === '' ? '빈칸' : String(v)); };
+return c.key + ' ' + show(a) + ' → ' + show(isB ? c.value === 'TRUE' : c.value);
+}
+function ssSheetNote_(key, def) {
+const s = ss_;
+if (s.bad[key]) return `<div class="settings-row-desc" style="color:var(--danger);">시트 값 "${escapeHtml(s.bad[key].value)}"이(가) 잘못돼 기본 ${escapeHtml(String(def))}(으)로 동작 · ${escapeHtml(s.bad[key].why)}</div>`;
+if (!(key in s.sheet)) return `<div class="settings-row-desc">시트에 줄 없음 → 기본 ${escapeHtml(String(def))}(으)로 동작 · 다른 값으로 저장하면 시트에 줄이 생겨요</div>`;
+return '';
+}
+function ssRowHtml_(title, descHtml, ctrlHtml) {
+return `<div class="settings-row"><div class="settings-row-label"><div class="settings-row-title">${escapeHtml(title)}</div>${descHtml}</div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${ctrlHtml}</div></div>`;
+}
+function ssAttr_(v) { return escapeHtml(String(v)).replace(/'/g, '&#39;'); }
+function ssRender_() {
+const root = document.getElementById('sales-settings-view');
+if (!root || !ss_) return;
+const s = ss_, r = s.res, dis = s.busy ? 'disabled' : '';
+const fid = String(r.fileId || '');
+const file = ssRowHtml_(String(r.year || '') + '년 실적관리 파일', `<div class="settings-row-desc">파일을 바꾸려면 관리 › 공통 설정의 실적관리파일_${escapeHtml(String(r.year || ''))} 줄을 고칩니다</div>`,
+fid ? `<span class="cs-file"><a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(fid)}" target="_blank" rel="noopener">파일 열기 ↗</a></span>` : '');
+const secs = {};
+SS_ROWS_.forEach(function (m) {
+const star = m.fixed ? '' : (ssChanges_().some(function (c) { return c.key === m.key; }) ? ' *' : '');
+let ctrl;
+if (m.fixed) ctrl = `<span class="cs-val">${escapeHtml(s.sheet[m.key] || SS_DEF_[m.key])}</span>`;
+else if (m.bool) ctrl = `<div class="csp-seg">${[[true, '켜짐'], [false, '꺼짐']].map(function (b) { return `<button type="button" class="${s.want[m.key] === b[0] ? 'on' : ''}" ${dis} onclick="ssPick_('${m.key}', ${b[0]})">${b[1]}</button>`; }).join('')}</div>`;
+else ctrl = `<input class="csp-days" type="number" min="${m.min}" max="${m.max}" step="1" inputmode="numeric" value="${ssAttr_(s.want[m.key])}" ${dis} oninput="ssInput_('${m.key}', this.value)" aria-label="${ssAttr_(m.label)}"> <span>${escapeHtml(m.unit)}</span>`;
+(secs[m.sec] = secs[m.sec] || []).push(ssRowHtml_(m.label + star, `<div class="settings-row-desc">${escapeHtml(m.desc)}</div>` + ssSheetNote_(m.key, m.bool ? (SS_DEF_[m.key] ? '켜짐' : '꺼짐') : SS_DEF_[m.key]), ctrl));
+});
+const modes = s.teams.map(function (t) {
+const k = '입력방식_' + t, w = s.want[k];
+const seg = ['2단계', '3단계'].map(function (m) { return `<button type="button" class="${w === m ? 'on' : ''}" ${dis} onclick="ssPick_('${ssAttr_(k)}', '${m}')">${m}</button>`; }).join('');
+return ssRowHtml_(t + (w !== s.init[k] ? ' *' : ''), `<div class="settings-row-desc">시트 줄 이름: ${escapeHtml(k)}</div>` + ssSheetNote_(k, '2단계'), `<div class="csp-seg">${seg}</div>`);
+}).join('');
+const extra = s.extra.map(function (k) {
+return ssRowHtml_(k + (String(s.want[k]).trim() !== String(s.init[k]).trim() ? ' *' : ''), s.desc[k] ? `<div class="settings-row-desc">${escapeHtml(s.desc[k])}</div>` : '',
+`<input class="cs-val ss-text" style="background:var(--card);" maxlength="200" value="${ssAttr_(s.want[k])}" ${dis} oninput="ssInput_('${ssAttr_(k)}', this.value)" aria-label="${ssAttr_(k)}">`);
+}).join('');
+const tabsBad = (r.tabs || []).filter(function (t) { return !t.ok; });
+const warn = tabsBad.length ? `<div class="cy-band cy-red">탭 머리줄이 맞지 않아요: ${escapeHtml(tabsBad.map(function (t) { return t.tab || t.label || ''; }).join(', '))}</div>` : '';
+const msg = s.msg ? `<div class="cy-band ${s.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(s.msg.text)}</div>` : '';
+root.innerHTML = `<div class="settings-panel">
+<div class="settings-row-title" style="font-size:16px; margin:12px 0 2px;">실적 설정</div>
+<div class="settings-row-desc" style="margin-bottom:4px;">실적관리 파일 안 '실적-설정' 탭 그대로 · 시트가 우선(시트에서 고치면 다음에 열 때 바로 반영) · 여기서 고치면 그 줄 '값' 칸만 바꿔요</div>
+${warn}
+<div class="cs-sec">파일</div>${file}
+<div class="cs-sec">입력 일정</div>${secs['입력 일정'].join('')}
+<div class="cs-sec">메일</div>${secs['메일'].join('')}
+<div class="cs-sec">팀 입력 방식 <span class="settings-row-desc" style="font-weight:400;">· 바꾸면 다음 보고 주차부터 (실적-진행에 기록)</span></div>${modes || '<div class="cm-empty">실적-고객사 탭에서 팀을 찾지 못했어요.</div>'}
+<div class="cs-sec">확정 실적</div>${secs['확정 실적'].join('')}
+<div class="cs-sec">그 밖의 줄 <span class="settings-row-desc" style="font-weight:400;">· 시트에 새로 넣은 줄은 여기에 자동으로 보여요</span></div>${extra || '<div class="cm-empty">없어요.</div>'}
+${msg}
+<div class="pf-btns" id="ss-bar"></div>
+</div>`;
+ssBar_();
+}
+// 저장 버튼·바뀐 값 줄만 다시 그림(입력 칸은 그대로 — 커서가 안 사라짐)
+function ssBar_() {
+const el = document.getElementById('ss-bar');
+if (!el || !ss_) return;
+const ch = ssChanges_();
+el.innerHTML = `<button type="button" class="pf-btn pri" ${ch.length && !ss_.busy ? '' : 'disabled'} onclick="ssSave_()">${ss_.busy ? '저장 중...' : '저장'}</button><span class="pf-mut" style="font-size:12px;">${ch.length ? '<span class="csp-chg">바뀐 값: </span>' + escapeHtml(ch.map(ssChangeText_).join(', ')) : '바꾼 값이 없어요 · 저장하면 시트 \'실적-설정\' 탭의 그 줄 값 칸에 써요'}</span>`;
+}
+function ssPick_(key, v) { ss_.want[key] = v; ss_.msg = null; ssRender_(); }
+function ssInput_(key, v) { ss_.want[key] = String(v); ss_.msg = null; ssBar_(); }
+async function ssSave_() {
+const ch = ssChanges_();
+if (!ch.length || ss_.busy) return;
+for (const c of ch) { // 숫자 칸은 서버와 같은 범위로 먼저 확인(서버도 다시 확인)
+const m = SS_ROWS_.find(function (x) { return x.key === c.key; });
+if (m && m.unit) { const n = Number(c.value); if (c.value === '' || !Number.isInteger(n) || n < m.min || n > m.max) { ss_.msg = { text: m.label + '은(는) ' + m.min + '~' + m.max + ' 사이 정수로 적어 주세요.' }; ssRender_(); return; } }
+}
+ss_.busy = true; ss_.msg = null; ssRender_();
+const res = await wkPost_({ action: 'saveSettings', changes: ch });
+ss_.busy = false;
+if (!res || !res.ok) { ss_.msg = { text: wkErr_(res) + (res && res.why ? ' — ' + res.why : '') }; ssRender_(); return; }
+const mt = (res.modes || []).map(function (m) { return m.team + ' ' + m.from + '→' + m.to; });
+ss_.msg = { ok: true, text: '저장했어요 (' + ch.map(ssChangeText_).join(', ') + ')' + (mt.length ? ' · 입력 방식은 다음 보고 주차부터' : '') + '.' };
+loadSalesSettingsPage(true);
+}
 async function loadWeeklyInput_() {
 const box = document.getElementById('wk-in');
 if (!box || (!wkRes_ && !wkMgrOnly_())) return;
