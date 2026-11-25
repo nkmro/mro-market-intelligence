@@ -56,6 +56,8 @@ mro-market-intelligence/
 
 > **2026-11-17~19 업데이트**: ① **실적 관리 › 주간 실적** 신규(아래 "실적 관리(주간 실적) 구조" 절) — 전사 보기·우리 팀 입력·4팀 완료 결과 메일·메뉴 NEW, **3단계**(담당 입력 → 팀장 확정, 커밋 `233ea67`), **전주 금요일부터 입력**·마감 뒤 재촉 문구(커밋 `618f922`), 주차 표시 정리(`36dcef0`·`ed9fcf2`). ② **팀장 겸임**(아래 "팀장 겸임" 절) — 사용자팀마스터 L열 `겸임팀`, 1차(시황·품목·담당·사용자·이슈 메일·관리자 편집, 커밋 `d3aab2c`)·2차(주간 실적·성과평가·역량평가, 커밋 `e428435`). 2차에서 주간 실적 입력 화면을 정리: 입력 방식 줄 기본 접기(모든 팀), 관리자 [입력할 팀]·겸임 팀장 [맡은 팀] 큰 팀 버튼(예전 드롭다운 대체), 누른 버튼 '처리 중'·결과 초록 띠. ③ 사용자 현황 최종 접속을 이메일 옆으로(`fc8c391`), 로그인 화면 부제목 "자재 시황 · 실적 관리 · 인사평가"(`2657a9b`). ④ **실적관리 파일 자동 연도 전환**(2026-11-19) — 인사평가와 같은 12월 예약이 `실적관리파일_{다음 해}`도 만듦(아래 "해 넘김").
 
+> **2026-11-23~25 업데이트**: ① **실적 관리 › 확정 실적** 신규(아래 "실적 관리(확정 실적) 구조" 절) — 회사 시스템 매출마감 엑셀 올리기(관리자, 여러 팀 한 번에)·시스템 고객사 → 주간 고객사 연결·담당 정하기·묶음(취합 고객사) 비고·담당 [확정] → 팀장/관리자 [최종 확정](커밋 `9d7a802`·`ae05920`·`f601503`), 알림 메일(올림·모두 확정, 커밋 `761148f`), PDF·엑셀 출력(커밋 `9c5c87c`), 자동 연도 전환 때 확정 탭 3개 비움(커밋 `bfe4eb6`), 표 머리글 고정(커밋 `f8bbbb5`). ② **실적 관리 › 실적 설정**(관리자, `실적-설정` 탭 보기·고치기 — 시트 우선). ③ 주간 실적·확정 실적 화면 폭 1240px로 통일(`main-wide`, 커밋 `ccadbc3`). ④ 사이드바를 회사 인트라넷처럼: 소메뉴는 연보라 판 #dedaec·지금 화면은 본문 바탕색 + 왼쪽 보라 막대(커밋 `766830a`), 대메뉴 높이 42px 통일·글자 세로 가운데(커밋 `58b1f2b`).
+
 **왜 프론트엔드 파일이 `frontend/` 폴더가 아니라 저장소 최상위에 있나요?**
 GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으로 서비스하고 있습니다 (Settings → Pages에서 확인). 즉 `index.html`이 반드시 루트에 있어야만 `https://nkmro.github.io/mro-market-intelligence/`가 정상 동작합니다. 만약 이 파일들을 `frontend/`로 옮기면 실제 서비스 URL이 전부 깨집니다. 그래서 구조 정리 단계에서는 **실제 파일을 옮기지 않고, 문서로만 "프론트엔드 영역"을 표시**했습니다 (`frontend/README.md` 참고). 나중에 GitHub Actions 기반 Pages 배포로 전환하면 실제로 옮길 수 있습니다 — 이건 별도의, 더 큰 작업입니다.
 
@@ -89,7 +91,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 
 - **Google Sheets = 사람이 보고 고치는 "진짜" 업무 데이터.** 사용자 계정·설정값·시황게시물·품목·고객·댓글·수집로그·탈락뉴스·삭제이력 등, 재홍님이나 팀원이 직접 열어서 확인하거나 손으로 고칠 수 있어야 하는 데이터는 전부 Sheets에 있습니다. Apps Script(`Code.gs`)와 Cloud Run 함수 양쪽 다 이 Sheets를 읽고 씁니다(Cloud Run은 서비스 계정 IAM 권한으로 접근).
 - **인사평가 파일은 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-10 문서화).** 파일 ID는 코드에 적지 않고 MRO 본 시트 '설정' 탭의 `인사평가파일_{연도}` 키에서 읽습니다. 그 안에 역량 기록 탭(`역량-…`, 자동 인식)·평가 기준 탭(`CRM-역량평가-기준`)·`인사평가설정` 탭이 있고, `getCompetencyTest`/`saveCompetencyTest`(Cloud Run)가 읽고 씁니다. 다음 해 파일은 Apps Script `yearRolloverDaily`가 만듭니다(아래 "Cloud Scheduler 작업" 절 끝 참고).
-- **실적관리 파일도 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-17~).** 파일 ID는 MRO 본 시트 '설정' 탭의 `실적관리파일_{연도}` 키에서 읽습니다. 탭 5개(`실적-고객사`·`실적-연간계획`·`실적-주간`·`실적-진행`·`실적-설정`) — 아래 "실적 관리(주간 실적) 구조" 절. 인사평가 파일처럼 12월에 자동 연도 전환(2026-11-19~, 아래 "해 넘김").
+- **실적관리 파일도 MRO 본 시트와 다른 스프레드시트입니다(해마다 1개, 2026-11-17~).** 파일 ID는 MRO 본 시트 '설정' 탭의 `실적관리파일_{연도}` 키에서 읽습니다. 탭 10개 — 주간 실적 5개(`실적-고객사`·`실적-연간계획`·`실적-주간`·`실적-진행`·`실적-설정`, 아래 "실적 관리(주간 실적) 구조" 절) + 확정 실적 5개(`실적-고객사연결`·`실적-확정`·`실적-확정진행`·`실적-담당지정`·`실적-확정비고`, 아래 "실적 관리(확정 실적) 구조" 절, 2026-11-23~25). 인사평가 파일처럼 12월에 자동 연도 전환(2026-11-19~, 아래 "해 넘김").
 - **Firestore = 사람이 직접 볼 필요 없는 "인프라성" 상태.** 세션, 락(동시 실행 방지), 중복 실행 방지 키, 푸시 구독/발송 상태처럼 애플리케이션 내부적으로만 쓰이고 사람이 시트처럼 열람·수정할 일이 없는 데이터는 Firestore에 있습니다. Cloud Run 함수들만 Firestore를 사용하고(Apps Script는 세션 이중 기록 때만 예외적으로 접근), 컬렉션 전체 목록(15개, 2026-11-10 코드 대조)은 아래 "Firestore 컬렉션 전체 목록" 절 참고.
 - **판단 기준**: "사람이 직접 열람/수정해야 하는가?"가 갈림길입니다. 그렇다면 Sheets, 아니라면(휘발성이거나 순수 동시성 제어용이라면) Firestore입니다. 이 기준 때문에 예를 들어 알림 자체의 원본 판정 데이터(게시물/댓글)는 Sheets에 있지만, "이 사용자에게 마지막으로 어떤 상태를 보냈는지"(중복 발송 방지 signature) 같은 부가 상태는 Firestore(`pushNotifyState` 등)에 있습니다.
 
@@ -163,7 +165,7 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
   - `실적-연간계획`(연도·팀·구매사명·1~12월 매출/이익/이익률·연간) — **앱 입력 화면 없음**, 재홍님이 시트에 직접. 계획이 없으면 계획·달성률 "—".
   - `실적-주간`(연도·월·주차·팀·구매사명·매출누적·이익누적·비고·입력자·입력일시·담당원래매출·담당원래이익) — K·L열은 3단계에서 팀장이 담당 값을 고쳤을 때 담당이 넣은 원래 값.
   - `실적-진행`(연도·월·주차·팀·단계·담당·처리자·일시·메일) — 입력 완료·팀 확정·완료 취소·입력방식 변경·결과 메일 기록.
-  - `실적-설정`(키·값): `입력방식_{팀}`(2단계/3단계), `입력요일`(월), `담당마감시각`(15), `팀장마감시각`(16), `메일사용`(TRUE), `첫주합침일수`(4), `가마감이월일수`(5), `결과메일대기분`(60), `입력시작일수`(3). 괄호 = 줄이 없을 때 기본값(`DEFAULTS`) — 시트 우선.
+  - `실적-설정`(키·값): `입력방식_{팀}`(2단계/3단계), `입력요일`(월), `담당마감시각`(15), `팀장마감시각`(16), `메일사용`(TRUE), `첫주합침일수`(4), `가마감이월일수`(5), `결과메일대기분`(60 — 2026-11-23 운영 시트 값 10), `입력시작일수`(3), `확정비고최소글자`(10, 확정 실적). 괄호 = 줄이 없을 때 기본값(`DEFAULTS`) — 시트 우선.
 - **주차 규칙**(`weekPlan`): 실적이 생긴 주를 그다음 입력 요일(월)에 보고. 그 달 첫 주 날짜 수가 `첫주합침일수` 이하이면 다음 주에 합침. 말일이 든 주의 월~말일이 `가마감이월일수` 이상이면 가마감은 다음 월요일(다음 달이어도), 아니면 그 월요일이 가마감(그 달 예상 마감 실적). 입력은 보고일 `입력시작일수`일 전(금요일)부터 열리고 마감 뒤에도 잠그지 않음(재촉 문구).
 - **입력 방식**(팀마다, `실적-설정` `입력방식_{팀}`): **2단계** = 팀장이 전부 입력 → [입력 완료]. **3단계** = 담당이 자기 고객사(`실적-고객사` F열 담당 = 사용자팀마스터 활성 '담당' 이름)만 입력 → [입력 완료](담당마감시각) → 팀장이 확인·수정 → [팀 확정](팀장마감시각), 끝내 안 하는 담당은 팀장 [대신 입력 완료]. 방식 변경은 **다음 보고 주차부터** 적용(`modeAt`, 그 주차 openDate 기준). 2026-11-19 운영: 동부만 3단계.
 - **권한**: 전사 보기(view=report) = 관리자·활성 임원·팀장. 입력 = 팀장(맡은 팀), 관리자(어느 팀이든 — 화면에 '관리자 대리' 표시), 3단계 팀의 담당(자기 고객사만, 전사 보기 없음). 완료 취소 = 4팀 모두 완료된 주차는 관리자만.
@@ -172,6 +174,26 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 - **입력 화면(2026-11-19)**: 입력 방식은 한 줄로 접힘(모든 팀, 화면을 새로 그릴 때마다) + [바꾸기 ▾]. 관리자 [입력할 팀]·겸임 팀장 [맡은 팀] = 큰 팀 버튼(위 '팀 입력 현황'과 같은 상태 표시). 팀을 바꿀 때 고친 숫자가 있으면 그 팀에 먼저 저장. 누른 버튼은 '불러오는 중…/바꾸는 중…', 끝나면 그 자리 아래 초록 띠(6초).
 - **해 넘김 (2026-11-19~ 자동)**: 인사평가와 같은 예약 `yearRolloverDaily`(매일 4시)가 12월 `연도전환시작일`(실적관리 파일 `실적-설정` 탭, 줄 없으면 1일)부터 `실적관리파일_{다음 해}`를 만듭니다 — 올해 파일 복사 → `실적-주간`·`실적-진행`·`실적-확정`·`실적-확정진행`·`실적-확정비고` 2행 아래 비움(확정 실적 3개 탭은 2026-11-25~) → `실적-고객사`는 고객사마다 12월 기준 최종 줄 1개만 남기고 적용월 비움(`yrSalesCollapse_`, Cloud Run `customersAt(rows, 12)`과 같은 규칙) → `실적-연간계획`은 연도만 다음 해로·숫자만 비움(수식 칸·팀·구매사명 그대로) → `실적-설정`·`실적-고객사연결`·`실적-담당지정`(연도 없는 기억 탭) 그대로 → 서비스 계정 편집자 → '설정' 탭 등록 → 메일(인사평가와 따로). 인사평가와 따로 돌아 한쪽이 실패해도 다른 쪽은 진행, 실패한 쪽만 다음 날 이어서(스크립트 속성 `YRS_{다음 해}_FILEID`). 시험·정리는 `yearRolloverTest`/`yearRolloverCleanupTest`가 두 파일을 함께. 12월 가마감은 12/28(월)에 올해 파일로 끝나고, 다음 해 첫 보고(1/11 월, 입력 1/8 금~)부터 새 파일을 씁니다. 새해 줄이 끝내 없으면 화면 "실적관리 파일이 아직 등록되지 않았어요", 결과 메일은 관리자에게 보류 알림 1번.
 - **시험**: `tests/weekly_sales_tests.js`(201개), `tests/teams2_tests.js`(겸임 2차 26개). 실제 실적 숫자는 저장소에 넣지 않습니다(예시 숫자만).
+
+## 실적 관리(확정 실적) 구조 (2026-11-23~25)
+
+회사 시스템에서 내려받은 **매출마감 엑셀**을 관리자가 올리면, 고객사별 확정 매출·이익을 주간 실적과 같은 고객사 순서로 보여 주고 담당 → 팀장(또는 관리자) 순서로 확정하는 기능입니다. 서버는 `cloud-run/mro-functions/lib/confirmedSales.js`(계산·계획 — 시트 접근 없음), `lib/confirmedMail.js`(알림 메일 — 순수 함수)와 `index.js`의 `getWeeklySalesTest`(view `confirmed`)·`saveWeeklySalesTest`(action `cf*`)입니다. 화면은 `feed.html`의 `cf*` 함수(`loadConfirmedPage`·`cfRender_`·`cfTable_`·`cfOut*`)입니다.
+
+- **파일**: 주간 실적과 같은 그해 실적관리 파일. 탭 머리글은 `lib/confirmedSales.js` `CF_HEADERS`와 이름·순서가 같아야 합니다(없으면 화면에 "확정 실적 탭이 없어요").
+  - `실적-고객사연결`(시스템구매사명·팀·주간고객사명·등록자·등록일시) — 시스템 구매사명 → 주간 고객사(묶음). 줄이 없으면 이름이 같을 때 자동. 한 번 이으면 다음 달부터 자동(연도 없는 '기억' 탭).
+  - `실적-확정`(연도·월·팀·시스템구매사명·주간고객사명·사무소·담당·시스템매출·시스템이익·이익(수정)·비고·매입미마감줄수·수정자·수정일시·다시확인) — 올린 달의 고객사별 합계(원본 줄은 저장하지 않음). K칸(고객사별 비고)은 2026-11-25부터 쓰지 않음.
+  - `실적-확정진행`(연도·월·팀·단계·담당·처리자·일시) — 단계: 올림·다시 올림·담당 확정·확정 취소·확정 다시 열림·최종 확정·최종 확정 풀림, 알림 메일 기록.
+  - `실적-담당지정`(시스템구매사명·팀·담당·등록자·등록일시) — 팀장이 고른 담당(다음 달부터 자동, 연도 없는 '기억' 탭).
+  - `실적-확정비고`(연도·월·팀·주간고객사명·비고·수정자·수정일시) — 묶음(취합 고객사)마다 비고 1줄(아래 줄이 이김, 최대 200자).
+- **달·단위**: 달 = 매출마감일의 달(매입월이 달라도). 숫자는 천원 정수(화면이 원 단위 합계를 천원으로 반올림해 보냄). 계획은 `실적-연간계획`(주간 실적과 같음).
+- **올리기**(관리자만, `cfPreview` → `cfUpload`): 파일의 실적부서명으로 팀을 나눠 한 번에 여러 팀(4팀)을 올림 — 동부만 든 파일이면 동부만 바뀜. 미리보기에서 못 이은 고객사가 보여도 올라가고 '연결 안 된 고객사' 묶음에 들어감(연결 전에는 [최종 확정] 막힘 `UNLINKED_LEFT`). **다시 올리기**: 시스템 구매사명별 비교 — 그대로면 고친 이익·비고·확정 유지 / 매출·시스템 이익이 바뀌면 고친 이익 지우고 '다시확인' 표시, 그 담당 확정만 다시 열림 / 새로 생기면 추가 / 빠지면 지움. 바뀐 곳이 있으면 최종 확정이 풀림.
+- **담당 정하기**(배정·수정 권한에만 씀 — 화면·출력에는 담당·사무소·구매담당 이름이 나오지 않음): ① `실적-담당지정`(그 팀 활성 담당일 때) → ② 파일 K열 구매담당 → 사용자팀마스터 J열 사무소(줄 수가 가장 많은 곳) → 그 사무소 활성 '담당' 1명 → ③ 사무소를 못 찾거나 담당이 0명·2명 이상이면 팀장. 팀장·관리자는 [담당 고치기](`cfAssign`)로 바꿈 — 같은 해 최종 확정 전 달에도 적용.
+- **고치기·확정**: 매출은 고칠 수 없음(계산서 기준 — 틀리면 시스템을 고치고 다시 올림). 담당은 자기 고객사의 **이익만** 고침(시스템 값은 아래 작게 남음) + **묶음 비고**(`확정비고최소글자` 이상, 그 묶음에 고객사가 있는 담당·팀장·관리자가 씀, 묶음 담당이 아무도 확정 전일 때만) → [확정](`cfConfirm`)/[확정 취소](`cfCancel`). 담당이 모두 확정하면 팀장 또는 관리자가 [최종 확정](`cfFinal`, 팀장은 맡은 팀만). 고객사 연결 고치기 = 팀장·관리자(`cfLink`).
+- **보기 권한**(view `confirmed`): 관리자·팀장(맡은 팀)·담당(자기 고객사가 든 묶음만 보고 고침)·임원(최종 확정된 달만). 화면 폭 1240px(주간 실적과 같음), 표는 `wk-scroll` 상자 — 표 안에서 넘기면 머리글 2줄·구매사명 칸 고정.
+- **알림 메일**(`issueMailBatchTest` 안 `runConfirmedMail_`, 매시 2분, Firestore `confirmedSalesMails`): 올림 → 그 팀 담당(그 달 고객사가 있는 사람) + 팀장, 다시 올림 → 다시 열린 담당 + 팀장만, 담당 모두 확정 → 팀장에게 '[최종 확정] 해 주세요'(팀장이 없으면 관리자). 올림·모두 확정 시각부터 `결과메일대기분`이 지난 뒤 처음 오는 정시(매시 2분)에 발송, 그 사이 다시 올리면 기다림이 새로 시작. 끄기 = `메일사용` FALSE(주간 실적과 같은 스위치). 메일에 금액은 넣지 않음. 메일 링크 `feed.html?view=confirmed&team=&month=&year=`.
+- **출력**(최종 확정된 달만 버튼이 보임): 범위 — 관리자·임원 = 전사(최종 확정된 팀만, 나머지는 '건너뜀'에 표시), 팀장 = 자기 팀. 매번 '취합 고객사만 / 모든 고객사' 선택. PDF = 새 창 A4 가로 인쇄, 엑셀 = 브라우저에서 직접 만든 .xlsx(`cfOutXlsx_` — 머리줄 고정·인쇄 제목). 파일 이름 `확정실적_{연도}년{월}월_{전사|팀}(_모든고객사)`. 묶음 비고는 출력에 모두 나옴.
+- **해 넘김**: 12월 `yearRolloverDaily`가 새해 파일에서 `실적-확정`·`실적-확정진행`·`실적-확정비고`를 비우고 `실적-고객사연결`·`실적-담당지정`은 그대로 둠(위 "실적 관리(주간 실적) 구조" 절 해 넘김). 12월 확정 실적(1월에 올림)은 올해 파일로 들어감.
+- **시험**: `tests/confirmed_sales_tests.js`(90개), `tests/confirmed_mail_tests.js`(27개). 실제 실적 숫자·고객사명은 저장소에 넣지 않습니다(가짜 이름·숫자만).
 
 ## 팀장 겸임 (2026-11-18~19)
 
@@ -204,11 +226,12 @@ GitHub Pages가 이 저장소를 "main 브랜치 / 루트(`/`) 폴더" 설정으
 | 인사평가 › 내 역량 기록·팀 역량평가·평가 기준 보기·인사평가 설정 (`feed.html`) | `getCompetencyTest`(view `mine`/`team`/`criteria`/`ping`), `saveCompetencyTest`(action `backfill`/`create`/`update`/`delete`/`reply`/`replyEdit`/`replyClear`/`editRequest`/`editApprove`/`editReject`/`review`/`reviewEdit`) | ✅ Cloud Run 전용 신규 (`CLOUD_RUN_GET_COMPETENCY_URL`/`CLOUD_RUN_SAVE_COMPETENCY_URL`) — Apps Script 대체 경로 없음 | 없음 (Apps Script에 대응 기능 자체가 없는 신규 기능) | 2026-10-19 설계 승인 후 단계별 추가(2026-11-10 이 표에 추가). 보기는 `year`(없으면 올해)로 연도를 고르고 응답에 `years`·`yearMode`(`current`/`grace`/`closed`)·`graceDay`를 줌. 저장은 올해 파일, 또는 1월 유예 기간의 작년 파일만(그 밖은 `YEAR_CLOSED`, 올해보다 큰 해는 `BAD_YEAR`). 쓰기는 `writeLocks/competencyEval` + `writeIdempotency`. 리비전 `getcompetencytest-00015-kes`·`savecompetencytest-00016-fub`(2026-11-10). 설계: `COMPETENCY_EVAL_CLOUDRUN_DESIGN_v1.md` |
 | 인사평가 › 성과평가·성과평가 기준·인사평가 설정 성과 구역 (`feed.html`) | `getPerformanceTest`(view `ping`/`mine`/`team`/`criteria`/`input`/`settings`), `savePerformanceTest`(action `saveMonth`/`saveNote`/`close`/`reopen`/`saveOffices`/`saveSettings`) | ✅ Cloud Run 전용 신규 (`CLOUD_RUN_GET_PERFORMANCE_URL`/`CLOUD_RUN_SAVE_PERFORMANCE_URL`, feed.html 1226·1228행) | 없음 | 2026-11-11~13 신규. 위 "인사평가(성과평가) 구조" 절 참고 |
 | 실적 관리 › 주간 실적 (`feed.html` `wk*`) | `getWeeklySalesTest`(view `ping`/`report`/`input`/`badge`), `saveWeeklySalesTest`(action `save`/`complete`/`reopen`/`proxyComplete`/`addCustomer`/`updateCustomers`/`setMode`) | ✅ Cloud Run 전용 신규(2026-11-17~) | — | 위 "실적 관리(주간 실적) 구조" 절 |
+| 실적 관리 › 확정 실적·실적 설정 (`feed.html` `cf*`·실적 설정) | `getWeeklySalesTest`(view `confirmed`/`settings`), `saveWeeklySalesTest`(action `cfPreview`/`cfUpload`/`cfSave`/`cfConfirm`/`cfCancel`/`cfFinal`/`cfLink`/`cfAssign`) | ✅ Cloud Run 전용 신규(2026-11-23~) | — | 위 "실적 관리(확정 실적) 구조" 절 |
 | 품목 등록 화면 AI 원자재 추천 + 품목마스터 F열 자동 채움 | `suggestMaterials` | ✅ Cloud Run 우선 (`CLOUD_RUN_SUGGEST_MATERIALS_URL` → `suggestMaterialsTest`, 2026-10-14~) — `AI_FAILED`·`LOCK_TIMEOUT`·5xx·연결 실패일 때만 Apps Script로 넘김 | `handleSuggestMaterials_`, `suggestRawMaterials` | 시트에서 품목명을 고치면 Apps Script `onEditInstallable`이 Cloud Run에 보내 처리(스크립트 속성 `SUGGEST_PROXY_URL`·`SUGGEST_PROXY_TOKEN`이 스위치). 빈 F열은 15분 점검 `materialSweepTest`가 채움. `MATERIAL_SUGGEST_CLOUDRUN_DESIGN_v2.md` |
 | 회원가입·비밀번호 찾기 (`index.html`) | `requestSignup`/`verifySignup`/`requestPasswordReset`/`confirmPasswordReset` | ✅ Cloud Run 우선 (`CLOUD_RUN_AUTH_CODE_URL` → `authCodeTest`, 2026-10-08~) — 1단계(인증코드 받기)에서 응답이 없거나 메일 발송이 실패하면 Apps Script로 자동 전환 | Code.gs 같은 이름의 처리 | 판단 규칙 `lib/authCodes.js`(Code.gs와 같은 순서·오류 코드), 회사 메일 서버로 발송 |
 | 그 외 나머지 action (`markChecked`, `getAttentionPosts`, `clientDebugLog`) | 다수 | ⏳ 미착수 | `Code.gs`의 각 `handle*_` 함수 | 아직 전부 Apps Script 경로만 사용. 각각 별도 분석·설계 필요 |
 
-> 이 표는 2026-09-01 기준입니다(2026-11-10: 인사평가 줄만 추가, 2026-11-13: 성과평가 줄 추가, 2026-11-19: 주간 실적 줄 추가 — 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
+> 이 표는 2026-09-01 기준입니다(2026-11-10: 인사평가 줄만 추가, 2026-11-13: 성과평가 줄 추가, 2026-11-19: 주간 실적 줄 추가, 2026-11-25: 확정 실적 줄 추가 — 실제 `feed.html`/`index.html`/`cloud-run/mro-functions/index.js` 코드와 GCP 콘솔의 실제 배포 목록을 직접 대조해 갱신). 새로운 API를 전환/분석할 때마다 이 표를 함께 갱신해 주세요.
 
 ## getTeamManagers 분석 (2026-08-14)
 
@@ -302,7 +325,7 @@ Code.gs(Apps Script)에는 대응 기능이 전혀 없는 완전 신규 기능�
 
 ## Firestore 컬렉션 전체 목록
 
-Cloud Run 함수들이 쓰는 Firestore 컬렉션 18개입니다(2026-11-13 `perfCloseMails`, 2026-11-17 `weeklySalesState`·`weeklySalesMails` 추가)(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스. 진단용 `firestoreTest`가 쓰는 `sessions_test`는 제외). **2026-11-10**: `cloud-run/mro-functions/index.js`·`lib/*.js`의 컬렉션 이름을 직접 대조해, 그동안 빠져 있던 7개(`issueMailRuns`·`issueMailDeliveries`·`authCodes`·`authRateLimits`·`materialRowClaims`·`sweepRuns`·`materialSweepFails`)를 추가하고 `writeLocks`·`writeIdempotency` 사용 함수를 갱신했습니다. 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
+Cloud Run 함수들이 쓰는 Firestore 컬렉션 19개입니다(2026-11-13 `perfCloseMails`, 2026-11-17 `weeklySalesState`·`weeklySalesMails`, 2026-11-25 `confirmedSalesMails` 추가)(전부 `mro-market-intelligence` 프로젝트, 기본 데이터베이스. 진단용 `firestoreTest`가 쓰는 `sessions_test`는 제외). **2026-11-10**: `cloud-run/mro-functions/index.js`·`lib/*.js`의 컬렉션 이름을 직접 대조해, 그동안 빠져 있던 7개(`issueMailRuns`·`issueMailDeliveries`·`authCodes`·`authRateLimits`·`materialRowClaims`·`sweepRuns`·`materialSweepFails`)를 추가하고 `writeLocks`·`writeIdempotency` 사용 함수를 갱신했습니다. 각 컬렉션의 문서 ID/필드 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Firestore 구조" 절 참고 — 여기서는 전체 목록과 용도만 한눈에 볼 수 있게 정리합니다.
 
 | 컬렉션 | 문서 ID | 쓰는 함수 | 용도 |
 |---|---|---|---|
@@ -324,6 +347,7 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 18개입니다(2026-11-13 `per
 | `weeklySalesState` | `latest` | `saveWeeklySalesTest`(4팀 완료 시 기록), `getWeeklySalesTest`(view=badge), `issueMailBatchTest` | 가장 최근 4팀 완료 주차(메뉴 NEW·결과 메일 대기 판단) |
 | `weeklySalesMails` | `result_{주차키}`, 알림 job 키(`remind_…`·`mremind_…`·`confirm_…`) | `issueMailBatchTest`(`runWeeklySalesMail_`) | 주간 실적 메일 발송 기록(같은 메일 두 번 안 보냄, 파일 없음 알림 1번) |
 | `materialSweepFails` | `{날짜}_{행키}` | `materialSweepTest` | 같은 품목 행의 하루 실패 횟수(설정 `원자재추천일일실패한도`, 기본 3 — 넘으면 그날 건너뜀) |
+| `confirmedSalesMails` | `upload_{연도}_{월}_{팀}`·`done_{연도}_{월}_{팀}` | `saveWeeklySalesTest`(올림·모두 확정 때 예약), `issueMailBatchTest`(`runConfirmedMail_`) | 확정 실적 알림 메일 예약·발송 기록(위 "실적 관리(확정 실적) 구조" 절) |
 
 > `loginLocks`/`writeLocks`/`writeIdempotency` 3개는 2026-09-02 이 문서 정리 작업 중 코드(`cloud-run/mro-functions/index.js`, `lib/writeLock.js`, `lib/writeIdempotency.js`)를 직접 확인해 처음으로 문서화했습니다 — 이전까지는 `cloud-run/README.md`의 "Firestore 구조" 절에도 빠져 있었습니다. 상세 필드 구성 등은 `cloud-run/README.md`도 함께 갱신해 두었습니다.
 
@@ -336,7 +360,7 @@ Cloud Run 함수들이 쓰는 Firestore 컬렉션 18개입니다(2026-11-13 `per
 | `pushBatchTest` | 5분마다 | 새 게시물/댓글 필요/답변 요청을 통합 푸시 1건으로 발송 |
 | `materialSweepTest` | 15분마다(매시 2·17·32·47분) | 원자재 추천 대기 품목 처리 |
 | `reminderBatchTest` | 매시 2분 | 설정 `담당자댓글마감시각`(복수 시각 지원)에 맞춰 리마인더 발송 |
-| `issueMailBatchTest` | 매시 2분 | 맨 앞에서 성과평가 월 마감 안내 메일 판단·발송(2026-11-13), 주간 실적 메일(담당·팀장 알림, 팀 확정 요청, 결과 메일 — 2026-11-17, 입력일 또는 결과 메일 대기 때만 시트를 읽음), 그다음 고정된 이슈 댓글 메일 발송(설정 시각일 때만) |
+| `issueMailBatchTest` | 매시 2분 | 맨 앞에서 성과평가 월 마감 안내 메일 판단·발송(2026-11-13), 주간 실적 메일(담당·팀장 알림, 팀 확정 요청, 결과 메일 — 2026-11-17, 입력일 또는 결과 메일 대기 때만 시트를 읽음), 확정 실적 알림 메일(올림·모두 확정 — 2026-11-25, 예약된 것이 있을 때만 시트를 읽음), 그다음 고정된 이슈 댓글 메일 발송(설정 시각일 때만) |
 | 만료 세션 정리 | 매시 2분 | 만료 후 24시간 지난 `sessions` 문서 최대 300개 삭제 |
 
 cron 표현식, 복수 시각(`13,17`) 처리 방식 등 상세는 [`cloud-run/README.md`](./cloud-run/README.md)의 "Cloud Scheduler 작업" 절 참고.
