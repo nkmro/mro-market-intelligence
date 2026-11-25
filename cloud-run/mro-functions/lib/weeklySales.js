@@ -116,7 +116,7 @@ const SETTING_RULES = [
   { key: '메일사용', parse: function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, why: 'TRUE 또는 FALSE', desc: '주간 실적·확정 실적 메일 전체 켜기/끄기(TRUE/FALSE)' }, // 2026-11-25 확정 실적 알림 메일도 같은 스위치
   { key: '첫주합침일수', parse: function (v) { return intIn(v, 0, 6); }, why: '0~6 정수', desc: '달 첫 주가 이 일수 이하면 다음 주와 합침(0~6)' },
   { key: '가마감이월일수', parse: function (v) { return intIn(v, 1, 8); }, why: '1~8 정수 (8 = 넘기지 않음)', desc: '말일이 월요일에서 이 일수 이상 남으면 가마감(1~8)' },
-  { key: '결과메일대기분', parse: function (v) { return intIn(v, 0, 1440); }, why: '0~1440 정수(분)', desc: '주간 실적 4팀 완료 뒤 결과 메일, 확정 실적 올림·담당 모두 확정 뒤 알림 메일까지 기다리는 분(0~1440)' }, // 2026-11-25 확정 실적도 같은 값
+  { key: '결과메일대기분', parse: function (v) { return intIn(v, 0, 1440); }, why: '0~1440 정수(분)', desc: '주간 실적 4팀 완료·확정 실적 올림·담당 모두 확정 시각부터 이 분(0~1440)이 지난 뒤, 처음 오는 정시(매시 2분)에 메일 발송' }, // 2026-11-25 확정 실적도 같은 값 · 같은 날 재홍님: 실제 발송 시각(첫 정시)을 설명에
   { key: '입력시작일수', parse: function (v) { return intIn(v, 0, 6); }, why: '0~6 정수 (3 = 전주 금요일부터)', desc: '마감 월요일 며칠 전부터 입력이 열리나(0~6)' }, // 2026-11-18 재홍님 요청
   { key: '확정비고최소글자', parse: function (v) { return intIn(v, 0, 200); }, why: '0~200 정수', desc: '확정 실적: 담당 [확정] 전 고객사마다 써야 하는 비고 글자 수(0~200)' } // 2026-11-23 확정 실적
 ];

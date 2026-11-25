@@ -854,6 +854,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wi-px.undo { border-width: 1px; border-color: #9cc9ae; color: #1d6b43; padding: 1px 8px; font-size: 11.5px; box-shadow: none; } .wi-px.undo:hover:not(:disabled) { background: #1d6b43; color: #fff; }
 /* 실적 관리 › 확정 실적 (2026-11-24 시안 승인) */
 .cf-wrap { max-width: none; }
+.cf-out .cf-out-row { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 8px; font-size: 13px; } .cf-out .cf-out-k { min-width: 48px; color: var(--text-muted); } .cf-out-opt { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; } /* 2026-11-25 출력 고르기 */
 .main.main-wide { max-width: 1240px; } /* 확정 실적 표(구매사명·매출 3칸·이익 3칸·비고)가 잘리지 않게 이 화면만 넓힘 · 2026-11-25 재홍님: 주간 실적도 같은 폭 */
 #weekly-view .pf-wrap { max-width: none; } /* 주간 실적 표(구매사명·사무소·매출 3·이익 3·이익률 3·비고 ≈ 1,170px)가 넓힌 폭을 다 쓰게 */
 .cf-busy { opacity: .5; pointer-events: none; transition: opacity .15s; } /* 연도·월·팀을 바꾸는 동안 */
@@ -8169,6 +8170,172 @@ function cfLen_(s) { return Array.from(String(s || '').trim()).length; }
 function cfRe_(s) { return String(s || '').replace(/-?\d{4,}/g, function (n) { return Number(n).toLocaleString('ko-KR'); }); } // 다시확인 글자 안 숫자에 쉼표
 function cfAttr_(v) { return escapeHtml(String(v)).replace(/'/g, '&#39;'); }
 
+// ==== 확정 실적 4단계: PDF·엑셀 출력 (2026-11-25 재홍님 결정) ====
+// - 최종 확정된 달만(버튼은 d.final일 때만). 범위(같은 날 재홍님): 팀장 = 자기 팀만, 관리자·임원 = 전사(팀마다 view=confirmed를 한 번씩 불러 최종 확정된 팀만 담음). 담당은 출력 없음
+// - 고객사 = 취합 고객사만(묶음 줄) / 모든 고객사(묶음 줄 + 아래 시스템 고객사 줄, 이름 뒤 (사무소)). 비고는 묶음 줄에 늘 나옴
+// - PDF = A4 가로 인쇄 화면을 새 창으로 열고 인쇄 창에서 'PDF로 저장'. 엑셀 = 외부 도구 없이 .xlsx를 직접 만듦(zip 저장 방식 + CRC32)
+// - 숫자 = 천원 정수, 달성률 = 화면과 같은 규칙(0.1% 아래 버림)
+function cfOutScope_(r) { return !r ? '' : (r.isAdmin || (session && session.role === '임원')) ? 'all' : (session && session.role === '팀장') ? 'team' : ''; } // 'all' = 전사, 'team' = 자기 팀, '' = 출력 없음
+function cfOutOpen_(on) { cf_.out = on ? (cf_.out || { mode: 'groups', busy: false, msg: '' }) : null; cfRender_(); }
+function cfOutSet_(k, v) { cf_.out[k] = v; cf_.out.msg = ''; cfRender_(); }
+function cfOutHtml_(r, d) {
+  const scope = cfOutScope_(r);
+  if (!d || !d.final || !scope) return '';
+  if (!cf_.out) return `<div class="cf-bar" style="margin:4px 0 8px"><button type="button" class="pf-btn" onclick="cfOutOpen_(true)">📄 PDF·엑셀 출력</button><span class="pf-mut">최종 확정된 숫자를 A4 인쇄(PDF)나 엑셀 파일로 받아요</span></div>`;
+  const o = cf_.out, dis = o.busy ? 'disabled' : '';
+  const radio = function (k, v, label) { return `<label class="cf-out-opt"><input type="radio" name="cf-out-${k}" ${o[k] === v ? 'checked' : ''} ${dis} onchange="cfOutSet_('${k}', '${v}')"> ${label}</label>`; };
+  return `<div class="cf-warn cf-out"><b>📄 PDF·엑셀 출력</b> <span class="pf-mut">${r.year}년 ${r.month}월 · 단위 천원</span>
+<div class="cf-out-row"><span class="cf-out-k">범위</span><b>${scope === 'all' ? '전사 (' + (r.teams || []).length + '팀 · 팀별 합계 + 전사 합계)' : escapeHtml(teamLabel(r.team))}</b></div>
+<div class="cf-out-row"><span class="cf-out-k">고객사</span>${radio('mode', 'groups', '취합 고객사만')}${radio('mode', 'all', '모든 고객사(취합 고객사 아래 시스템 고객사·사무소)')}</div>
+<div class="cf-bar" style="margin:8px 0 0"><button type="button" class="btn-primary" ${dis} onclick="cfOutGo_('pdf')">PDF 인쇄</button><button type="button" class="pf-btn" ${dis} onclick="cfOutGo_('xlsx')">엑셀 받기</button><button type="button" class="pf-btn" ${dis} onclick="cfOutOpen_(false)">닫기</button>
+<span class="pf-mut">${o.busy ? '<span class="mro-spinner"></span> 만드는 중…' : 'PDF는 인쇄 창에서 대상 = "PDF로 저장"을 고르세요 · 비고는 취합 고객사 줄에 나와요'}</span></div>
+${o.msg ? `<div class="pf-mut" style="margin-top:6px;color:var(--danger)">${escapeHtml(o.msg)}</div>` : ''}</div>`;
+}
+// 출력할 팀 자료 목록. 전사면 팀마다 불러 최종 확정된 팀만(나머지는 skipped)
+async function cfOutTeams_(scope) {
+  const r = cf_.res;
+  if (scope !== 'all') return { teams: [{ team: r.team, data: r.data }], skipped: [] }; // 팀장 = 보고 있는 자기 팀(서버가 맡은 팀만 줌)
+  const out = [], skipped = [];
+  for (const t of r.teams) {
+    if (t === r.team) { out.push({ team: t, data: r.data }); continue; }
+    const x = await wkFetch_({ view: 'confirmed', year: r.year, month: r.month, team: t });
+    if (x && x.ok && x.data && x.data.final && x.month === r.month) out.push({ team: t, data: x.data }); else skipped.push(t);
+  }
+  return { teams: out, skipped: skipped };
+}
+function cfOutRate_(a, b) { return (b > 0 && a !== null && a !== undefined && isFinite(a)) ? Math.floor(Math.round(a / b * 1e10) / 1e10 * 1000) / 1000 : null; } // 화면 cfPct_와 같은 버림
+// 줄 목록: { lv: 'team'|'grp'|'sub'|'tot'|'all', name, ps, s, pp, p, note }
+function cfOutRows_(teams, mode, multi) {
+  const rows = [], sum = { ps: 0, s: 0, pp: 0, p: 0 };
+  teams.forEach(function (x) {
+    const d = x.data;
+    if (multi) rows.push({ lv: 'team', name: teamLabel(x.team) });
+    d.groups.forEach(function (g) {
+      rows.push({ lv: 'grp', name: g.name, ps: g.planSales, s: g.sales, pp: g.planProfit, p: g.profit, note: g.note || '' });
+      if (mode === 'all') g.subs.forEach(function (s) { rows.push({ lv: 'sub', name: s.name + (s.office ? ' (' + s.office + ')' : ''), s: s.sales, p: s.profit }); });
+    });
+    const t = d.total;
+    rows.push({ lv: 'tot', name: teamLabel(x.team) + ' 합계', ps: t.planSales, s: t.sales, pp: t.planProfit, p: t.profit, at: d.final ? d.final.at : '' });
+    sum.ps += t.planSales || 0; sum.s += t.sales || 0; sum.pp += t.planProfit || 0; sum.p += t.profit || 0;
+  });
+  if (multi) rows.push({ lv: 'all', name: '전사 합계', ps: sum.ps, s: sum.s, pp: sum.pp, p: sum.p });
+  return rows;
+}
+function cfOutTitle_(r, scope) { return r.year + '년 ' + r.month + '월 확정 실적 (' + (scope === 'all' ? '전사' : teamLabel(r.team)) + ')'; }
+function cfOutStamp_() { const n = new Date(), p = function (v) { return String(v).padStart(2, '0'); }; return n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate()) + ' ' + p(n.getHours()) + ':' + p(n.getMinutes()); }
+async function cfOutGo_(kind) {
+  const r = cf_.res, o = cf_.out; if (!r || !r.data || !r.data.final || !o) return;
+  const scope = cfOutScope_(r); if (!scope) return;
+  let win = null;
+  if (kind === 'pdf') { win = window.open('', '_blank'); if (!win) { o.msg = '새 창이 막혀 있어요. 브라우저 주소창 오른쪽의 팝업 차단을 풀어 주세요.'; cfRender_(); return; } win.document.write('<p style="font:14px sans-serif;padding:20px">만드는 중…</p>'); }
+  o.busy = true; o.msg = ''; cfRender_();
+  try {
+    const got = await cfOutTeams_(scope);
+    if (!got.teams.length) throw new Error('최종 확정된 팀이 없어요.');
+    const info = { title: cfOutTitle_(r, scope), mode: o.mode, multi: scope === 'all', skipped: got.skipped, stamp: cfOutStamp_(),
+      finals: got.teams.map(function (x) { return teamLabel(x.team) + ' ' + String(x.data.final.at || '').slice(5, 16).replace('-', '/'); }) };
+    const rows = cfOutRows_(got.teams, o.mode, scope === 'all');
+    const fname = '확정실적_' + r.year + '년' + r.month + '월_' + (scope === 'all' ? '전사' : r.team) + (o.mode === 'all' ? '_모든고객사' : '');
+    if (kind === 'pdf') { win.document.open(); win.document.write(cfOutPrintHtml_(info, rows, fname)); win.document.close(); setTimeout(function () { try { win.focus(); win.print(); } catch (e) {} }, 400); }
+    else cfOutSave_(new Blob([cfOutXlsx_(info, rows)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fname + '.xlsx');
+    o.msg = got.skipped.length ? '최종 확정 전이라 빠진 팀: ' + got.skipped.join('·') : '';
+  } catch (e) { if (win) win.close(); o.msg = (e && e.message) || '출력을 만들지 못했어요.'; }
+  o.busy = false; cfRender_();
+}
+function cfOutSave_(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+function cfOutNum_(n) { return (n === null || n === undefined || !isFinite(n)) ? '' : Math.round(n).toLocaleString('ko-KR'); }
+function cfOutPct_(a, b) { const v = cfOutRate_(a, b); return v === null ? '' : (v * 100).toFixed(1) + '%'; }
+// A4 가로 인쇄 화면(새 창). 표 머리는 쪽마다 반복(thead)
+function cfOutPrintHtml_(info, rows, fname) {
+  const e = escapeHtml, cls = { team: 'tm', grp: 'g', sub: 's', tot: 't', all: 'a' };
+  const body = rows.map(function (x) {
+    if (x.lv === 'team') return `<tr class="tm"><td colspan="8">${e(x.name)}</td></tr>`;
+    const sub = x.lv === 'sub';
+    return `<tr class="${cls[x.lv]}"><td class="l">${e(x.name)}</td><td>${sub ? '' : cfOutNum_(x.ps)}</td><td>${cfOutNum_(x.s)}</td><td>${sub ? '' : cfOutPct_(x.s, x.ps)}</td><td>${sub ? '' : cfOutNum_(x.pp)}</td><td>${cfOutNum_(x.p)}</td><td>${sub ? '' : cfOutPct_(x.p, x.pp)}</td><td class="n">${e(x.note || '')}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${e(fname)}</title><style>
+@page { size: A4 landscape; margin: 10mm; }
+body { font-family: 'Malgun Gothic','Apple SD Gothic Neo',sans-serif; color: #1f2320; margin: 0; }
+h1 { font-size: 15pt; margin: 0 0 2px; color: #3a2f6e; } .meta { font-size: 8.5pt; color: #6b6f6a; margin: 0 0 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 8.5pt; table-layout: fixed; }
+th, td { border: 1px solid #cfccc4; padding: 3px 5px; text-align: right; vertical-align: top; }
+th { background: #ece6f3; color: #3a2f6e; text-align: center; }
+td.l { text-align: left; } td.n { text-align: left; white-space: pre-wrap; word-break: break-all; font-size: 8pt; }
+tr.g td { font-weight: 700; background: #f7f4fa; } tr.s td { color: #444; } tr.s td.l { padding-left: 16px; }
+tr.t td { font-weight: 700; background: #ece6f3; color: #3a2f6e; } tr.a td { font-weight: 800; background: #3a2f6e; color: #fff; }
+tr.tm td { text-align: left; font-weight: 800; background: #fff; color: #3a2f6e; border-left: 0; border-right: 0; padding-top: 8px; }
+thead { display: table-header-group; } tr { page-break-inside: avoid; }
+</style></head><body><h1>${e(info.title)}</h1>
+<div class="meta">매출마감월 기준 · 단위 천원 · ${info.mode === 'all' ? '모든 고객사' : '취합 고객사'} · 최종 확정 ${e(info.finals.join(', '))}${info.skipped.length ? ' · 최종 확정 전이라 빠진 팀: ' + e(info.skipped.join('·')) : ''} · 출력 ${e(info.stamp)}</div>
+<table><colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col style="width:6.5%"><col style="width:8%"><col style="width:8%"><col style="width:6.5%"><col style="width:31%"></colgroup>
+<thead><tr><th rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고</th></tr><tr><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr></thead>
+<tbody>${body}</tbody></table></body></html>`;
+}
+// ---- .xlsx 직접 만들기(시트 1개, 글자는 inlineStr, 숫자는 천원 정수·달성률은 0.0% 숫자) ----
+function cfOutCrc_(u8) { let t = cfOutCrc_.t; if (!t) { t = cfOutCrc_.t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = t[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function cfOutZip_(files) { // files = [[이름, 글자]] → 압축 없이(저장) zip
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  const u16 = function (v) { return [v & 255, (v >>> 8) & 255]; }, u32 = function (v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; };
+  files.forEach(function (f) {
+    const name = enc.encode(f[0]), data = enc.encode(f[1]), crc = cfOutCrc_(data);
+    const head = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)); // 0x0800 = 이름 UTF-8, 날짜 1980-01-01
+    parts.push(new Uint8Array([0x50, 0x4b, 0x03, 0x04].concat(head)), name, data);
+    cen.push(new Uint8Array([0x50, 0x4b, 0x01, 0x02].concat(u16(20), head, u16(0), u16(0), u16(0), u32(0), u32(off))), name);
+    off += 30 + name.length + data.length;
+  });
+  const cenLen = cen.reduce(function (a, b) { return a + b.length; }, 0);
+  return new Blob(parts.concat(cen, [new Uint8Array([0x50, 0x4b, 0x05, 0x06].concat(u16(0), u16(0), u16(files.length), u16(files.length), u32(cenLen), u32(off), u16(0)))]));
+}
+function cfOutXlsx_(info, rows) {
+  const x = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  const C = 'ABCDEFGH';
+  // 스타일 번호: 1 제목 · 2 머리 · 3 글자 · 4 숫자 · 5 % · 6~8 묶음(글자·숫자·%) · 9 비고 · 10~12 합계 · 13~15 전사 합계 · 16 팀 제목 · 17 고객사(들여쓰기) · 18 안내
+  const st = { grp: [6, 7, 8], sub: [17, 4, 5], tot: [10, 11, 12], all: [13, 14, 15] };
+  let r = 0; const out = [], merges = [];
+  const str = function (c, v, s) { return `<c r="${c}${r}" t="inlineStr" s="${s}"><is><t xml:space="preserve">${x(v)}</t></is></c>`; };
+  const num = function (c, v, s) { return v === null || v === undefined || !isFinite(v) ? `<c r="${c}${r}" s="${s}"/>` : `<c r="${c}${r}" s="${s}"><v>${v}</v></c>`; };
+  const row = function (cells, ht) { r++; out.push(`<row r="${r}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${cells()}</row>`); };
+  row(function () { return str('A', info.title, 1); }, 24); merges.push('A1:H1');
+  row(function () { return str('A', '매출마감월 기준 · 단위 천원 · ' + (info.mode === 'all' ? '모든 고객사' : '취합 고객사') + ' · 최종 확정 ' + info.finals.join(', ') + (info.skipped.length ? ' · 최종 확정 전이라 빠진 팀: ' + info.skipped.join('·') : '') + ' · 출력 ' + info.stamp, 18); }); merges.push('A2:H2');
+  row(function () { return str('A', '구매사명', 2) + str('B', '매출', 2) + str('C', '', 2) + str('D', '', 2) + str('E', '이익', 2) + str('F', '', 2) + str('G', '', 2) + str('H', '비고', 2); });
+  row(function () { return str('A', '', 2) + str('B', '계획', 2) + str('C', '실적', 2) + str('D', '달성률', 2) + str('E', '계획', 2) + str('F', '실적', 2) + str('G', '달성률', 2) + str('H', '', 2); });
+  merges.push('A3:A4', 'B3:D3', 'E3:G3', 'H3:H4');
+  rows.forEach(function (d) {
+    if (d.lv === 'team') { row(function () { return str('A', d.name, 16); }); merges.push('A' + r + ':H' + r); return; }
+    const s = st[d.lv] || st.sub, sub = d.lv === 'sub';
+    row(function () {
+      return str('A', d.name, s[0]) + num('B', sub ? null : d.ps, s[1]) + num('C', d.s, s[1]) + num('D', sub ? null : cfOutRate_(d.s, d.ps), s[2]) +
+        num('E', sub ? null : d.pp, s[1]) + num('F', d.p, s[1]) + num('G', sub ? null : cfOutRate_(d.p, d.pp), s[2]) + (d.note ? str('H', d.note, 9) : `<c r="H${r}" s="${d.lv === 'tot' ? 10 : d.lv === 'all' ? 13 : sub ? 3 : 9}"/>`);
+    });
+  });
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" zoomScale="100"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    `<cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="3" width="13" customWidth="1"/><col min="4" max="4" width="9" customWidth="1"/><col min="5" max="6" width="12" customWidth="1"/><col min="7" max="7" width="9" customWidth="1"/><col min="8" max="8" width="60" customWidth="1"/></cols>` +
+    `<sheetData>${out.join('')}</sheetData><mergeCells count="${merges.length}">${merges.map(function (m) { return `<mergeCell ref="${m}"/>`; }).join('')}</mergeCells>` +
+    `<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+  const B = '<border><left style="thin"><color rgb="FFCFCCC4"/></left><right style="thin"><color rgb="FFCFCCC4"/></right><top style="thin"><color rgb="FFCFCCC4"/></top><bottom style="thin"><color rgb="FFCFCCC4"/></bottom><diagonal/></border>';
+  const xf = function (font, fill, border, numFmt, align) { return `<xf numFmtId="${numFmt}" fontId="${font}" fillId="${fill}" borderId="${border}" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment ${align}/></xf>`; };
+  const L = 'horizontal="left" vertical="top" wrapText="1"', R = 'horizontal="right" vertical="top"', CT = 'horizontal="center" vertical="center"';
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0"/><numFmt numFmtId="165" formatCode="0.0%"/></numFmts>` +
+    `<fonts count="6"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="14"/><color rgb="FF3A2F6E"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><color rgb="FF3A2F6E"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/></font><font><sz val="9"/><color rgb="FF6B6F6A"/><name val="맑은 고딕"/></font></fonts>` +
+    `<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFECE6F3"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF7F4FA"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF3A2F6E"/></patternFill></fill><fill><patternFill patternType="none"/></fill></fills>` +
+    `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${B}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+    `<cellXfs count="19"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>` +
+    xf(1, 0, 0, 0, 'horizontal="left" vertical="center"') + xf(2, 2, 1, 0, CT) + xf(0, 0, 1, 0, L) + xf(0, 0, 1, 164, R) + xf(0, 0, 1, 165, R) + // 1~5
+    xf(3, 3, 1, 0, L) + xf(3, 3, 1, 164, R) + xf(3, 3, 1, 165, R) + xf(0, 3, 1, 0, L) + // 6~9 (비고 = 묶음 줄 바탕)
+    xf(2, 2, 1, 0, L) + xf(2, 2, 1, 164, R) + xf(2, 2, 1, 165, R) + // 10~12
+    xf(4, 4, 1, 0, L) + xf(4, 4, 1, 164, R) + xf(4, 4, 1, 165, R) + // 13~15
+    xf(2, 0, 0, 0, 'horizontal="left" vertical="bottom"') + xf(0, 0, 1, 0, 'horizontal="left" vertical="top" indent="2"') + xf(5, 0, 0, 0, 'horizontal="left" vertical="center"') + // 16~18
+    `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  return cfOutZip_([
+    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+    ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="확정 실적" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Titles" localSheetId="0">\'확정 실적\'!$3:$4</definedName></definedNames></workbook>'],
+    ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+    ['xl/worksheets/sheet1.xml', sheet], ['xl/styles.xml', styles]]);
+}
+
 async function loadConfirmedPage(keepMsg) {
   const root = document.getElementById('confirmed-view');
   const reqNo = ++cfReq_;
@@ -8177,7 +8344,7 @@ async function loadConfirmedPage(keepMsg) {
   const res = await wkFetch_({ view: 'confirmed', year: cf_.year || undefined, month: cf_.month || undefined, team: cf_.team || undefined });
   if (reqNo !== cfReq_) return;
   if (!res || !res.ok) { cf_.res = null; cf_.loading = false; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
-  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.notes = {}; cf_.links = {}; cf_.picks = {}; cf_.busy = false; cf_.loading = false;
+  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.notes = {}; cf_.out = null; cf_.links = {}; cf_.picks = {}; cf_.busy = false; cf_.loading = false;
   cfRender_();
 }
 function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; cf_.loading = true; cfRender_(); loadConfirmedPage(); } // 누르면 바로 흐리게 + 불러오는 중
@@ -8238,6 +8405,7 @@ ${cfSteps_(d)}</div>`;
   const reAny = d.groups.some(function (g) { return g.subs.some(function (s) { return s.mine && s.recheck; }); });
   if (reAny && !d.myDone && !d.final) h += `<div class="cf-warn"><b>↺ 관리자가 엑셀을 다시 올려 내 확정이 다시 열렸어요${d.lastUpload ? ' (' + escapeHtml(d.lastUpload.at.slice(5).replace('-', '/')) + ')' : ''}</b><br>"다시 확인" 표시된 고객사는 매출·시스템 이익이 바뀌어 이익이 새 시스템 값으로 돌아갔어요. 나머지 고객사는 고친 값·비고 그대로예요. 확인 뒤 다시 [확정]해 주세요.</div>`;
   if (d.final) h += `<div class="cy-band pf-green">✓ 최종 확정됨 · ${escapeHtml(d.final.at)}</div>`;
+  h += cfOutHtml_(r, d); // 2026-11-25 4단계 출력(최종 확정된 달만)
   if ((r.isAdmin || session.role === '팀장' || session.role === '임원') && d.managers.length) {
     const nDone = d.managers.filter(function (m) { return m.done; }).length;
     h += `<div class="wi-mgr"><b>담당 확정 현황 <b class="n">${nDone} / ${d.managers.length}명</b></b> <span class="pf-mut">${d.final ? '' : '· 모두 확정하면 팀장이 [최종 확정]'}</span><div class="wi-chips">${d.managers.map(function (m) {

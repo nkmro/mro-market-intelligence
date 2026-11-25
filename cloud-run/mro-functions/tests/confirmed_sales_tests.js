@@ -219,5 +219,29 @@ t('N8 index: 실적-확정비고 A2:G 읽기·planEdit에 notes·noteRows·isLea
 t('N9 화면: 비고 칸은 묶음 줄에만(고객사 줄 입력 없음), 확정 조건 = 내 고객사 든 묶음, 저장에 notes', !uiGrab('cfTable_').includes('class="cf-note ') && uiGrab('cfGroupNote_').includes('cfNoteEdit_(') && uiGrab('cfBar_').includes('myGroups') && uiGrab('cfSaveEdits_').includes("edits: ch, notes: nch") &&
   uiGrab('cfCanNote_').includes('!g.unlinked') && uiGrab('cfCanNote_').includes("session.role === '팀장'") && uiGrab('cfCanNote_').includes('!g.subs.some(function (s) { return s.done; })'));
 }
+// 13) 2026-11-25 재홍님: 4단계 출력(PDF·엑셀) — 최종 확정된 달만, 팀장 = 자기 팀, 관리자·임원 = 전사, 취합 고객사만/모든 고객사(사무소), 비고는 묶음 줄
+{
+const OUTJS = ['teamLabel', 'cfOutScope_', 'cfOutRate_', 'cfOutRows_', 'cfOutTitle_', 'cfOutNum_', 'cfOutPct_', 'cfOutPrintHtml_', 'cfOutCrc_', 'cfOutZip_', 'cfOutXlsx_', 'cfOutHtml_'].map(uiGrab).join('\n');
+const mk = new Function('session', 'cf_', 'escapeHtml', OUTJS + '; return { cfOutScope_, cfOutRate_, cfOutRows_, cfOutTitle_, cfOutPrintHtml_, cfOutCrc_, cfOutXlsx_, cfOutHtml_ };');
+const esc = function (v) { return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+const O = mk({ role: '팀장' }, {}, esc), OE = mk({ role: '임원' }, {}, esc), OD = mk({ role: '담당' }, {}, esc);
+t('O1 범위: 관리자·임원 = 전사, 팀장 = 자기 팀, 담당 = 없음', O.cfOutScope_({ isAdmin: true }) === 'all' && OE.cfOutScope_({ isAdmin: false }) === 'all' && O.cfOutScope_({ isAdmin: false }) === 'team' && OD.cfOutScope_({ isAdmin: false }) === '');
+t('O2 달성률 = 화면 규칙(0.1% 아래 버림), 계획 0·없음 = 빈칸', O.cfOutRate_(189990, 182000) === 1.043 && O.cfOutRate_(2, 3) === 0.666 && O.cfOutRate_(5, 0) === null && O.cfOutRate_(null, 5) === null);
+const D1 = { final: { at: '2026-11-28 14:00' }, total: { planSales: 100, sales: 110, planProfit: 10, profit: 9 },
+  groups: [{ name: '다온계열', planSales: 100, sales: 110, planProfit: 10, profit: 9, note: '설비 교체 수요 증가', subs: [{ name: '다온스틸(주)', office: '포항', sales: 70, profit: 6 }, { name: '다온강판(주)', office: '', sales: 40, profit: 3 }] }] };
+let rs = O.cfOutRows_([{ team: '동부', data: D1 }], 'groups', false);
+t('O3 취합 고객사만: 묶음 줄(비고 포함) + 팀 합계', rs.map(function (x) { return x.lv + ':' + x.name; }).join() === 'grp:다온계열,tot:동부팀 합계' && rs[0].note === '설비 교체 수요 증가');
+rs = O.cfOutRows_([{ team: '동부', data: D1 }, { team: '서부', data: D1 }], 'all', true);
+t('O4 모든 고객사·전사: 팀 제목, 묶음 아래 시스템 고객사(이름 뒤 사무소, 없으면 이름만), 팀 합계, 전사 합계(팀 합계를 더함)', rs.map(function (x) { return x.lv + ':' + x.name; }).slice(0, 5).join() === 'team:동부팀,grp:다온계열,sub:다온스틸(주) (포항),sub:다온강판(주),tot:동부팀 합계' &&
+  rs[rs.length - 1].lv === 'all' && rs[rs.length - 1].s === 220 && rs[rs.length - 1].ps === 200);
+const info = { title: O.cfOutTitle_({ year: 2026, month: 10, team: '동부' }, 'team'), mode: 'all', multi: false, skipped: ['중부'], stamp: '2026-11-28 15:10', finals: ['동부팀 11/28 14:00'] };
+const ph = O.cfOutPrintHtml_(info, rs, '확정실적');
+t('O5 인쇄 화면: A4 가로, 머리 반복(thead), 제목·최종 확정·빠진 팀, 달성률 104.3% 같은 글자', info.title === '2026년 10월 확정 실적 (동부팀)' && ph.includes('size: A4 landscape') && ph.includes('<thead>') && ph.includes('빠진 팀: 중부') && ph.includes('110.0%'));
+t('O6 CRC32 = 표준값("123456789" → CBF43926)', O.cfOutCrc_(new TextEncoder().encode('123456789')) === 0xCBF43926);
+t('O7 엑셀: zip 파일(Blob) 하나', O.cfOutXlsx_(info, rs) instanceof Blob);
+const H = function (role, isAdmin, final) { return mk({ role: role }, { out: null }, esc).cfOutHtml_({ isAdmin: isAdmin, year: 2026, month: 10, team: '동부', teams: ['서부', '동부'] }, final ? D1 : Object.assign({}, D1, { final: null })); };
+t('O8 버튼: 최종 확정된 달만, 담당에게는 없음', H('팀장', false, true).includes('cfOutOpen_(true)') && H('팀장', false, false) === '' && H('담당', false, true) === '' && H('임원', false, true).includes('cfOutOpen_(true)'));
+t('O9 배선: 화면에 출력 칸, 달·팀을 바꾸면 닫힘, 외부 라이브러리 없음', FH.includes('h += cfOutHtml_(r, d);') && FH.includes('cf_.notes = {}; cf_.out = null;') && !FH.includes('jspdf') && !FH.includes('xlsx.full.min.js'));
+}
 console.log(`confirmed_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
