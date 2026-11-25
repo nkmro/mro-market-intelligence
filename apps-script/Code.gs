@@ -1,4 +1,4 @@
-// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-25 자동 연도 전환에 확정 실적 반영: 새해 실적관리 파일의 실적-확정·실적-확정진행·실적-확정비고도 2행 아래 비움, 실적-고객사연결·실적-담당지정은 그대로 / 2026-11-19 자동 연도 전환에 실적관리(주간 실적) 파일 추가: 실적관리파일_{다음 해}도 같은 예약으로 복사·정리·등록(yrSalesPrep_) / 2026-11-13 인사평가 자동 연도 전환에 성과평가 반영: 새해 파일의 성과-월실적·성과-마감 탭도 역량- 탭처럼 2행 아래 내용만 지움(YR_PERF_CLEAR_TABS_), 성과-평가기준·인사평가설정은 그대로)
+// [DELIVERY] 이 파일은 GitHub 미러(apps-script/Code.gs) 전체 교체용입니다 — 미러 안내 배너 포함, 라이브 Apps Script에는 붙여넣지 마세요. (2026-11-25 일일 백업 보강: 실적관리 파일(올해·작년) 사본 추가, Cloud Run 소스는 GitHub 목록에서 lib 전부, Apps Script 소스(GitHub 미러) 글자 파일 추가 / 2026-11-25 자동 연도 전환에 확정 실적 반영: 새해 실적관리 파일의 실적-확정·실적-확정진행·실적-확정비고도 2행 아래 비움, 실적-고객사연결·실적-담당지정은 그대로 / 2026-11-19 자동 연도 전환에 실적관리(주간 실적) 파일 추가: 실적관리파일_{다음 해}도 같은 예약으로 복사·정리·등록(yrSalesPrep_) / 2026-11-13 인사평가 자동 연도 전환에 성과평가 반영: 새해 파일의 성과-월실적·성과-마감 탭도 역량- 탭처럼 2행 아래 내용만 지움(YR_PERF_CLEAR_TABS_), 성과-평가기준·인사평가설정은 그대로)
 /**
  * ===== 미러 파일 안내 (2026-08-18 동기화) =====
  * 이 파일은 Apps Script 편집기(스크립트 ID: 1abBaoRibDm8UCe4C_inwRatU7clqoL5_JpV71Rq2D-2cmeprNyn9gvYe)의
@@ -4683,6 +4683,11 @@ const BACKUP_CLOUD_RUN_FILES = [
 'lib/writeIdempotency.js',
 'lib/writeLock.js'
 ];
+// 2026-11-25 재홍님 승인: 위 고정 목록 대신 GitHub에서 lib 폴더 목록을 읽어 전부 저장(새 lib 파일이 생겨도 자동 포함).
+// 목록을 못 읽으면 위 고정 목록으로 대신한다. 저장소는 공개(2026-11-25 GitHub API로 확인) — 토큰 없이 하루 1번 호출.
+const BACKUP_GITHUB_API_LIB = 'https://api.github.com/repos/nkmro/mro-market-intelligence/contents/cloud-run/mro-functions/lib?ref=main';
+// Apps Script 소스(GitHub 미러) — 프로젝트 사본(2)이 만들어지지 않을 때도 소스가 남도록 글자 파일로 함께 저장(2026-11-25)
+const BACKUP_APPS_SCRIPT_FILES = ['apps-script/Code.gs', 'apps-script/appsscript.json'];
 // Firestore 백업 대상 GCP 프로젝트 (2026-09-07 추가, pushSubscriptions 주 1회 스냅샷용)
 const GCP_PROJECT_ID = 'mro-market-intelligence';
 
@@ -4876,6 +4881,18 @@ Logger.log('인사평가 백업 실패(' + y + '): ' + e);
 }
 });
 
+// 1-3) 실적관리 파일 사본 (2026-11-25 재홍님 승인 — 주간 실적·확정 실적·고객사 연결·담당 지정이 이 파일에만 있음)
+// 인사평가(1-2)와 같은 방식: '설정' 탭 실적관리파일_{연도} 키에서 ID를 읽고(하드코딩 없음), 올해 + 작년. 키가 없으면 그 해만 건너뜀.
+[Number(todayStr.slice(0, 4)), Number(todayStr.slice(0, 4)) - 1].forEach(function (y) {
+try {
+const salesFileId = getSetting_('실적관리파일_' + y);
+if (!salesFileId) { Logger.log('실적관리 백업 건너뜀: 설정에 실적관리파일_' + y + ' 없음'); return; }
+DriveApp.getFileById(String(salesFileId).trim()).makeCopy('실적관리_' + y + '_' + todayStr, dateFolder);
+} catch (e) {
+Logger.log('실적관리 백업 실패(' + y + '): ' + e);
+}
+});
+
 // 2) 백엔드(Apps Script 프로젝트 자체) 사본
 try {
 DriveApp.getFileById(ScriptApp.getScriptId()).makeCopy('백엔드_' + todayStr, dateFolder);
@@ -4895,8 +4912,20 @@ Logger.log('프론트 백업 실패(' + fname + '): ' + e);
 }
 });
 
-// 4) 백엔드 소스(Cloud Run 함수, GitHub raw 파일) 텍스트로 저장
-BACKUP_CLOUD_RUN_FILES.forEach(function (fname) {
+// 3-2) Apps Script 소스(GitHub 미러) 텍스트로 저장 (2026-11-25)
+BACKUP_APPS_SCRIPT_FILES.forEach(function (fname) {
+try {
+const res = UrlFetchApp.fetch(BACKUP_GITHUB_RAW_BASE + fname, { muteHttpExceptions: true });
+if (res.getResponseCode() === 200) {
+dateFolder.createFile('백엔드_' + fname.replace(/\//g, '_'), res.getContentText(), MimeType.PLAIN_TEXT);
+}
+} catch (e) {
+Logger.log('Apps Script 소스 백업 실패(' + fname + '): ' + e);
+}
+});
+
+// 4) 백엔드 소스(Cloud Run 함수, GitHub raw 파일) 텍스트로 저장 — 2026-11-25: lib는 GitHub 목록에서 전부(backupCloudRunFileList_)
+backupCloudRunFileList_().forEach(function (fname) {
 try {
 const res = UrlFetchApp.fetch(BACKUP_GITHUB_RAW_BASE + BACKUP_CLOUD_RUN_PATH + fname, { muteHttpExceptions: true });
 if (res.getResponseCode() === 200) {
@@ -4933,6 +4962,24 @@ f.setTrashed(true);
 }
 
 // 수동 실행용 (2026-10-19 추가, 역량평가 설계서 ⑮ 검증) — 편집기 드롭다운에서 이 함수를 골라 ▶ 실행.
+// Cloud Run 백업 대상 목록(2026-11-25): index.js·package.json + GitHub에서 읽은 lib 폴더의 .js 전부.
+// 목록을 못 읽거나 이상하면 예전 고정 목록(BACKUP_CLOUD_RUN_FILES) 그대로.
+function backupCloudRunFileList_() {
+try {
+const res = UrlFetchApp.fetch(BACKUP_GITHUB_API_LIB, { muteHttpExceptions: true, headers: { Accept: 'application/vnd.github+json' } });
+if (res.getResponseCode() !== 200) { Logger.log('Cloud Run lib 목록 못 읽음(' + res.getResponseCode() + ') — 고정 목록 사용'); return BACKUP_CLOUD_RUN_FILES; }
+const list = JSON.parse(res.getContentText());
+if (!Array.isArray(list)) return BACKUP_CLOUD_RUN_FILES;
+const libs = list.filter(function (x) { return x && x.type === 'file' && /\.js$/.test(String(x.name)); })
+.map(function (x) { return 'lib/' + x.name; });
+if (!libs.length) return BACKUP_CLOUD_RUN_FILES;
+return ['index.js', 'package.json'].concat(libs);
+} catch (e) {
+Logger.log('Cloud Run lib 목록 오류 — 고정 목록 사용: ' + e);
+return BACKUP_CLOUD_RUN_FILES;
+}
+}
+
 // runDailyBackup_은 날짜 인자가 필요해 직접 실행하면 안 된다. dailyBackupCheck_와 같은 형식으로 날짜를 만들어 넘긴다.
 function manualDailyBackupNow() {
 runDailyBackup_(Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'));
