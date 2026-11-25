@@ -802,7 +802,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wk-t td.na { color: #b0ada6; }
 .wk-t td.sticky, .wk-t th.sticky { position: sticky; left: 0; z-index: 1; }
 /* 고객사별 실적 표 머리글 고정 (2026-11-17 재홍님 요청, PC·휴대폰): 표 상자 안에서 세로로 넘기면 제목 2줄이 위에, 가로로 넘기면 구매사명 칸이 왼쪽에 남음 */
-.wk-scroll { max-height: calc(100vh - var(--header-stack-h, 0px) - 24px); overflow: auto; }
+.wk-scroll { max-height: calc(100vh - var(--header-stack-h, 0px) - 24px); overflow: auto; } /* 2026-11-25 재홍님: 확정 실적 표도 같은 상자(cfTable_) — 구매사명·매출·이익·비고 머리글 고정 */
 .wk-scroll .pf-t { border-collapse: separate; border-spacing: 0; border-width: 1px 0 0 1px; } /* 고정 칸 사이로 아래 글자가 비치지 않게(겹선 대신 오른쪽·아래 선만) */
 .wk-scroll .pf-t th, .wk-scroll .pf-t td { border-width: 0 1px 1px 0; }
 .wk-scroll tr.wk-h1 th { position: sticky; top: 0; z-index: 2; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
@@ -8431,7 +8431,7 @@ function cfGroupNote_(g, gi, d) {
   return g.note ? `<span style="font-weight:400;white-space:pre-wrap">${escapeHtml(g.note)}</span>` : '<span class="pf-mut">—</span>';
 }
 function cfTable_(d, totLabel) {
-  let h = `<div class="pf-tablewrap"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(묶음마다 · 확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
+  let h = `<div class="pf-tablewrap wk-scroll"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(묶음마다 · 확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
   d.groups.forEach(function (g, gi) {
     if (g.unlinked) { h += `<tr><td class="l sticky grp cf-loose">⚠ ${escapeHtml(g.name)} (${g.subs.length}곳)</td><td class="grp cf-loose" colspan="7" style="text-align:left;font-weight:400">주간 고객사와 연결되면 그 묶음 아래로 옮겨져요 · 팀장이 위에서 연결</td></tr>`; }
     else h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="l grp cf-notecell">${cfGroupNote_(g, gi, d)}</td></tr>`;
