@@ -94,15 +94,15 @@
   /* 묶음 안 메뉴(소메뉴)는 묶음 제목보다 작고 안쪽으로 들여 쓴다 (재홍님 요청 2026-10-20) */
   .nav-group-body .nav-item { font-size: 13px; padding: 8px 12px 8px 30px; }
   .nav-group-body .nav-item .ic svg { width: 14px; height: 14px; }
-  /* 2026-11-25 재홍님: 소메뉴는 회사 인트라넷처럼 밝은 판(연보라 회색) + 진한 글자, 줄마다 가는 선. 올리면(hover) 색이 바뀌고, 지금 화면은 흰 바탕 + 보라 글자·왼쪽 막대 */
-  .nav-group-body { background: #f1f0f7; margin: 2px -12px 0; padding: 0; border-top: 1px solid #dcd9ea; }
-  .nav-group-body .nav-item { color: #3d3a4f; border-radius: 0; margin: 0; border-bottom: 1px solid #e3e0ee; padding: 8px 12px 8px 38px; position: relative; }
+  /* 2026-11-25 재홍님: 소메뉴는 회사 인트라넷처럼 밝은 판(연보라 회색) + 진한 글자, 줄마다 가는 선. 올리면(hover) 색이 바뀌고, 나머지 메뉴 판은 시황 뉴스 '전체 확인완료' 카드와 같은 --accent-soft, 지금 화면은 본문과 같은 바탕(--bg)이라 본문과 이어져 보임 + 보라 글자·왼쪽 막대(같은 날 재홍님) */
+  .nav-group-body { background: var(--accent-soft); margin: 2px -12px 0; padding: 0; border-top: 1px solid #dcd9ea; }
+  .nav-group-body .nav-item { color: #3d3a4f; border-radius: 0; margin: 0; border-bottom: 1px solid #e2d6ea; padding: 8px 12px 8px 38px; position: relative; }
   .nav-group-body .nav-item .ic svg { stroke: #6a5fa8; }
-  .nav-group-body .nav-item:hover:not(.active) { background: #e2def2; color: var(--accent); }
-  .nav-group-body .nav-item.active { background: #ffffff; color: var(--accent); font-weight: 700; }
+  .nav-group-body .nav-item:hover:not(.active) { background: #e3d5ee; color: var(--accent); }
+  .nav-group-body .nav-item.active { background: var(--bg); color: var(--accent); font-weight: 700; }
   .nav-group-body .nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
   .nav-group-body .nav-item.active .ic svg { stroke: var(--accent); }
-  .nav-group-body .nav-group-sub { color: #8a86a0; background: #f1f0f7; padding: 6px 12px 3px 38px; }
+  .nav-group-body .nav-group-sub { color: #7d7896; background: var(--accent-soft); padding: 6px 12px 3px 38px; }
   .nav-group.collapsed .nav-group-caret { transform: rotate(-90deg); }
   .nav-group.collapsed .nav-group-body { display: none; }
   .nav-group-new {
