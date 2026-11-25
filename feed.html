@@ -8240,7 +8240,7 @@ ${cfSteps_(d)}</div>`;
 function cfGroupNote_(g, gi, d) {
   if (cfCanNote_(g, d)) {
     const nt = cfNoteVal_(g), n = cfLen_(nt), bad = n < d.minNote;
-    return `<textarea class="cf-note ${bad ? 'bad' : ''}" rows="1" maxlength="200" placeholder="계획 대비 차이·특이사항 (${d.minNote}자 이상)" oninput="cfNoteEdit_(${gi}, this.value, this)" aria-label="${cfAttr_(g.name)} 비고">${escapeHtml(nt)}</textarea><span class="cf-cnt ${bad ? 'bad' : ''}">${n}/${d.minNote}자${bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''}</span>`;
+    return `<textarea class="cf-note ${bad ? 'bad' : ''}" rows="1" maxlength="200" placeholder="계획 대비 차이·특이사항·일시적인 매출" oninput="cfNoteEdit_(${gi}, this.value, this)" aria-label="${cfAttr_(g.name)} 비고">${escapeHtml(nt)}</textarea><span class="cf-cnt ${bad ? 'bad' : ''}">${n}/${d.minNote}자${bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''}</span>`;
   }
   return g.note ? `<span style="font-weight:400;white-space:pre-wrap">${escapeHtml(g.note)}</span>` : '<span class="pf-mut">—</span>';
 }
