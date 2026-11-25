@@ -10,7 +10,8 @@ const crypto = require('crypto');
 // (승인됨)에서 설계한 그대로이며, pollSignalTest 리팩터링과 getFeedTest/getNotificationsTest/
 // getPostByIdTest(신규, 아직 Cloud Run에는 미배포) 4개만 이 모듈들을 쓴다. whoamiTest/
 // getSettingsTest/getTeamManagersTest/getThreadSeenTest는 이번 범위가 아니라 그대로 두었다.
-const { authenticateSession } = require('./lib/auth');
+const { authenticateSession, needsTouch } = require('./lib/auth');
+const zlib = require('node:zlib'); // 2026-11-25 요금 절감 A: 큰 JSON 응답 gzip 압축(Node 내장 모듈)
 const {
   getSheetsClient,
   batchGetValues,
@@ -48,6 +49,24 @@ function setCors(res) {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+// [2026-11-25 요금 절감 A, 재홍님 승인] 응답 JSON을 gzip으로 압축해 보낸다(인터넷 전송량 약 80% 감소 — 실측
+// pollSignal 47KB→8KB, getNotifications 436KB→93KB, getFeed 78KB→18KB). Cloud Run은 응답을 스스로 압축하지 않아
+// 앱이 압축한다. 브라우저가 Accept-Encoding에 gzip을 보낼 때만, 1KB 이상일 때만. 브라우저는 Content-Encoding을
+// 보고 저절로 풀기 때문에 feed.html은 그대로. 그 함수의 res.json만 바꿈(res.status(..).json(..)도 같은 res).
+const GZIP_MIN_BYTES = 1024;
+function gzipJson_(req, res) {
+  if (!/\bgzip\b/i.test(String((req.headers && req.headers['accept-encoding']) || ''))) return;
+  const plain = res.json.bind(res);
+  res.json = function (obj) {
+    const buf = Buffer.from(JSON.stringify(obj), 'utf8');
+    if (buf.length < GZIP_MIN_BYTES) return plain(obj);
+    res.set('Content-Type', 'application/json; charset=utf-8');
+    res.set('Content-Encoding', 'gzip');
+    res.set('Vary', 'Accept-Encoding');
+    return res.send(zlib.gzipSync(buf));
+  };
 }
 
 // GET /ping : no external calls at all, respond immediately.
@@ -113,7 +132,8 @@ const SESSION_TTL_MS = 21600 * 1000; // 6시간 — Apps Script CacheService의 
 // Apps Script authenticateRequest_의 슬라이딩 세션 연장과 동일하게 동작하도록 한다
 // (2026-08-18, login/whoami 전환 계획 1단계). best-effort: 이 갱신이 실패해도 원래
 // 요청의 응답에는 영향을 주지 않는다 — sessionSyncTest(로그인 최초 1회 기록)는 그대로 둔다.
-async function touchSession_(ref) {
+async function touchSession_(ref, expiresAt) {
+  if (expiresAt && !needsTouch(expiresAt.getTime(), Date.now())) return; // 2026-11-25 요금 절감 B: 마지막 연장이 50초 안이면 건너뜀(lib/auth.js 설명)
   try {
     await ref.update({ expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
   } catch (e) {
@@ -212,7 +232,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
-await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
+await touchSession_(sessionSnap.ref, expiresAt); // 슬라이딩 세션 연장 (1단계, 2026-11-25: 50초 안이면 건너뜀)
 const email = session.email;
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
@@ -280,7 +300,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
-await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
+await touchSession_(sessionSnap.ref, expiresAt); // 슬라이딩 세션 연장 (1단계, 2026-11-25: 50초 안이면 건너뜀)
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
 const client = await auth.getClient();
@@ -335,7 +355,7 @@ const serverMs = Date.now() - t0;
 res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
 return;
 }
-await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (1단계)
+await touchSession_(sessionSnap.ref, expiresAt); // 슬라이딩 세션 연장 (1단계, 2026-11-25: 50초 안이면 건너뜀)
 const email = session.email;
 const u0 = Date.now();
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
@@ -438,6 +458,7 @@ function authFailureResponseBody_(serverMs, auth) {
 // comments 등 lib/feedEngine.js가 추가로 계산하는 필드는 여기서 그냥 버리고 응답에 안 넣음).
 exports.pollSignalTest = async (req, res) => {
   setCors(res);
+  gzipJson_(req, res); // 2026-11-25 요금 절감 A
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
   try {
@@ -510,6 +531,7 @@ exports.pollSignalTest = async (req, res) => {
 
 exports.getFeedTest = async (req, res) => {
   setCors(res);
+  gzipJson_(req, res); // 2026-11-25 요금 절감 A
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
   try {
@@ -558,6 +580,7 @@ exports.getFeedTest = async (req, res) => {
 
 exports.getNotificationsTest = async (req, res) => {
   setCors(res);
+  gzipJson_(req, res); // 2026-11-25 요금 절감 A
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   const t0 = Date.now();
   try {
@@ -765,7 +788,7 @@ exports.getThreadSeenTest = async (req, res) => {
       res.status(200).json({ ok: false, serverMs, timings, error: 'SESSION_EXPIRED' });
       return;
     }
-    await touchSession_(sessionSnap.ref); // 슬라이딩 세션 연장 (기존 Phase 1과 동일)
+    await touchSession_(sessionSnap.ref, expiresAt); // 슬라이딩 세션 연장 (기존 Phase 1과 동일, 2026-11-25: 50초 안이면 건너뜀)
     const email = session.email;
     const u0 = Date.now();
     const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });

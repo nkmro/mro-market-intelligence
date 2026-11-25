@@ -17,7 +17,18 @@ const SESSION_TTL_MS = 21600 * 1000; // 6시간 — Apps Script CacheService의 
 // 세션 인증을 통과한 요청마다 Firestore 세션의 expiresAt을 지금 시각 + 6시간으로 밀어서,
 // Apps Script authenticateRequest_의 슬라이딩 세션 연장과 동일하게 동작하도록 한다.
 // best-effort: 이 갱신이 실패해도 원래 요청의 응답에는 영향을 주지 않는다.
-async function touchSession(ref) {
+// [2026-11-25 요금 절감 B, 재홍님 승인] 마지막 연장(= expiresAt - 6시간)이 50초 안이면 다시 쓰지 않는다.
+// 화면을 열 때 함수 여러 개가 몇 초 사이에 같이 불려 매번 1번씩 쓰던 것을 1번으로 줄임(Firestore 쓰기 절약).
+// 50초인 이유: lib/pushSender.js가 'expiresAt - 6시간'을 마지막 요청 시각으로 보고 2분 안이면 "앱 열림"으로
+// 판단한다(SESSION_ACTIVE_WINDOW_MS). 앱이 열려 있으면 1분마다 pollSignal이 오므로 기록은 늦어도 약 110초 전
+// (50초 + 60초)이라 2분 안 — 그 판단은 그대로다. 세션 만료는 '마지막 사용 + 6시간'에서 최대 50초 빨라질 수 있다.
+const SESSION_TOUCH_MIN_GAP_MS = 50 * 1000;
+function needsTouch(expiresAtMs, nowMs) {
+  if (!(expiresAtMs > 0)) return true; // 모르면 예전처럼 씀
+  return nowMs - (expiresAtMs - SESSION_TTL_MS) >= SESSION_TOUCH_MIN_GAP_MS;
+}
+async function touchSession(ref, expiresAtMs) {
+  if (expiresAtMs !== undefined && !needsTouch(expiresAtMs, Date.now())) return;
   try {
     await ref.update({ expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
   } catch (e) {
@@ -49,8 +60,8 @@ async function authenticateSession(firestore, sessionToken) {
   if (!(expiresAt.getTime() > Date.now())) {
     return { ok: false, status: 200, error: 'SESSION_EXPIRED', timings };
   }
-  await touchSession(sessionSnap.ref); // 슬라이딩 세션 연장 (기존 Phase 1과 동일)
+  await touchSession(sessionSnap.ref, expiresAt.getTime()); // 슬라이딩 세션 연장 (2026-11-25: 50초 안이면 건너뜀)
   return { ok: true, email: session.email, ref: sessionSnap.ref, timings };
 }
 
-module.exports = { authenticateSession, touchSession, SESSION_TTL_MS };
+module.exports = { authenticateSession, touchSession, needsTouch, SESSION_TTL_MS, SESSION_TOUCH_MIN_GAP_MS };

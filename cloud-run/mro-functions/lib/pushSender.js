@@ -179,14 +179,17 @@ async function sendConsolidatedPushForUser(firestore, authClient, fcmProjectId, 
   const signature = buildStateSignature_(counts);
   const stateRef = firestore.collection('pushNotifyState').doc(email);
 
+  const stateSnap = await stateRef.get(); // 2026-11-25 요금 절감 C: 아래 '빈 상태' 판단 전에 먼저 읽음(읽기 1번이 쓰기 1번을 대신)
+
   if (!message) {
     // 보낼 내용이 없다 — 상태만 "빈 상태"로 기록해두고 끝낸다(다음에 다시 건수가 생기면
     // 새 서명과 비교되어 정상적으로 발송된다).
+    // [2026-11-25 요금 절감 C, 재홍님 승인] 이미 '빈 상태'면 다시 쓰지 않는다 — 예전에는 5분마다 사람마다 같은 값을 다시 썼다.
+    if (stateSnap.exists && stateSnap.data().lastSignature === '') return { sent: false, reason: 'NO_CONTENT' };
     await stateRef.set({ lastSignature: '', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return { sent: false, reason: 'NO_CONTENT' };
   }
 
-  const stateSnap = await stateRef.get();
   if (stateSnap.exists && stateSnap.data().lastSignature === signature) {
     return { sent: false, reason: 'UNCHANGED_STATE' };
   }
