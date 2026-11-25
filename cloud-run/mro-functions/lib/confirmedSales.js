@@ -4,6 +4,8 @@
 // - 달 = 매출마감일(BR)의 달. 숫자는 모두 천원 정수(주간 실적과 같음 — 화면이 원 단위 합계를 천원으로 반올림해서 보냄)
 // - 올리기 = 관리자만, 팀 단위(파일 안 실적부서명으로 나눔 — 동부만 올리면 동부만 바뀜). 원본 줄은 저장하지 않고 시스템 구매사명별 합계만
 // - 고객사: 시스템 구매사명 → 주간 고객사(실적-고객사연결 탭, 없으면 같은 이름이면 자동). 못 잇는 곳은 올릴 때 화면에서 골라 연결 탭에 저장
+//   2026-11-25 재홍님: 못 이은 곳이 있어도 올라감(주간고객사명 빈칸 = '연결 안 된 고객사' 묶음). 연결은 그 팀 팀장·관리자가 화면에서(planLink),
+//   연결 탭에 남아 다음 달부터 자동. 연결 안 된 곳이 남으면 [최종 확정] 막힘(UNLINKED_LEFT)
 // - 담당(배정·수정 권한에만 씀, 화면·출력에는 안 나옴): 구매담당(K) → 사용자팀마스터 J열 사무소(줄 수가 가장 많은 사무소) → 그 사무소의 활성 '담당'
 //   (계정 없는 구매담당은 건너뜀 = 같은 고객사 다른 구매담당을 따름) · 사무소를 못 찾거나 그 사무소 담당이 0명·2명 이상이면 팀장
 // - 매출은 고칠 수 없음(계산서 기준). 이익만 고침 + 비고(확정 전 확정비고최소글자 이상, 실적-설정)
@@ -16,11 +18,13 @@ const teamsLib = require('./teams');
 const TAB_LINK = '실적-고객사연결';
 const TAB_CONF = '실적-확정';
 const TAB_CPROG = '실적-확정진행';
-const CF_TABS = [TAB_LINK, TAB_CONF, TAB_CPROG];
+const TAB_MGR = '실적-담당지정'; // 2026-11-25 재홍님: 사무소 담당이 2명 이상일 때 팀장이 고른 담당(기억 → 다음 달부터 자동)
+const CF_TABS = [TAB_LINK, TAB_CONF, TAB_CPROG, TAB_MGR];
 const CF_HEADERS = {};
 CF_HEADERS[TAB_LINK] = ['시스템구매사명', '팀', '주간고객사명', '등록자', '등록일시'];
 CF_HEADERS[TAB_CONF] = ['연도', '월', '팀', '시스템구매사명', '주간고객사명', '사무소', '담당', '시스템매출', '시스템이익', '이익(수정)', '비고', '매입미마감줄수', '수정자', '수정일시', '다시확인'];
 CF_HEADERS[TAB_CPROG] = ['연도', '월', '팀', '단계', '담당', '처리자', '일시'];
+CF_HEADERS[TAB_MGR] = ['시스템구매사명', '팀', '담당', '등록자', '등록일시'];
 const CONF_COLS = 15, LINK_COLS = 5, CPROG_COLS = 7; // A:O · A:E · A:G
 
 const ST_UPLOAD = '올림', ST_REUPLOAD = '다시 올림', ST_CONFIRM = '담당 확정', ST_CANCEL = '확정 취소', ST_REOPEN = '확정 다시 열림',
@@ -58,10 +62,16 @@ function leadOf(people, team) {
 // 담당 배정. buyers = { 구매담당 이름: 줄 수 }. 반환 { office, manager, why }
 // why: OK · NO_OFFICE(구매담당 계정·사무소를 못 찾음) · OFFICE_NONE(그 사무소 담당 0명) · OFFICE_MANY(2명 이상) — OK 말고는 팀장
 //      NO_LEAD = 팀장도 없음 → 담당 빈칸(관리자만 고칠 수 있음)
-function assign(people, team, buyers) {
-  const offices = {}, order = [];
+// 2026-11-25 재홍님 결정 순서: ① 팀장이 고른 담당(실적-담당지정, 그 팀 활성 담당일 때) → ② 구매담당 본인이 그 팀 활성 '담당'이면 본인(여럿이면 줄 수 많은 사람)
+//   → ③ 사무소 담당이 1명이면 그 사람 → 그 밖(사무소 담당 0명·2명 이상·사무소 모름)은 팀장이 임시로 맡음. 2명 이상이면 candidates = 그 사무소 담당(팀장이 화면에서 고름)
+function teamManagers(people, team) { return people.filter(function (u) { return u.active && u.role === '담당' && u.team === team && u.name; }); }
+function assign(people, team, buyers, fixed) {
+  const lead = leadOf(people, team), leadName = lead ? lead.name : '', tm = teamManagers(people, team);
+  if (fixed && tm.some(function (u) { return u.name === fixed; })) return { office: (tm.find(function (u) { return u.name === fixed; }) || {}).office || '', manager: fixed, why: 'FIXED' };
+  const offices = {}, order = [], self = {};
   Object.keys(buyers || {}).forEach(function (b) {
     const name = cell(b), n = Number(buyers[b]) || 0; if (!name || n <= 0) return;
+    if (tm.some(function (u) { return u.name === name; })) self[name] = (self[name] || 0) + n;
     const hits = people.filter(function (u) { return u.name === name && u.office; });
     const u = hits.find(function (x) { return x.team === team; }) || hits[0]; // 같은 이름이면 그 팀 사람 먼저
     if (!u) return; // 계정 없음 → 건너뜀(같은 고객사 다른 구매담당을 따름)
@@ -70,11 +80,18 @@ function assign(people, team, buyers) {
   });
   let office = '';
   order.forEach(function (o) { if (!office || offices[o] > offices[office]) office = o; }); // 같으면 먼저 나온 사무소
-  const lead = leadOf(people, team), leadName = lead ? lead.name : '';
+  const selfNames = Object.keys(self);
+  if (selfNames.length) { let best = selfNames[0]; selfNames.forEach(function (n) { if (self[n] > self[best]) best = n; }); return { office: (tm.find(function (u) { return u.name === best; }) || {}).office || office, manager: best, why: 'SELF' }; }
   if (!office) return { office: '', manager: leadName, why: lead ? 'NO_OFFICE' : 'NO_LEAD' };
-  const mgrs = people.filter(function (u) { return u.active && u.role === '담당' && u.team === team && u.office === office && u.name; });
+  const mgrs = tm.filter(function (u) { return u.office === office; });
   if (mgrs.length === 1) return { office: office, manager: mgrs[0].name, why: 'OK' };
-  return { office: office, manager: leadName, why: lead ? (mgrs.length ? 'OFFICE_MANY' : 'OFFICE_NONE') : 'NO_LEAD' };
+  return { office: office, manager: leadName, why: lead ? (mgrs.length ? 'OFFICE_MANY' : 'OFFICE_NONE') : 'NO_LEAD', candidates: mgrs.map(function (u) { return u.name; }) };
+}
+// 실적-담당지정 → { 시스템구매사명: 담당 } (그 팀, 아래 줄이 이김)
+function mgrMap(mgrRows, team) {
+  const m = {};
+  (mgrRows || []).forEach(function (r) { if (cell(r && r[0]) && cfTeam(r[1]) === team && cell(r[2])) m[cell(r[0])] = cell(r[2]); });
+  return m;
 }
 
 // 그 달 그 팀 주간 고객사(실적-고객사, 그 달 적용 줄) — 순서 칸 → 시트 줄 순서. active = 사용 끔이 아님
@@ -146,7 +163,7 @@ function planUpload(p) {
   }
   const wc = weeklyCustomers(p.customers, team, month), weeklyNames = wc.map(function (c) { return c.name; });
   if (!wc.length) return { ok: false, error: 'NO_TEAM', field: team };
-  const lm = linkMap(p.linkRows, team), chosen = p.links || {}, people = peopleOf(p.userRows);
+  const lm = linkMap(p.linkRows, team), chosen = p.links || {}, people = peopleOf(p.userRows), fm = mgrMap(p.mgrRows, team);
   const unlinked = [], linkNew = [];
   const list = items.map(function (it) {
     const name = cell(it.name);
@@ -175,8 +192,8 @@ function planUpload(p) {
       if (o.unclosed !== it.unclosed) writes.push({ range: 'L' + o.row, values: [it.unclosed] }); // 매입 미마감 줄 수만 새 값
       return;
     }
-    const a = assign(people, team, it.buyers);
-    if (a.why !== 'OK') warnings.push({ name: it.name, why: a.why, office: a.office, manager: a.manager });
+    const a = assign(people, team, it.buyers, fm[it.name]);
+    if (['OK', 'FIXED', 'SELF'].indexOf(a.why) < 0) warnings.push({ name: it.name, why: a.why, office: a.office, manager: a.manager, candidates: a.candidates || [] });
     if (o) {
       const re = (o.sales !== it.sales ? '매출 ' + o.sales + '→' + it.sales : '') + (o.sysProfit !== it.profit ? (o.sales !== it.sales ? ' · ' : '') + '이익 ' + o.sysProfit + '→' + it.profit : '');
       diff.changed.push({ name: it.name, from: { sales: o.sales, profit: o.sysProfit }, to: { sales: it.sales, profit: it.profit }, manager: a.manager });
@@ -212,7 +229,6 @@ function planUpload(p) {
   const linkWrites = linkNew.map(function (l) { const w = { range: 'A' + ln + ':E' + ln, values: [l[0], l[1], l[2], who, at] }; ln++; return w; });
   const base = { year: year, month: month, team: team, unlinked: unlinked, weeklyNames: weeklyNames, diff: diff, reopen: reopen, finalUndone: finalUndone, first: first,
     changedAny: changedAny, warnings: warnings, unclosedTotal: items.reduce(function (s, it) { return s + it.unclosed; }, 0) };
-  if (unlinked.length) return Object.assign({ ok: false, error: 'UNLINKED' }, base);
   return Object.assign({ ok: true, writes: writes, linkWrites: linkWrites, progWrites: progWrites }, base);
 }
 
@@ -233,15 +249,17 @@ function buildView(p) {
     const g = { name: name, planSales: pl.sales, planProfit: pl.profit, sales: 0, profit: 0, subs: [], active: active };
     byName[name] = g; groups.push(g); return g;
   }
-  weeklyCustomers(p.customers, team, month).forEach(function (c) { group(c.name, c.active); });
-  const me = cell(p.me);
+  const wc = weeklyCustomers(p.customers, team, month);
+  wc.forEach(function (c) { group(c.name, c.active); });
+  const me = cell(p.me), loose = { name: UNLINKED_GROUP, planSales: null, planProfit: null, sales: 0, profit: 0, subs: [], active: true, unlinked: true }; // 연결 안 된 고객사 = 맨 아래 묶음
   rows.forEach(function (r) {
-    const g = group(r.weekly || r.name, true);
+    const g = r.weekly ? group(r.weekly, true) : loose;
     const profit = r.profit === null ? r.sysProfit : r.profit;
-    g.subs.push({ name: r.name, sales: r.sales, sysProfit: r.sysProfit, profit: profit, edited: r.profit !== null && r.profit !== r.sysProfit, note: r.note,
-      unclosed: r.unclosed, recheck: r.recheck, mine: !!me && r.manager === me, done: !!st.confirmed[r.manager] });
+    g.subs.push({ name: r.name, office: r.office, sales: r.sales, sysProfit: r.sysProfit, profit: profit, edited: r.profit !== null && r.profit !== r.sysProfit, note: r.note,
+      unclosed: r.unclosed, recheck: r.recheck, mine: !!me && r.manager === me, done: !!st.confirmed[r.manager], manager: p.withNames ? r.manager : undefined }); // 담당 이름은 팀장·관리자 화면(담당 정하기)에만
     g.sales += r.sales; g.profit += profit;
   });
+  if (loose.subs.length) groups.push(loose);
   let out = groups.filter(function (g) { return g.subs.length || g.active; });
   if (p.scope === 'mine') out = out.filter(function (g) { return g.subs.some(function (s) { return s.mine; }); }).map(function (g) {
     const subs = g.subs.filter(function (s) { return s.mine; });
@@ -253,8 +271,22 @@ function buildView(p) {
   const managers = managersIn(rows).map(function (m) { const c = st.confirmed[m]; return { name: m, done: !!c, at: c ? c.at : '' }; });
   return { year: year, month: month, team: team, uploaded: st.uploaded || rows.length > 0, final: st.final ? { at: st.final.at } : null,
     lastUpload: st.lastUpload ? { at: st.lastUpload.at } : null, groups: out, total: total, managers: managers, minNote: p.minNote,
-    myDone: !!me && !!st.confirmed[me], unclosedTotal: rows.reduce(function (a, r) { return a + r.unclosed; }, 0) };
+    myDone: !!me && !!st.confirmed[me], unclosedTotal: rows.reduce(function (a, r) { return a + r.unclosed; }, 0),
+    unlinked: rows.filter(function (r) { return !r.weekly; }).map(function (r) { return { name: r.name, sales: r.sales }; }),
+    weeklyNames: p.withNames ? wc.map(function (c) { return c.name; }) : undefined, // 연결 고르기 목록(팀장·관리자 화면만)
+    mgrChoices: p.withNames ? mgrChoices_(p, rows, team) : undefined, teamManagers: p.withNames ? teamMgrNames_(p, team) : undefined };
 }
+// 담당 정하기(팀장·관리자 화면): 사무소 담당이 2명 이상인데 아직 고르지 않은 고객사 — 후보 = 그 사무소 담당
+function mgrChoices_(p, rows, team) {
+  const people = peopleOf(p.userRows), tm = teamManagers(people, team), fm = mgrMap(p.mgrRows, team), out = [];
+  rows.forEach(function (r) {
+    if (fm[r.name]) return;
+    const c = tm.filter(function (u) { return r.office && u.office === r.office; }).map(function (u) { return u.name; });
+    if (c.length >= 2 && c.indexOf(r.manager) < 0) out.push({ name: r.name, office: r.office, manager: r.manager, candidates: c });
+  });
+  return out;
+}
+function teamMgrNames_(p, team) { const people = peopleOf(p.userRows), lead = leadOf(people, team), out = teamManagers(people, team).map(function (u) { return u.name; }); if (lead && out.indexOf(lead.name) < 0) out.push(lead.name); return out; }
 // 그 연도·팀에 올린 달 목록(작은 달부터)
 function monthsOf(confRows, year, team) {
   const out = [];
@@ -327,13 +359,74 @@ function planFinal(p) {
   if (st.final) return { ok: false, error: 'FINAL_DONE' };
   const left = managersIn(rows).filter(function (m) { return !st.confirmed[m]; });
   if (left.length) return { ok: false, error: 'MANAGERS_NOT_DONE', names: left };
+  const loose = rows.filter(function (r) { return !r.weekly; }).map(function (r) { return r.name; });
+  if (loose.length) return { ok: false, error: 'UNLINKED_LEFT', names: loose };
   if (rows.some(function (r) { return !r.manager; })) return { ok: false, error: 'NO_MANAGER', names: rows.filter(function (r) { return !r.manager; }).map(function (r) { return r.name; }) };
   return { ok: true, write: progRow_(p, team, ST_FINAL, '') };
 }
 
+// 고객사 연결·연결 고치기(그 팀 팀장·관리자, 2026-11-25 재홍님). p = { year, month(보고 있는 달), team, links:{ 시스템구매사명: 주간고객사명 }, confRows, linkRows, progRows, customers, who, nowMs }
+// - 주간고객사명 = 보고 있는 달의 주간 고객사 이름, 또는 시스템 이름 그대로(새 고객사로 따로)
+// - 적용: 연결 탭 새 줄(아래 줄이 이김 → 다음 달부터 자동) + 같은 해·같은 팀에서 **최종 확정 전인 모든 달**의 그 고객사 줄 E칸
+//   (최종 확정된 달은 확정된 그대로 둠 — 2026-11-25 재홍님 "확정된 달은 일단 그대로")
+function planLink(p) {
+  const year = Number(p.year), month = Number(p.month), team = cfTeam(p.team);
+  if (!confRowsOf(p.confRows, year, month, team).length) return { ok: false, error: 'NO_DATA' };
+  const names = weeklyCustomers(p.customers, team, month).map(function (c) { return c.name; });
+  const keys = Object.keys(p.links || {});
+  if (!keys.length) return { ok: false, error: 'NO_CHANGES' };
+  const lm = linkMap(p.linkRows, team), months = monthsOf(p.confRows, year, team);
+  const open = months.filter(function (m) { return !stateOf(p.progRows, year, m, team).final; }), kept = months.filter(function (m) { return open.indexOf(m) < 0; });
+  const rowsByMonth = {}; open.forEach(function (m) { rowsByMonth[m] = confRowsOf(p.confRows, year, m, team); });
+  const who = lcs(p.who), at = ws.seoulStamp(p.nowMs), writes = [], linkWrites = [], touched = {};
+  let ln = nextFreeRow(indexRows(p.linkRows));
+  for (let i = 0; i < keys.length; i++) {
+    const sys = cell(keys[i]), w = cell(p.links[keys[i]]);
+    if (!sys) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: sys };
+    if (!w || (w !== sys && names.indexOf(w) < 0)) return { ok: false, error: 'BAD_LINK', field: sys };
+    if (!months.some(function (m) { return confRowsOf(p.confRows, year, m, team).some(function (r) { return r.name === sys; }); })) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: sys };
+    if (lm[sys] !== w) { linkWrites.push({ range: 'A' + ln + ':E' + ln, values: [sys, team, w, who, at] }); ln++; }
+    open.forEach(function (m) {
+      const r = rowsByMonth[m].find(function (x) { return x.name === sys; });
+      if (r && r.weekly !== w) { writes.push({ range: 'E' + r.row, values: [w] }); touched[m] = (touched[m] || 0) + 1; }
+    });
+  }
+  return { ok: true, writes: writes, linkWrites: linkWrites, months: Object.keys(touched).map(Number).sort(function (a, b) { return a - b; }), kept: kept };
+}
+// 담당 정하기·고치기(그 팀 팀장·관리자, 2026-11-25). p = { year, month, team, picks:{ 시스템구매사명: 담당 }, confRows, progRows, mgrRows, userRows, who, nowMs }
+// 담당 = 그 팀 활성 '담당' 또는 그 팀 팀장. 적용: 실적-담당지정 새 줄(다음 달부터 자동) + 같은 해에서 최종 확정 전인 모든 달의 그 고객사 줄 G칸
+// 새 담당이 그 달에 이미 [확정]했으면 그 담당 확정을 다시 엶(실적-확정진행 '확정 다시 열림') — 새로 받은 고객사를 보고 다시 확정하도록
+function planAssign(p) {
+  const year = Number(p.year), month = Number(p.month), team = cfTeam(p.team);
+  if (!confRowsOf(p.confRows, year, month, team).length) return { ok: false, error: 'NO_DATA' };
+  const keys = Object.keys(p.picks || {});
+  if (!keys.length) return { ok: false, error: 'NO_CHANGES' };
+  const ok = teamMgrNames_(p, team), fm = mgrMap(p.mgrRows, team), months = monthsOf(p.confRows, year, team);
+  const open = months.filter(function (m) { return !stateOf(p.progRows, year, m, team).final; }), kept = months.filter(function (m) { return open.indexOf(m) < 0; });
+  const who = lcs(p.who), at = ws.seoulStamp(p.nowMs), writes = [], mgrWrites = [], progWrites = [], touched = {}, reopened = {};
+  let mn = nextFreeRow(indexRows(p.mgrRows)), pn = nextFreeRow(indexRows(p.progRows));
+  for (let i = 0; i < keys.length; i++) {
+    const sys = cell(keys[i]), m = cell(p.picks[keys[i]]);
+    if (!m || ok.indexOf(m) < 0) return { ok: false, error: 'BAD_MANAGER', field: sys };
+    if (!months.some(function (mm) { return confRowsOf(p.confRows, year, mm, team).some(function (r) { return r.name === sys; }); })) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: sys };
+    if (fm[sys] !== m) { mgrWrites.push({ range: 'A' + mn + ':E' + mn, values: [sys, team, m, who, at] }); mn++; }
+    open.forEach(function (mm) {
+      const r = confRowsOf(p.confRows, year, mm, team).find(function (x) { return x.name === sys; });
+      if (!r || r.manager === m) return;
+      writes.push({ range: 'G' + r.row, values: [m] }); touched[mm] = true;
+      const key = mm + '/' + m;
+      if (stateOf(p.progRows, year, mm, team).confirmed[m] && !reopened[key]) { reopened[key] = true; progWrites.push({ range: 'A' + pn + ':G' + pn, values: [year, mm, team, ST_REOPEN, m, who, at] }); pn++; }
+    });
+  }
+  return { ok: true, writes: writes, mgrWrites: mgrWrites, progWrites: progWrites, months: Object.keys(touched).map(Number).sort(function (a, b) { return a - b; }), kept: kept,
+    reopened: Object.keys(reopened) };
+}
+const UNLINKED_GROUP = '연결 안 된 고객사';
+
 module.exports = {
   TAB_LINK, TAB_CONF, TAB_CPROG, CF_TABS, CF_HEADERS, CONF_COLS, LINK_COLS, CPROG_COLS,
   ST_UPLOAD, ST_REUPLOAD, ST_CONFIRM, ST_CANCEL, ST_REOPEN, ST_FINAL, ST_UNFINAL,
+  TAB_MGR, mgrMap, planAssign, teamManagers,
   cfTeam, checkHeaders, peopleOf, leadOf, assign, weeklyCustomers, linkMap, stateOf, confRowsOf, managersIn,
-  planUpload, buildView, monthsOf, planEdit, planConfirm, planCancel, planFinal, noteLen
+  planUpload, buildView, monthsOf, planEdit, planConfirm, planCancel, planFinal, noteLen, planLink, UNLINKED_GROUP
 };

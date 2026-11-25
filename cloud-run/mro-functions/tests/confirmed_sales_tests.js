@@ -23,7 +23,9 @@ let a = cs.assign(P, '동부', { 구매일: 21, 구매이: 3, 구매없음: 5 })
 t('A1 섞인 구매담당(퇴사 포함·계정 없음) → 줄 수 많은 사무소(포항) → 그 사무소 담당', a.office === '포항' && a.manager === '가담당' && a.why === 'OK');
 a = cs.assign(P, '동부', { 구매삼: 2, 구매일: 2 });
 t('A2 줄 수가 같으면 먼저 나온 사무소', a.office === '대구' && a.manager === '나담당');
-t('A3 사무소 담당 2명 → 팀장(OFFICE_MANY)', JSON.stringify(cs.assign(P, '동부', { 구매사: 1 })) === JSON.stringify({ office: '창원', manager: '한팀장', why: 'OFFICE_MANY' }));
+t('A3 사무소 담당 2명 → 우선 팀장(OFFICE_MANY) + 후보 = 그 사무소 담당', JSON.stringify(cs.assign(P, '동부', { 구매사: 1 })) === JSON.stringify({ office: '창원', manager: '한팀장', why: 'OFFICE_MANY', candidates: ['다담당', '라담당'] }));
+t('A7 2026-11-25: 구매담당 본인이 그 팀 담당이면 본인(SELF), 팀장이 고른 담당(FIXED)이 가장 먼저', cs.assign(P, '동부', { 라담당: 2, 구매사: 5 }).manager === '라담당' && cs.assign(P, '동부', { 라담당: 2, 구매사: 5 }).why === 'SELF' &&
+  cs.assign(P, '동부', { 구매사: 5 }, '다담당').manager === '다담당' && cs.assign(P, '동부', { 구매사: 5 }, '다담당').why === 'FIXED' && cs.assign(P, '동부', { 구매사: 5 }, '없는사람').why === 'OFFICE_MANY');
 t('A4 사무소 담당 0명 → 팀장(OFFICE_NONE)', cs.assign(P, '동부', { 구매오: 4 }).why === 'OFFICE_NONE' && cs.assign(P, '동부', { 구매오: 4 }).manager === '한팀장');
 t('A5 계정 없는 구매담당뿐 → 팀장(NO_OFFICE), 팀장도 없으면 빈칸(NO_LEAD)', cs.assign(P, '동부', { 모름: 9 }).why === 'NO_OFFICE' && cs.assign(P, '중부', { 모름: 1 }).why === 'NO_LEAD' && cs.assign(P, '중부', { 모름: 1 }).manager === '');
 t('A6 실적부서명 "동부지역" → 동부', cs.cfTeam('동부지역') === '동부' && cs.cfTeam('동부팀') === '동부' && cs.cfTeam('영업지원') === '영업지원');
@@ -36,7 +38,7 @@ const ITEMS = [{ name: '다온스틸(주)', sales: 98420, profit: 8830, unclosed
 const LINKS = [['다온스틸(주)', '동부', '다온계열', 'x', ''], ['다온강판(주)', '동부지역', '다온계열', 'x', '']];
 function up(o) { return cs.planUpload(Object.assign({ year: 2026, month: 10, team: '동부지역', items: ITEMS, links: {}, customers: CUST, linkRows: LINKS, confRows: [], progRows: [], userRows: U, who: 'Admin@nkmro.com', nowMs: NOW }, o)); }
 let u = up({});
-t('U1 못 이은 시스템 고객사 → UNLINKED(목록·주간 고객사 이름 같이)', !u.ok && u.error === 'UNLINKED' && u.unlinked.length === 1 && u.unlinked[0].name === '세온테크(주)' && u.weeklyNames.join() === '다온계열,가람정밀(주),바른전자계열,쉬는고객');
+t('U1 못 이은 시스템 고객사가 있어도 올라감(2026-11-25) — 목록·주간 고객사 이름은 같이, 그 줄 주간고객사명 빈칸', u.ok && u.writes.find(function (w) { return w.values[3] === '세온테크(주)'; }).values[4] === '' && u.unlinked.length === 1 && u.unlinked[0].name === '세온테크(주)' && u.weeklyNames.join() === '다온계열,가람정밀(주),바른전자계열,쉬는고객');
 t('U2 같은 이름(가람정밀) 자동 연결, 연결 탭(팀 "동부지역"도) 사용', u.diff.added.length === 4 || u.unlinked.length === 1);
 t('U3 없는 주간 고객사로 연결 → BAD_LINK', up({ links: { '세온테크(주)': '없는고객' } }).error === 'BAD_LINK');
 u = up({ links: { '세온테크(주)': '다온계열' } });
@@ -54,7 +56,7 @@ let PROG = [[2026, 10, '동부', '올림', '', 'admin@nkmro.com', '2026-11-03 10
 let v = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF, progRows: PROG, minNote: 10, me: '가담당', scope: 'all' });
 t('V1 묶음 = 주간 고객사 순서, 사용 끔·실적 없는 고객사는 빠짐, 계획은 그 달 칸', v.groups.map(function (g) { return g.name; }).join() === '다온계열,가람정밀(주),바른전자계열' && v.groups[0].planSales === 182000 && v.groups[0].planProfit === 16400);
 t('V2 다온계열 = 3곳 합(고친 이익 9000 반영), 고친 칸 표시·시스템 값 남김', v.groups[0].sales === 98420 + 63100 + 6420 && v.groups[0].profit === 9000 + 5480 + 500 && v.groups[0].subs[0].edited && v.groups[0].subs[0].sysProfit === 8830);
-t('V3 화면 자료에 담당·사무소 없음(mine 표시만)', !JSON.stringify(v.groups).includes('포항') && !JSON.stringify(v.groups).includes('manager') && v.groups[0].subs[0].mine === true && v.groups[1].subs[0].mine === false);
+t('V3 화면 자료: 사무소는 보임(2026-11-25 재홍님), 담당 이름은 팀장·관리자 화면(withNames)에만', v.groups[0].subs[0].office === '포항' && v.groups[0].subs[0].manager === undefined && v.groups[0].subs[0].mine === true && v.groups[1].subs[0].mine === false);
 t('V4 담당 확정 현황 = 담당 이름·확정 여부(칩용)', v.managers.map(function (m) { return m.name + (m.done ? '✓' : ''); }).join() === '가담당,나담당');
 const vm = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF, progRows: PROG, minNote: 10, me: '나담당', scope: 'mine' });
 t('V5 담당(mine) = 자기 줄만, 합계도 자기 줄', vm.groups.length === 1 && vm.groups[0].name === '가람정밀(주)' && vm.total.sales === 88760);
@@ -111,8 +113,8 @@ const ca = IX.slice(IX.indexOf('async function confirmedAction_'), IX.indexOf('/
 t('X1 저장: CF 동작은 기존 권한 확인 앞에서 confirmedAction_으로(담당도 들어올 수 있게)', sv.includes('CF_ACTIONS.indexOf(b.action) < 0) {') && sv.indexOf('return await confirmedAction_(') < sv.indexOf("const asMgr = !isAdmin && !!(mro.me"));
 t('X2 confirmedAction_: 올리기·미리보기는 관리자만(잠금 앞), 잠금 안에서 시트 다시 읽기, 쓰기는 perfBatchWrite_ 한 곳', ca.indexOf("['cfPreview', 'cfUpload'].indexOf(b.action) >= 0 && !isAdmin") < ca.indexOf('acquireLock(') &&
   ca.indexOf('acquireLock(') < ca.indexOf('cfFile_(client') && (ca.match(/perfBatchWrite_\(/g) || []).length === 1 && ca.includes('releaseLock(firestore, WEEKLY_LOCK_NAME, holderId)'));
-t('X7 최종 확정 = 그 팀 팀장 + 관리자(2026-11-24 재홍님): 팀장·관리자 외 FORBIDDEN(잠금 앞), 팀장은 cfTeam_으로 맡은 팀만, 화면에 canFinal', ca.indexOf("if (b.action === 'cfFinal' && !isAdmin && me.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };") >= 0 &&
-  ca.indexOf("if (b.action === 'cfFinal' && !isAdmin") < ca.indexOf('acquireLock(') && ca.indexOf('cfTeam_(me, isAdmin,') > ca.indexOf('acquireLock(') && IX.includes("canFinal: isAdmin || me.role === '팀장'"));
+t('X7 최종 확정·고객사 연결 = 그 팀 팀장 + 관리자: 팀장·관리자 외 FORBIDDEN(잠금 앞), 팀장은 cfTeam_으로 맡은 팀만, 화면에 canFinal', ca.indexOf("if (['cfFinal', 'cfLink', 'cfAssign'].indexOf(b.action) >= 0 && !isAdmin && me.role !== '팀장') return { ok: false, error: 'FORBIDDEN' };") >= 0 &&
+  ca.indexOf("if (['cfFinal', 'cfLink', 'cfAssign'].indexOf(b.action) >= 0 && !isAdmin") < ca.indexOf('acquireLock(') && ca.indexOf('cfTeam_(me, isAdmin,') > ca.indexOf('acquireLock(') && IX.includes("canFinal: isAdmin || me.role === '팀장'"));
 t('X3 확정 = 자기 이름만, 취소 = 관리자만 다른 담당', ca.includes("planConfirm(Object.assign({}, common, { manager: myName,") && ca.includes('manager: isAdmin && b.manager ? b.manager : myName'));
 const gv = IX.slice(IX.indexOf('async function confirmedView_'), IX.indexOf('async function confirmedAction_'));
 t('X4 보기: 임원 = 최종 확정된 달만, 담당 = mine, 관리자·임원·팀장·담당 외 FORBIDDEN', gv.includes("months.filter(function (m) { return !!confirmedSales.stateOf(f.progRows, year, m, lead.team).final; })") && gv.includes("scope: !isAdmin && me.role === '담당' ? 'mine' : 'all'") &&
@@ -139,5 +141,56 @@ const RES = { data: { groups: [{ subs: [{ name: 'A', edited: false, profit: 100,
 t('F6 바뀐 값: 쉼표 무시·시스템 값 그대로는 안 보냄·고친 값을 시스템 값으로 되돌리면 보냄·비고', JSON.stringify(chg({ res: RES, edits: { A: { profit: '100', note: '메모' }, B: { profit: '1,00' } } })) === JSON.stringify([{ name: 'B', profit: '100' }]) &&
   JSON.stringify(chg({ res: RES, edits: { A: { profit: '1,234', note: ' 새 메모 ' } } })) === JSON.stringify([{ name: 'A', profit: '1234', note: '새 메모' }]));
 t('F7 [최종 확정] 버튼 = canFinal(팀장·관리자), 단계 이름 "③ 팀장 최종 확정"', uiGrab('cfBar_').includes('if (r.canFinal && !d.final) {') && uiGrab('cfSteps_').includes('③ 팀장 최종 확정') && !FH.includes('관리자 최종 확정'));
+// 10) 2026-11-25 재홍님: 연결 안 돼도 올라감 · 팀장이 화면에서 연결 · 연결 안 된 곳이 있으면 최종 확정 막힘 · 파일 안 팀을 한 번에(관리자만)
+{
+const UP = up({});
+const CONF3 = UP.writes.map(function (w) { return w.values.slice(); });
+const PROG3 = [[2026, 10, '동부', '올림', '', 'admin@nkmro.com', '']];
+const v3 = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF3, progRows: PROG3, minNote: 10, me: '', scope: 'all', withNames: true });
+const lg = v3.groups[v3.groups.length - 1];
+t('L1 연결 안 된 곳 = 맨 아래 "연결 안 된 고객사" 묶음(계획 없음), unlinked 목록·고르기 이름(팀장·관리자 화면만)', lg.unlinked === true && lg.name === cs.UNLINKED_GROUP && lg.planSales === null && lg.subs[0].name === '세온테크(주)' &&
+  v3.unlinked.length === 1 && v3.unlinked[0].name === '세온테크(주)' && v3.weeklyNames.indexOf('다온계열') === 0 &&
+  cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF3, progRows: PROG3, minNote: 10, me: '', scope: 'all' }).weeklyNames === undefined);
+function lk(o) { return cs.planLink(Object.assign({ year: 2026, month: 10, team: '동부', confRows: CONF3, linkRows: LINKS, progRows: PROG3, customers: CUST, who: 'Lead@nkmro.com', nowMs: NOW }, o)); }
+const L = lk({ links: { '세온테크(주)': '다온계열' } });
+t('L2 연결: 그 달 실적-확정 E칸 + 연결 탭 새 줄(다음 달부터 자동)', L.ok && L.writes.length === 1 && L.writes[0].range === 'E5' && L.writes[0].values[0] === '다온계열' && L.linkWrites[0].range === 'A4:E4' && L.linkWrites[0].values.slice(0, 4).join() === '세온테크(주),동부,다온계열,lead@nkmro.com' && L.months.join() === '10');
+t('L3 연결 검사: 없는 주간 고객사 BAD_LINK, 어느 달에도 없는 고객사 UNKNOWN_CUSTOMER, 빈 목록 NO_CHANGES, 새 고객사로 따로 = 자기 이름, 올린 달이 아니면 NO_DATA',
+  lk({ links: { '세온테크(주)': '없음' } }).error === 'BAD_LINK' && lk({ links: { '없는회사': '다온계열' } }).error === 'UNKNOWN_CUSTOMER' && lk({ links: {} }).error === 'NO_CHANGES' &&
+  lk({ links: { '세온테크(주)': '세온테크(주)' } }).ok && lk({ month: 11, links: { '세온테크(주)': '다온계열' } }).error === 'NO_DATA');
+// 9월(최종 확정)·10월(확정 전)·11월(확정 전)에 같은 고객사 — 11월에서 고치면 10·11월만, 9월은 그대로
+const C9 = CONF3.map(function (r) { const x = r.slice(); x[1] = 9; return x; }), C11 = CONF3.map(function (r) { const x = r.slice(); x[1] = 11; return x; });
+const MULTI = C9.concat(CONF3).concat(C11), PM = PROG3.concat([[2026, 9, '동부', '올림', '', 'x', ''], [2026, 9, '동부', '최종 확정', '', 'x', ''], [2026, 11, '동부', '올림', '', 'x', '']]);
+const LM = lk({ month: 11, confRows: MULTI, progRows: PM, links: { '세온테크(주)': '다온계열', '다온스틸(주)': '가람정밀(주)' } });
+t('L2b 2026-11-25 재홍님: 연결·연결 고치기는 최종 확정 전인 모든 달(10·11월)에 적용, 최종 확정된 9월은 그대로', LM.ok && LM.months.join() === '10,11' && LM.kept.join() === '9' &&
+  LM.writes.length === 4 && LM.writes.every(function (w) { const row = Number(w.range.slice(1)); return row > 5; }) &&
+  LM.linkWrites.length === 2 && LM.linkWrites[1].values[2] === '가람정밀(주)');
+t('L2c 최종 확정된 달에서 고쳐도 됨 — 그 달 줄은 안 바꾸고 연결 탭·확정 전인 달만', (function () { const x = lk({ month: 9, confRows: MULTI, progRows: PM, links: { '세온테크(주)': '다온계열' } }); return x.ok && x.months.join() === '10,11' && x.writes.length === 2 && x.linkWrites.length === 1; })());
+const PROG4 = PROG3.concat([[2026, 10, '동부', '담당 확정', '가담당', 'a', ''], [2026, 10, '동부', '담당 확정', '나담당', 'b', '']]);
+t('L4 담당이 모두 확정해도 연결 안 된 곳이 있으면 최종 확정 막힘(UNLINKED_LEFT 이름 목록), 연결하면 됨', cf('planFinal', { confRows: CONF3, progRows: PROG4 }).error === 'UNLINKED_LEFT' && cf('planFinal', { confRows: CONF3, progRows: PROG4 }).names.join() === '세온테크(주)' &&
+  cf('planFinal', { confRows: CONF3.map(function (r) { const x = r.slice(); if (!x[4]) x[4] = '다온계열'; return x; }), progRows: PROG4 }).ok);
+t('L5 index: cfLink 동작·연결 탭·E칸 쓰기 1번, 보기에 canLink·withNames(팀장·관리자)', IX.includes("'cfFinal', 'cfLink', 'cfAssign']") && IX.includes('confirmedSales.planLink(') && IX.includes("canLink: isAdmin || me.role === '팀장'") && IX.includes("withNames: isAdmin || me.role === '팀장'"));
+t('L6 화면: 올리기는 관리자만(버튼은 isAdmin일 때만), 파일 안 팀 한 번에, 팀마다 고른 연결 기억, 연결 저장·최종 확정 막힘 안내', FH.includes('if (r.isAdmin) h += cfUpHtml_(d);') && uiGrab('cfUpApply_').includes("action: 'cfUpload'") && uiGrab('cfUpApply_').includes('for (let i = 0; i < teams.length; i++)') &&
+  uiGrab('cfUpTeam_').indexOf('links = {}') < 0 && uiGrab('cfLinkSave_').includes("action: 'cfLink'") && uiGrab('cfBar_').includes('연결해야 누를 수 있어요'));
+}
+t('L7 미리보기에서는 연결을 고르지 않음(팀장이 화면에서), 연결 고치기 = 전체 목록·주간 고객사와 같은 이름이면 "새 고객사로 따로" 중복 없음', !uiGrab('cfUpHtml_').includes('<select') && uiGrab('cfLinkHtml_').includes('cfRelink_(true)') && uiGrab('cfLinkHtml_').includes("(d.weeklyNames || []).indexOf(n) >= 0 ? ''"));
+// 11) 2026-11-25 재홍님: 사무소 담당 2명 이상이면 팀장이 고름(기억)
+{
+const U2 = U.concat([['k2@nkmro.com', '카담당', '담당', '동부', '활성', '', '', '', '', '대구']]);
+const UPa = up({ userRows: U2, links: { '세온테크(주)': '다온계열' } });
+const CA = UPa.writes.map(function (w) { return w.values.slice(); }), PA = [[2026, 10, '동부', '올림', '', 'x', '']];
+const va = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CA, progRows: PA, minNote: 10, me: '', scope: 'all', withNames: true, userRows: U2, mgrRows: [] });
+t('M1 대구 담당 2명(나담당·카담당) → 가람정밀은 우선 팀장, 담당 정하기 목록에 후보 2명 · 팀 담당 목록(+팀장)', CA.find(function (r) { return r[3] === '가람정밀(주)'; })[6] === '한팀장' &&
+  va.mgrChoices.length === 1 && va.mgrChoices[0].name === '가람정밀(주)' && va.mgrChoices[0].candidates.join() === '나담당,카담당' && va.teamManagers.indexOf('한팀장') >= 0 && va.groups[1].subs[0].manager === '한팀장');
+function as(o) { return cs.planAssign(Object.assign({ year: 2026, month: 10, team: '동부', confRows: CA, progRows: PA, mgrRows: [], userRows: U2, who: 'L@nkmro.com', nowMs: NOW }, o)); }
+const A1 = as({ picks: { '가람정밀(주)': '카담당' } });
+t('M2 담당 저장: 실적-담당지정 새 줄(기억) + 확정 전인 달 G칸', A1.ok && A1.mgrWrites[0].range === 'A2:E2' && A1.mgrWrites[0].values.slice(0, 3).join() === '가람정밀(주),동부,카담당' && A1.writes[0].range === 'G4' && A1.writes[0].values[0] === '카담당' && A1.months.join() === '10');
+t('M3 검사: 팀 담당·팀장이 아니면 BAD_MANAGER, 없는 고객사 UNKNOWN_CUSTOMER, 빈 목록 NO_CHANGES', as({ picks: { '가람정밀(주)': '임원일' } }).error === 'BAD_MANAGER' && as({ picks: { '없음': '카담당' } }).error === 'UNKNOWN_CUSTOMER' && as({ picks: {} }).error === 'NO_CHANGES');
+t('M4 새 담당이 이미 확정했으면 그 담당 확정 다시 열림', (function () { const x = as({ progRows: PA.concat([[2026, 10, '동부', '담당 확정', '카담당', 'k', '']]), picks: { '가람정밀(주)': '카담당' } }); return x.ok && x.progWrites.length === 1 && x.progWrites[0].values[3] === '확정 다시 열림' && x.progWrites[0].values[4] === '카담당'; })());
+const MG = [['가람정밀(주)', '동부', '카담당', 'x', '']];
+t('M5 기억한 담당 → 다음 달 올릴 때 바로 그 담당(담당 정하기 목록에서도 빠짐)', (function () { const u = up({ month: 11, userRows: U2, mgrRows: MG, links: { '세온테크(주)': '다온계열' } }); return u.writes.find(function (w) { return w.values[3] === '가람정밀(주)'; }).values[6] === '카담당'; })() &&
+  cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CA, progRows: PA, minNote: 10, me: '', scope: 'all', withNames: true, userRows: U2, mgrRows: MG }).mgrChoices.length === 0);
+t('M6 탭 4개(실적-담당지정 머리줄 5칸), index cfAssign·담당지정 읽기, 화면 담당 정하기·사무소 표시', cs.CF_TABS.length === 4 && cs.CF_HEADERS[cs.TAB_MGR].join() === '시스템구매사명,팀,담당,등록자,등록일시' &&
+  IX.includes('confirmedSales.planAssign(') && IX.includes("q(confirmedSales.TAB_MGR) + '!A2:E'") && IX.includes('v(7 + i)') && uiGrab('cfMgrSave_').includes("action: 'cfAssign'") && uiGrab('cfTable_').includes('cf-off'));
+}
 console.log(`confirmed_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -873,6 +873,11 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cf-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; } .cf-bar .pf-mut { font-size: 12.5px; }
 .cf-tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #fdecea; color: #b3413a; font-weight: 700; margin: 0 4px 0 0; } .cf-tag.cf-tag-g { background: #e3f3ea; color: #1d6b43; }
 .cf-x { border: 0; background: transparent; color: #1d6b43; font: inherit; font-size: 11.5px; text-decoration: underline; cursor: pointer; padding: 0 0 0 2px; }
+.cf-uptab { margin: 8px 0; } .cf-uptab tr.on td { background: #f2eaf6; } .cf-uptab td { white-space: normal; }
+.cf-sub { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; margin: 6px 0 10px; } .cf-subhead { font-weight: 700; color: var(--accent); font-size: 13px; margin: 4px 0; }
+.cf-off { display: inline-block; font-size: 10.5px; color: #6b6f6a; background: #f1f0ec; border-radius: 6px; padding: 0 5px; margin-left: 4px; font-weight: 400; vertical-align: 1px; }
+.cf-link tr.cf-chg td { background: #f2eaf6; }
+.cf-t td.cf-loose { background: #fff7e0; color: #8a5a00; } .cf-t td.cf-loose.sticky { border-left: 3px solid #e0a800; }
 @media (max-width: 600px) { .cf-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wi-chip.ask { background: #f2eaf6; color: var(--accent); border-color: var(--accent); }
 .wi-pxhelp { margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
@@ -8132,7 +8137,7 @@ const CF_ERR_ = {
   MANAGERS_NOT_DONE: '아직 [확정]하지 않은 담당이 있어요', NO_MANAGER: '담당이 정해지지 않은 고객사가 있어요(팀장 없음)', ALREADY_DONE: '이미 [확정]했어요.', NOT_DONE: '확정 상태가 아니에요.',
   BAD_MONTH: '엑셀의 매출마감일을 읽지 못했어요.', NO_ROWS: '확정할 내 고객사가 없어요.', TOO_MANY: '고객사가 너무 많아요(2,000곳까지).', DUPLICATE_CUSTOMER: '같은 이름이 두 번 있어요.',
   BAD_NUMBER: '이익에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LONG: '비고는 200자까지예요.', BAD_NAME: '구매사명이 비었거나 너무 길어요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
-  FORBIDDEN_TEAM: '볼 수 없는 팀이에요.', BAD_TEAM: '없는 팀이에요.', FORBIDDEN: '권한이 없어요.' };
+  FORBIDDEN_TEAM: '볼 수 없는 팀이에요.', BAD_MANAGER: '그 팀 담당·팀장 중에서 골라 주세요.', UNLINKED_LEFT: '주간 고객사와 연결이 안 된 고객사가 있어요', UNKNOWN_CUSTOMER: '이 달에 없는 고객사예요. 새로고침 후 다시 해 주세요.', NO_CHANGES: '바꾼 것이 없어요.', BAD_TEAM: '없는 팀이에요.', FORBIDDEN: '권한이 없어요.' };
 function cfErr_(res) {
   if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.';
   if (res.error === 'NOTE_SHORT') return '비고를 ' + res.min + '자 이상 써 주세요: ' + (res.names || []).join(', ');
@@ -8154,7 +8159,7 @@ async function loadConfirmedPage(keepMsg) {
   const res = await wkFetch_({ view: 'confirmed', year: cf_.year || undefined, month: cf_.month || undefined, team: cf_.team || undefined });
   if (reqNo !== cfReq_) return;
   if (!res || !res.ok) { cf_.res = null; cf_.loading = false; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
-  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.busy = false; cf_.loading = false;
+  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.links = {}; cf_.picks = {}; cf_.busy = false; cf_.loading = false;
   cfRender_();
 }
 function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; cf_.loading = true; cfRender_(); loadConfirmedPage(); } // 누르면 바로 흐리게 + 불러오는 중
@@ -8213,6 +8218,7 @@ ${cfSteps_(d)}</div>`;
   }
   const anyEdit = d.groups.some(function (g) { return g.subs.some(function (s) { return cfCanEdit_(s, d); }); });
   if (anyEdit) h += `<div class="pf-hint"><b>매출은 계산서 기준이라 고칠 수 없어요</b>(틀리면 시스템·계산서를 고친 뒤 관리자가 엑셀을 다시 올려요). 매입 마감 차이 등으로 <b>이익만 고칠 수 있고</b>, 고친 칸은 보라색·원래 시스템 값은 아래 작게 남아요. 고객사마다 <b>비고를 ${d.minNote}자 이상</b> 써 주세요(계획 대비 차이·고객사 특이사항).</div>`;
+  h += cfLinkHtml_(d, r) + cfMgrHtml_(d, r);
   h += cfTable_(d, r.isAdmin || session.role !== '담당' ? (r.team + ' 합계') : '내 담당 합계');
   if (!d.groups.length) h += `<div class="feed-empty">${mineAny || r.isAdmin ? '고객사가 없어요.' : '이번 달 내 담당 고객사가 없어요.'}</div>`;
   h += cf_.msg ? `<div class="cy-band ${cf_.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(cf_.msg.text)}</div>` : '';
@@ -8223,7 +8229,8 @@ ${cfSteps_(d)}</div>`;
 function cfTable_(d, totLabel) {
   let h = `<div class="pf-tablewrap"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
   d.groups.forEach(function (g) {
-    h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="grp"></td></tr>`;
+    if (g.unlinked) { h += `<tr><td class="l sticky grp cf-loose">⚠ ${escapeHtml(g.name)} (${g.subs.length}곳)</td><td class="grp cf-loose" colspan="7" style="text-align:left;font-weight:400">주간 고객사와 연결되면 그 묶음 아래로 옮겨져요 · 팀장이 위에서 연결</td></tr>`; }
+    else h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="grp"></td></tr>`;
     g.subs.forEach(function (s) {
       const ed = cfCanEdit_(s, d), k = cfAttr_(s.name);
       const re = s.recheck ? `<span class="cf-cnt bad cf-left"><span class="cf-tag">다시 확인</span>${escapeHtml(cfRe_(s.recheck))} · 비고가 맞는지 확인해 주세요</span>` : '';
@@ -8237,12 +8244,69 @@ function cfTable_(d, totLabel) {
         pv = cfN_(s.profit) + (s.edited ? `<span class="cf-orig chg">시스템 ${cfN_(s.sysProfit)}</span>` : '');
         nv = s.note ? escapeHtml(s.note) : '<span class="pf-mut">—</span>';
       }
-      h += `<tr><td class="l sticky sys">${escapeHtml(s.name)}${s.unclosed ? `<span class="cf-k">매입 미마감 ${s.unclosed}줄</span>` : ''}</td><td></td><td>${cfN_(s.sales)}</td><td></td><td></td><td>${pv}</td><td></td><td class="l cf-notecell">${nv}${re}</td></tr>`;
+      h += `<tr><td class="l sticky sys">${escapeHtml(s.name)}${s.office ? ` <span class="cf-off">${escapeHtml(s.office)}</span>` : ''}${s.unclosed ? `<span class="cf-k">매입 미마감 ${s.unclosed}줄</span>` : ''}</td><td></td><td>${cfN_(s.sales)}</td><td></td><td></td><td>${pv}</td><td></td><td class="l cf-notecell">${nv}${re}</td></tr>`;
     });
   });
   const t = d.total;
   h += `<tr><td class="l tot sticky">${escapeHtml(totLabel)}</td><td class="tot">${cfN_(t.planSales)}</td><td class="tot">${cfN_(t.sales)}</td>${cfRate_(t.sales, t.planSales, 'tot')}<td class="tot">${cfN_(t.planProfit)}</td><td class="tot">${cfN_(t.profit)}</td>${cfRate_(t.profit, t.planProfit, 'tot')}<td class="tot"></td></tr>`;
   return h + '</table></div>';
+}
+// 고객사 연결(2026-11-25): 연결 안 된 곳 — 그 팀 팀장·관리자가 고르고 [연결 저장]. 연결 탭에 남아 다음 달부터 자동
+function cfLinkHtml_(d, r) {
+  const unl = d.unlinked || [];
+  if (!r.canLink) return unl.length ? `<div class="cf-warn">⚠ 주간 고객사와 연결이 안 된 고객사가 ${unl.length}곳 있어요. ${escapeHtml(r.team)} 팀장이 연결하면 그 묶음 아래로 옮겨져요.</div>` : '';
+  const cur = {}; d.groups.forEach(function (g) { g.subs.forEach(function (s) { cur[s.name] = g.unlinked ? '' : g.name; }); });
+  const all = !!cf_.relink, list = all ? Object.keys(cur) : unl.map(function (x) { return x.name; });
+  if (!list.length) return `<div class="cf-bar" style="margin:4px 0 8px"><button type="button" class="pf-btn" onclick="cfRelink_(true)">🔗 고객사 연결 고치기</button><span class="pf-mut">시스템 고객사가 어느 주간 고객사 묶음에 들어가는지 바꿔요</span></div>`;
+  const L = cf_.links || {}, ch = list.filter(function (n) { return L[n] !== undefined && L[n] !== cur[n]; }).length;
+  const sales = {}; d.groups.forEach(function (g) { g.subs.forEach(function (s) { sales[s.name] = s.sales; }); });
+  const rows = list.map(function (n) {
+    const v = L[n] !== undefined ? L[n] : cur[n], changed = L[n] !== undefined && L[n] !== cur[n];
+    return `<tr${changed ? ' class="cf-chg"' : ''}><td><b>${escapeHtml(n)}</b>${all && !cur[n] ? ' <span class="cf-tag">연결 안 됨</span>' : ''}</td><td style="text-align:right">${cfN_(sales[n])}천원</td><td style="text-align:right"><select onchange="cfLinkPick_('${cfAttr_(n)}', this.value)"><option value="">${all ? '(연결 안 함)' : '주간 고객사 고르기…'}</option>${(d.weeklyNames || []).map(function (w) { return `<option value="${cfAttr_(w)}" ${v === w ? 'selected' : ''}>${escapeHtml(w)}</option>`; }).join('')}${(d.weeklyNames || []).indexOf(n) >= 0 ? '' : `<option value="${cfAttr_(n)}" ${v === n ? 'selected' : ''}>(새 고객사로 따로)</option>`}</select></td></tr>`;
+  }).join('');
+  const head = all ? `<b>🔗 고객사 연결 고치기 — 시스템 고객사 ${list.length}곳</b>` : `<b>⚠ 주간 고객사와 연결이 안 된 고객사 ${unl.length}곳</b> — 고르면 그 묶음 아래로 옮겨지고 계획이 붙어요. 모두 연결해야 [최종 확정]할 수 있어요.`;
+  return `<div class="cf-warn">${head}<div class="pf-mut" style="font-size:12px;margin-top:4px;">저장하면 <b>이 달과 아직 최종 확정 전인 다른 달</b>, 그리고 다음 달부터 적용돼요(연결 탭에 저장). ${d.final ? '이 달은 최종 확정돼서 표는 그대로예요. ' : ''}최종 확정된 달은 바뀌지 않아요.</div>
+<table class="cf-link">${rows}</table>
+<div class="cf-bar" style="margin:8px 0 0"><button type="button" class="btn-primary" ${ch && !cf_.busy ? '' : 'disabled style="opacity:.5"'} onclick="cfLinkSave_()">연결 저장${ch ? ' (' + ch + '곳)' : ''}</button>${all ? '<button type="button" class="pf-btn" onclick="cfRelink_(false)">닫기</button>' : `<button type="button" class="pf-btn" onclick="cfRelink_(true)">🔗 전체 연결 고치기</button>`}<span class="pf-mut">한 번에 다 안 골라도 돼요 — 바꾼 곳만 저장</span></div></div>`;
+}
+// 담당 정하기·고치기(2026-11-25 재홍님): 사무소 담당이 2명 이상인 고객사는 팀장이 고름(기억 → 다음 달부터 자동). [담당 고치기] = 전체
+function cfMgrHtml_(d, r) {
+  if (!r.canLink || d.final || !d.teamManagers) return '';
+  const ch = d.mgrChoices || [], all = !!cf_.remgr, P = cf_.picks || {};
+  const subs = []; d.groups.forEach(function (g) { g.subs.forEach(function (s) { subs.push(s); }); });
+  const list = all ? subs.map(function (s) { return { name: s.name, office: s.office, manager: s.manager, candidates: d.teamManagers }; }) : ch;
+  if (!list.length) return `<div class="cf-bar" style="margin:0 0 8px"><button type="button" class="pf-btn" onclick="cfRemgr_(true)">👤 담당 고치기</button><span class="pf-mut">고객사를 맡는 담당을 바꿔요(다음 달부터 기억)</span></div>`;
+  const n = list.filter(function (x) { return P[x.name] && P[x.name] !== x.manager; }).length;
+  const rows = list.map(function (x) {
+    const v = P[x.name] || x.manager, opts = x.candidates.indexOf(x.manager) < 0 && !all ? [''].concat(x.candidates) : x.candidates;
+    return `<tr${P[x.name] && P[x.name] !== x.manager ? ' class="cf-chg"' : ''}><td><b>${escapeHtml(x.name)}</b>${x.office ? ` <span class="cf-off">${escapeHtml(x.office)}</span>` : ''}</td><td class="pf-mut" style="font-size:12px">지금: ${escapeHtml(x.manager || '없음')}</td><td style="text-align:right"><select onchange="cfMgrPick_('${cfAttr_(x.name)}', this.value)">${opts.map(function (m) { return `<option value="${cfAttr_(m)}" ${m === v ? 'selected' : ''}>${m ? escapeHtml(m) : '담당 고르기…'}</option>`; }).join('')}</select></td></tr>`;
+  }).join('');
+  const head = all ? `<b>👤 담당 고치기 — 고객사 ${list.length}곳</b>` : `<b>👤 담당을 골라 주세요 — 사무소에 담당이 2명 이상인 고객사 ${ch.length}곳</b> (고르기 전에는 팀장이 맡아요)`;
+  return `<div class="cf-warn">${head}<div class="pf-mut" style="font-size:12px;margin-top:4px;">고른 담당은 기억해서 다음 달부터 자동으로 보내요. 이 달과 아직 최종 확정 전인 달에 적용되고, 새 담당이 이미 [확정]했으면 그 담당 확정이 다시 열려요.</div>
+<table class="cf-link">${rows}</table>
+<div class="cf-bar" style="margin:8px 0 0"><button type="button" class="btn-primary" ${n && !cf_.busy ? '' : 'disabled style="opacity:.5"'} onclick="cfMgrSave_()">담당 저장${n ? ' (' + n + '곳)' : ''}</button>${all ? '<button type="button" class="pf-btn" onclick="cfRemgr_(false)">닫기</button>' : '<button type="button" class="pf-btn" onclick="cfRemgr_(true)">👤 전체 담당 고치기</button>'}</div></div>`;
+}
+function cfRemgr_(on) { cf_.remgr = !!on; cf_.picks = {}; cfRender_(); }
+function cfMgrPick_(name, v) { cf_.picks = cf_.picks || {}; if (v) cf_.picks[name] = v; else delete cf_.picks[name]; cf_.msg = null; cfRender_(); }
+async function cfMgrSave_() {
+  const cur = {}; cf_.res.data.groups.forEach(function (g) { g.subs.forEach(function (s) { cur[s.name] = s.manager; }); });
+  const send = {}; Object.keys(cf_.picks || {}).forEach(function (n) { if (cf_.picks[n] && cf_.picks[n] !== cur[n]) send[n] = cf_.picks[n]; });
+  if (!Object.keys(send).length) { cf_.msg = { text: '바꾼 담당이 없어요.' }; cfRender_(); return; }
+  const res = await cfPost_({ action: 'cfAssign', picks: send });
+  cf_.msg = res && res.ok ? { ok: true, text: '고객사 ' + res.assigned + '곳 담당을 저장했어요' + (res.months && res.months.length ? ' · 바뀐 달: ' + res.months.map(function (m) { return m + '월'; }).join('·') : '') + (res.kept && res.kept.length ? ' · 최종 확정된 ' + res.kept.map(function (m) { return m + '월'; }).join('·') + '은 그대로' : '') + (res.reopened && res.reopened.length ? ' · 확정이 다시 열린 담당: ' + res.reopened.map(function (k) { return k.split('/')[1]; }).join('·') : '') + ' · 다음 달부터 기억해요.' } : { text: cfErr_(res) };
+  if (res && res.ok) { cf_.picks = {}; cf_.remgr = false; }
+  loadConfirmedPage(true);
+}
+function cfRelink_(on) { cf_.relink = !!on; cf_.links = {}; cfRender_(); }
+function cfLinkPick_(name, v) { cf_.links = cf_.links || {}; cf_.links[name] = v; cf_.msg = null; cfRender_(); }
+async function cfLinkSave_() {
+  const d = cf_.res.data, cur = {}; d.groups.forEach(function (g) { g.subs.forEach(function (s) { cur[s.name] = g.unlinked ? '' : g.name; }); });
+  const send = {}; Object.keys(cf_.links || {}).forEach(function (n) { const v = cf_.links[n]; if (v && v !== cur[n]) send[n] = v; }); // 빈칸(연결 안 함)은 보내지 않음
+  if (!Object.keys(send).length) { cf_.msg = { text: '바꾼 연결이 없어요(연결을 지우는 것은 할 수 없어요).' }; cfRender_(); return; }
+  const res = await cfPost_({ action: 'cfLink', links: send });
+  cf_.msg = res && res.ok ? { ok: true, text: '고객사 ' + res.linked + '곳 연결을 저장했어요' + (res.months && res.months.length ? ' · 바뀐 달: ' + res.months.map(function (m) { return m + '월'; }).join('·') : '') + (res.kept && res.kept.length ? ' · 최종 확정된 ' + res.kept.map(function (m) { return m + '월'; }).join('·') + '은 그대로' : '') + ' · 다음 달부터 자동으로 이어져요.' } : { text: cfErr_(res) };
+  if (res && res.ok) { cf_.links = {}; cf_.relink = false; }
+  loadConfirmedPage(true);
 }
 // 입력 칸: 값만 기억하고 표는 다시 그리지 않음(커서 유지) — 칸 색·글자 수·아래 막대만 고침
 function cfEdit_(name, k, v, el) {
@@ -8265,8 +8329,8 @@ function cfBar_() {
       : `<button type="button" class="btn-primary" ${short.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfConfirm_()">확정</button><span class="pf-mut">${short.length ? '비고 ' + d.minNote + '자 미만 ' + short.length + '곳 — 모두 쓰면 [확정]할 수 있어요' : '비고 ' + mine.length + '곳 모두 ' + d.minNote + '자 이상 ✓ · 확정 뒤에도 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요'}${ch.length ? ' · [확정]하면 고친 값도 같이 저장돼요' : ''}</span>`;
   }
   if (r.canFinal && !d.final) {
-    const left = d.managers.filter(function (m) { return !m.done; }).map(function (m) { return m.name; });
-    h += `<button type="button" class="btn-primary" ${left.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfFinal_()">최종 확정</button><span class="pf-mut">${left.length ? escapeHtml(left.join('·')) + ' 담당 확정 뒤 누를 수 있어요' : '담당 모두 확정 ✓'}</span>`;
+    const left = d.managers.filter(function (m) { return !m.done; }).map(function (m) { return m.name; }), loose = (d.unlinked || []).length;
+    h += `<button type="button" class="btn-primary" ${left.length || loose || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfFinal_()">최종 확정</button><span class="pf-mut">${loose ? '연결 안 된 고객사 ' + loose + '곳을 연결해야 누를 수 있어요' + (left.length ? ' · ' : '') : ''}${left.length ? escapeHtml(left.join('·')) + ' 담당 확정 뒤 누를 수 있어요' : (loose ? '' : '담당 모두 확정 ✓')}</span>`;
   }
   if (ch.length) h += `<span class="pf-mut"><span class="csp-chg">바뀐 곳 ${ch.length}곳</span></span>`;
   el.innerHTML = h;
@@ -8301,43 +8365,48 @@ async function cfFinal_() {
 }
 
 // ---- 엑셀 올리기(관리자) ----
+// 2026-11-25 재홍님: 파일 안 팀을 한 번에 올림(관리자만). 연결 안 된 고객사가 있어도 올라가고('연결 안 된 고객사' 묶음), 연결은 그 팀 팀장이 나중에 해도 됨
 function cfUpHtml_(d) {
   const u = cf_.up;
-  if (!u) return `<div class="cf-drop cf-drop-s"><label class="pf-btn" style="display:inline-block;">📄 매출마감 엑셀 ${d ? '다시 ' : ''}올리기<input type="file" accept=".xlsx" style="display:none" onchange="cfFile_(this)"></label> <span class="pf-mut">당사 시스템에서 내려받은 매출마감 엑셀(.xlsx) · 관리자만${d ? ' · 같은 달을 다시 올리면 바뀐 고객사만 다시 열려요' : ''}</span></div>`;
+  if (!u) return `<div class="cf-drop cf-drop-s"><label class="pf-btn" style="display:inline-block;">📄 매출마감 엑셀 ${d ? '다시 ' : ''}올리기<input type="file" accept=".xlsx" style="display:none" onchange="cfFile_(this)"></label> <span class="pf-mut">당사 시스템에서 내려받은 매출마감 엑셀(.xlsx) · 관리자만 · 파일 안 팀을 한 번에 올려요${d ? ' · 같은 달을 다시 올리면 바뀐 고객사만 다시 열려요' : ''}</span></div>`;
   if (u.loading) return `<div class="cf-drop"><span class="mro-spinner"></span> ${escapeHtml(u.loading)}</div>`;
   if (u.error) return `<div class="cf-drop"><div class="cy-band cy-red">${escapeHtml(u.error)}</div><button type="button" class="pf-btn" onclick="cfUpClose_()">닫기</button></div>`;
-  const p = u.preview, teamNames = Object.keys(u.parsed.teams);
-  let h = `<div class="cf-drop" style="padding:14px">📄 <b>${escapeHtml(u.fileName)}</b> 읽음 · ${cfN_(u.parsed.rows)}줄${p && !p.first ? ' · <b>같은 ' + u.month + '월 ' + escapeHtml(u.team) + '를 다시 올려요</b>' + (cf_.res.data && cf_.res.data.final && cf_.res.month === u.month && cf_.res.team === u.team ? ' · 지금 상태: <b style="color:#1d6b43">최종 확정됨</b>' : '') : ''}</div>`;
-  if (teamNames.length > 1) h += `<div class="pf-tabs cf-pills">${teamNames.map(function (t) { return `<button type="button" class="${t === u.team ? 'on' : ''}" onclick="cfUpTeam_('${cfAttr_(t)}')">${escapeHtml(t)}</button>`; }).join('')}<span class="pf-mut" style="align-self:center;margin-left:6px;">파일 안 팀 — 팀마다 따로 올려요</span></div>`;
-  if (!p) return h + `<div class="feed-loading"><span class="mro-spinner"></span>미리보기 만드는 중...</div>`;
-  if (p.error) return h + `<div class="cy-band cy-red">${escapeHtml(cfErr_(p))}</div><div class="cf-bar"><button type="button" class="pf-btn" onclick="cfUpClose_()">닫기</button></div>`;
-  const items = u.parsed.teams[u.team];
-  const unclosed = items.reduce(function (a, it) { return a + it.unclosed; }, 0);
-  h += `<div class="cf-sum"><div>매출마감월<b>${u.year}년 ${u.month}월</b></div><div>팀(실적부서명)<b>${escapeHtml(u.team)}</b></div><div>시스템 고객사<b>${items.length}곳</b></div><div>매입 미마감 줄<b style="${unclosed ? 'color:#b3413a' : ''}">${unclosed}줄</b></div></div>`;
-  const D = p.diff;
-  if (!p.first) {
-    h += `<div class="cf-sum"><div>그대로<b>${D.same.length}곳</b></div><div>매출·이익 바뀜<b style="${D.changed.length ? 'color:#b3413a' : ''}">${D.changed.length}곳</b></div><div>새로 생김<b>${D.added.length}곳</b></div><div>파일에서 빠짐<b style="${D.removed.length ? 'color:#b3413a' : ''}">${D.removed.length}곳</b></div></div>`;
-    if (p.changedAny) h += `<div class="cf-warn"><b>⚠ 적용하기 전에 확인해 주세요</b><table class="cf-link">` + D.changed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">바뀜</span></td><td>매출 ${cfN_(c.from.sales)} → ${cfN_(c.to.sales)} · 시스템 이익 ${cfN_(c.from.profit)} → ${cfN_(c.to.profit)}</td><td style="text-align:right">이익 고친 값은 <b>지우고 새 시스템 값</b>으로 · 비고는 <b>남기고 "다시 확인"</b></td></tr>`; }).join('')
-      + D.added.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag cf-tag-g">새로</span></td><td>매출 ${cfN_(c.sales)} · 이익 ${cfN_(c.profit)}</td><td style="text-align:right">추가</td></tr>`; }).join('')
-      + D.removed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">빠짐</span></td><td>지난번 매출 ${cfN_(c.sales)}</td><td style="text-align:right">확정 실적에서 <b>지움</b>(이익·비고도 같이)</td></tr>`; }).join('') + `</table></div>`;
-    h += `<div class="pf-hint">${p.changedAny ? `<b>그대로인 ${D.same.length}곳</b>은 담당이 고친 이익·비고·확정을 그대로 둬요.${p.reopen.length ? ' 확정이 다시 열리는 담당: <b>' + escapeHtml(p.reopen.join('·')) + '</b>.' : ''}${p.finalUndone ? ' 바뀐 곳이 있으니 <b>최종 확정은 풀려요</b>.' : ''}` : '바뀐 고객사가 없어요. 적용해도 매입 미마감 줄 수만 새 값이 돼요.'}</div>`;
+  const teams = Object.keys(u.parsed.teams), P = u.previews;
+  let h = `<div class="cf-drop" style="padding:14px">📄 <b>${escapeHtml(u.fileName)}</b> 읽음 · ${cfN_(u.parsed.rows)}줄 · 매출마감월 <b>${u.year}년 ${u.month}월</b> · 팀 ${teams.length}개</div>`;
+  // 팀별 요약 — 누르면 아래에 그 팀 자세히
+  h += `<table class="pf-t cf-uptab"><tr><th>팀(실적부서명)</th><th>시스템 고객사</th><th>연결 안 된 곳</th><th>이번에 바뀌는 것</th><th>매입 미마감 줄</th></tr>${teams.map(function (t) {
+    const p = P[t], items = u.parsed.teams[t], un = items.reduce(function (a, it) { return a + it.unclosed; }, 0);
+    const left = p && p.ok ? p.unlinked.length : 0;
+    const what = !p ? '<span class="mro-spinner"></span>' : (!p.ok ? `<span style="color:#b3413a">${escapeHtml(cfErr_(p))} — 이 팀은 올리지 않아요</span>`
+      : p.first ? '처음 올림' : (p.changedAny ? '바뀜 ' + p.diff.changed.length + ' · 새로 ' + p.diff.added.length + ' · 빠짐 ' + p.diff.removed.length + (p.finalUndone ? ' · <b style="color:#b3413a">최종 확정 풀림</b>' : '') : '바뀐 곳 없음'));
+    return `<tr class="${t === u.team ? 'on' : ''}" onclick="cfUpTeam_('${cfAttr_(t)}')" style="cursor:pointer"><td class="l"><b>${escapeHtml(t)}</b>${t === u.team ? ' ▾' : ''}</td><td>${items.length}곳</td><td style="${left ? 'color:#b3413a;font-weight:700' : ''}">${p && p.ok ? left + '곳' : ''}</td><td class="l">${what}</td><td style="${un ? 'color:#b3413a' : ''}">${un}줄</td></tr>`;
+  }).join('')}</table>`;
+  const p = P[u.team];
+  if (p && p.ok) {
+    const D = p.diff;
+    h += `<div class="cf-sub"><div class="cf-subhead">${escapeHtml(u.team)} 자세히</div>`;
+    if (!p.first && p.changedAny) {
+      h += `<div class="cf-warn"><b>⚠ 적용하기 전에 확인해 주세요</b><table class="cf-link">` + D.changed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">바뀜</span></td><td>매출 ${cfN_(c.from.sales)} → ${cfN_(c.to.sales)} · 시스템 이익 ${cfN_(c.from.profit)} → ${cfN_(c.to.profit)}</td><td style="text-align:right">이익 고친 값은 <b>지우고 새 시스템 값</b>으로 · 비고는 <b>남기고 "다시 확인"</b></td></tr>`; }).join('')
+        + D.added.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag cf-tag-g">새로</span></td><td>매출 ${cfN_(c.sales)} · 이익 ${cfN_(c.profit)}</td><td style="text-align:right">추가</td></tr>`; }).join('')
+        + D.removed.map(function (c) { return `<tr><td><b>${escapeHtml(c.name)}</b> <span class="cf-tag">빠짐</span></td><td>지난번 매출 ${cfN_(c.sales)}</td><td style="text-align:right">확정 실적에서 <b>지움</b>(이익·비고도 같이)</td></tr>`; }).join('') + `</table></div>`;
+      h += `<div class="pf-hint"><b>그대로인 ${D.same.length}곳</b>은 담당이 고친 이익·비고·확정을 그대로 둬요.${p.reopen.length ? ' 확정이 다시 열리는 담당: <b>' + escapeHtml(p.reopen.join('·')) + '</b>.' : ''}${p.finalUndone ? ' 바뀐 곳이 있으니 <b>최종 확정은 풀려요</b>.' : ''}</div>`;
+    }
+    if (p.unlinked.length) h += `<div class="pf-mut" style="font-size:12.5px;margin:6px 0;">주간 고객사와 연결이 안 된 곳 <b style="color:#b3413a">${p.unlinked.length}곳</b> — 그대로 올라가고('연결 안 된 고객사' 묶음), ${escapeHtml(u.team)} 팀장이 확정 실적 화면에서 연결해요.</div>`;
+    const cnt = {}; D.added.concat(D.changed).forEach(function (c) { if (c.manager) cnt[c.manager] = (cnt[c.manager] || 0) + 1; });
+    const why = { NO_OFFICE: '구매담당 사무소를 못 찾음', OFFICE_NONE: '그 사무소 담당 없음', OFFICE_MANY: '그 사무소 담당 2명 이상 → 팀장이 화면에서 고름', NO_LEAD: '팀장도 없음 → 담당 빈칸' };
+    if (Object.keys(cnt).length) h += `<div class="pf-mut" style="font-size:12.5px;margin:6px 0;">배정${p.first ? '' : '(바뀜·새로)'}: ${Object.keys(cnt).map(function (m) { return escapeHtml(m) + ' ' + cnt[m] + '곳'; }).join(' · ')}</div>`;
+    if (p.warnings.length) h += `<details class="cf-why"><summary>팀장이 우선 맡는 곳 ${p.warnings.length}곳</summary>${p.warnings.map(function (w) { return `<div>${escapeHtml(w.name)} — ${escapeHtml(why[w.why] || w.why)}${w.office ? ' (' + escapeHtml(w.office) + ')' : ''}${w.candidates && w.candidates.length ? ' · 후보 ' + escapeHtml(w.candidates.join('·')) : ''}${w.manager ? ' → 우선 ' + escapeHtml(w.manager) : ''}</div>`; }).join('')}</details>`;
+    h += `</div>`;
   }
-  if (p.unlinked.length) h += `<div class="cf-warn"><b>⚠ 주간 실적 고객사와 연결이 안 된 시스템 고객사 ${p.unlinked.length}곳</b> — 고르면 그 아래로 묶여 계획·순서가 붙어요(실적-고객사연결 탭에 저장, 다음 달부터 자동)
-<table class="cf-link">${p.unlinked.map(function (x) { const v = u.links[x.name] || ''; return `<tr><td><b>${escapeHtml(x.name)}</b></td><td style="text-align:right">${cfN_(x.sales)}천원</td><td style="text-align:right"><select onchange="cfUpLink_('${cfAttr_(x.name)}', this.value)"><option value="">주간 고객사 고르기…</option>${p.weeklyNames.map(function (w) { return `<option value="${cfAttr_(w)}" ${v === w ? 'selected' : ''}>${escapeHtml(w)}</option>`; }).join('')}<option value="${cfAttr_(x.name)}" ${v === x.name ? 'selected' : ''}>(새 고객사로 따로)</option></select></td></tr>`; }).join('')}</table></div>`;
-  // 배정(관리자 미리보기에만): 담당별 곳 수 + 팀장이 맡게 된 곳
-  const cnt = {}; D.added.concat(D.changed).forEach(function (c) { if (c.manager) cnt[c.manager] = (cnt[c.manager] || 0) + 1; });
-  const why = { NO_OFFICE: '구매담당 사무소를 못 찾음', OFFICE_NONE: '그 사무소 담당 없음', OFFICE_MANY: '그 사무소 담당 2명 이상', NO_LEAD: '팀장도 없음 → 담당 빈칸' };
-  if (Object.keys(cnt).length) h += `<div class="pf-mut" style="font-size:12.5px;margin:6px 0;">배정${p.first ? '' : '(바뀜·새로)'}: ${Object.keys(cnt).map(function (m) { return escapeHtml(m) + ' ' + cnt[m] + '곳'; }).join(' · ')}</div>`;
-  if (p.warnings.length) h += `<details class="cf-why"><summary>팀장이 맡게 된 곳 ${p.warnings.length}곳</summary>${p.warnings.map(function (w) { return `<div>${escapeHtml(w.name)} — ${escapeHtml(why[w.why] || w.why)}${w.office ? ' (' + escapeHtml(w.office) + ')' : ''}${w.manager ? ' → ' + escapeHtml(w.manager) : ''}</div>`; }).join('')}</details>`;
-  const left = p.unlinked.filter(function (x) { return !u.links[x.name]; }).length;
-  h += `<div class="pf-hint">${u.month}월 <b>${escapeHtml(u.team)}</b>만 바뀌어요(다른 팀은 그대로). 원본 ${cfN_(u.parsed.rows)}줄은 저장하지 않고 고객사별 합계(천원)만 시트에 써요.</div>`;
+  const ready = teams.filter(function (t) { return P[t] && P[t].ok; }), waiting = teams.some(function (t) { return !P[t]; });
+  h += `<div class="pf-hint">${u.month}월 <b>${escapeHtml(ready.join('·') || '-')}</b>이(가) 바뀌어요(파일에 없는 팀은 그대로). 원본 ${cfN_(u.parsed.rows)}줄은 저장하지 않고 고객사별 합계(천원)만 시트에 써요.</div>`;
+  if (u.progress) h += `<div class="cy-band">${escapeHtml(u.progress)}</div>`;
   if (u.applyErr) h += `<div class="cy-band cy-red">${escapeHtml(u.applyErr)}</div>`;
-  h += `<div class="cf-bar"><button type="button" class="btn-primary" ${left || u.busy || (!p.first && !p.changedAny && !D.same.length) ? 'disabled style="opacity:.5"' : ''} onclick="cfUpApply_()">${u.busy ? '적용 중...' : (p.first ? '올리기' : '적용하기')}</button><button type="button" class="pf-btn" onclick="cfUpClose_()">그만두기</button><span class="pf-mut">${left ? '연결 안 된 ' + left + '곳을 골라 주세요 · ' : ''}적용 전에는 아무것도 바뀌지 않아요</span></div>`;
+  h += `<div class="cf-bar"><button type="button" class="btn-primary" ${waiting || !ready.length || u.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfUpApply_()">${u.busy ? '올리는 중...' : (ready.length > 1 ? ready.length + '팀 모두 올리기' : '올리기')}</button><button type="button" class="pf-btn" ${u.busy ? 'disabled' : ''} onclick="cfUpClose_()">그만두기</button><span class="pf-mut">올리기 전에는 아무것도 바뀌지 않아요</span></div>`;
   return h;
 }
 function cfUpClose_() { cf_.up = null; cfRender_(); }
-function cfUpLink_(name, v) { cf_.up.links[name] = v; cf_.up.applyErr = null; cfRender_(); }
-function cfUpTeam_(t) { cf_.up.team = t; cf_.up.links = {}; cf_.up.preview = null; cfRender_(); cfUpPreview_(); }
+function cfUpTeam_(t) { if (cf_.up.busy) return; cf_.up.team = t; cfRender_(); }
 // .xlsx(zip) → { 파일 이름: Uint8Array } (필요한 파일만). 중앙 디렉터리로 위치·크기를 찾고, 압축(8)은 deflate-raw로 풂
 async function cfUnzip_(buf, want) {
   const dv = new DataView(buf), u8 = new Uint8Array(buf), out = {};
@@ -8424,25 +8493,31 @@ async function cfFile_(input) {
   catch (e) { parsed = { error: '엑셀을 읽지 못했어요(.xlsx 파일인지 확인해 주세요).' }; }
   if (parsed.error) { cf_.up = { error: parsed.error }; cfRender_(); return; }
   const tn = Object.keys(parsed.teams);
-  cf_.up = { fileName: f.name, parsed: parsed, year: parsed.year, month: parsed.month, team: tn.indexOf(cf_.res.team) >= 0 ? cf_.res.team : tn[0], links: {}, preview: null };
+  cf_.up = { fileName: f.name, parsed: parsed, year: parsed.year, month: parsed.month, team: tn.indexOf(cf_.res.team) >= 0 ? cf_.res.team : tn[0], previews: {} };
   cfRender_(); cfUpPreview_();
 }
-async function cfUpPreview_() {
+async function cfUpPreview_() { // 팀마다 차례로 미리보기(쓰기 없음)
   const u = cf_.up; if (!u || !u.parsed) return;
-  const team = u.team;
-  const res = await wkPost_({ action: 'cfPreview', year: u.year, month: u.month, team: team, items: u.parsed.teams[team] });
-  if (cf_.up !== u || u.team !== team) return;
-  u.preview = res && res.ok ? res : (res || { error: 'NETWORK' });
-  cfRender_();
+  for (const t of Object.keys(u.parsed.teams)) {
+    const res = await wkPost_({ action: 'cfPreview', year: u.year, month: u.month, team: t, items: u.parsed.teams[t] });
+    if (cf_.up !== u) return;
+    u.previews[t] = res || { ok: false, error: 'NETWORK' };
+    cfRender_();
+  }
 }
-async function cfUpApply_() {
-  const u = cf_.up; if (!u || !u.preview || u.busy) return;
-  u.busy = true; cfRender_();
-  const res = await wkPost_({ action: 'cfUpload', year: u.year, month: u.month, team: u.team, items: u.parsed.teams[u.team], links: u.links });
-  u.busy = false;
-  if (!res || !res.ok) { u.applyErr = cfErr_(res); if (res && res.error === 'UNLINKED') u.preview = Object.assign({}, u.preview, { unlinked: res.unlinked }); cfRender_(); return; }
-  cf_.up = null; cf_.year = u.year; cf_.month = u.month; cf_.team = u.team;
-  cf_.msg = { ok: true, text: u.month + '월 ' + u.team + ' 확정 실적을 ' + (res.first ? '올렸어요' : '다시 올렸어요') + '. 담당이 이익·비고를 고치고 [확정]하면 돼요. (알림 메일은 다음 단계에서 붙여요)' };
+async function cfUpApply_() { // 팀마다 차례로 올림. 중간에 실패하면 거기서 멈추고 올라간 팀을 알려 줌
+  const u = cf_.up; if (!u || u.busy) return;
+  const teams = Object.keys(u.parsed.teams).filter(function (t) { return u.previews[t] && u.previews[t].ok; }), done = [];
+  u.busy = true; u.applyErr = null;
+  for (let i = 0; i < teams.length; i++) {
+    const t = teams[i]; u.progress = t + ' 올리는 중... (' + (i + 1) + '/' + teams.length + ')'; cfRender_();
+    const res = await wkPost_({ action: 'cfUpload', year: u.year, month: u.month, team: t, items: u.parsed.teams[t] }); // 연결은 팀장이 화면에서(미리보기에서는 고르지 않음 — 2026-11-25)
+    if (!res || !res.ok) { u.busy = false; u.progress = null; u.applyErr = t + ' 올리기 실패: ' + cfErr_(res) + (done.length ? ' (먼저 올라간 팀: ' + done.join('·') + ')' : ''); cfRender_(); return; }
+    done.push(t + (res.unlinked && res.unlinked.length ? '(연결 안 된 곳 ' + res.unlinked.length + ')' : ''));
+  }
+  const keep = teams.indexOf(cf_.res.team) >= 0 ? cf_.res.team : teams[0];
+  cf_.up = null; cf_.year = u.year; cf_.month = u.month; cf_.team = keep;
+  cf_.msg = { ok: true, text: u.month + '월 확정 실적을 올렸어요: ' + done.join(', ') + '. 연결 안 된 곳은 각 팀 팀장이 이 화면에서 연결하면 돼요. (알림 메일은 다음 단계에서 붙여요)' };
   loadConfirmedPage(true);
 }
 // ==== 실적 관리 › 실적 설정 (2026-11-23 재홍님 승인) — 관리자만. 실적관리 파일 '실적-설정' 탭을 그대로 보여 주고, 바꾼 줄의 값(B) 칸만 저장 ====
