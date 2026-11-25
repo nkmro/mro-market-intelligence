@@ -67,7 +67,7 @@
   }
   .sidebar-nav-zone {
     background: linear-gradient(180deg, var(--accent), var(--sidebar-bg-end));
-    padding: 20px 12px 16px;
+    padding: 20px 12px 0; /* 2026-11-25 재홍님: 마지막 대메뉴(관리) 아래 보라 여백이 붙어 더 높아 보이던 것 없앰(16→0) */
   }
   .sidebar-title { font-size: 12px; font-weight: 400; margin: 4px 12px 18px; color: rgba(255,255,255,.7); letter-spacing: .3px; }
   .nav-item {
@@ -84,10 +84,10 @@
     font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px;
   }
   /* 1단계-다 (설계서 2-1): 사이드바 메뉴 묶음. 묶음 제목을 누르면 접고 펼친다. */
-  .nav-group { margin-bottom: 6px; }
+  .nav-group { margin-bottom: 0; } /* 2026-11-25 재홍님: 대메뉴 높이 통일 — 묶음 사이 6px 여백이 다음 대메뉴 위에 붙어 높이가 들쭉날쭉하던 것 없앰 */
   .nav-group-head {
     display: flex; align-items: center; gap: 6px;
-    padding: 10px 12px 6px; font-size: 15px; font-weight: 700;
+    padding: 0 12px; min-height: 42px; box-sizing: border-box; font-size: 15px; font-weight: 700; /* 2026-11-25 재홍님: 대메뉴 높이 42px 고정 + 글자 세로 가운데(위 10·아래 6 → 가운데) */
     color: #fff; cursor: pointer; letter-spacing: .2px;
   }
   .nav-group-caret { display: inline-block; width: 14px; font-size: 10px; opacity: .85; transition: transform .15s; }
@@ -95,7 +95,7 @@
   .nav-group-body .nav-item { font-size: 13px; padding: 8px 12px 8px 30px; }
   .nav-group-body .nav-item .ic svg { width: 14px; height: 14px; }
   /* 2026-11-25 재홍님: 소메뉴는 회사 인트라넷처럼 밝은 판(연보라 회색) + 진한 글자, 줄마다 가는 선. 올리면(hover) 색이 바뀌고, 나머지 메뉴 판은 한 단계 진한 연보라(#dedaec — 같은 날 재홍님: 카드색보다 진한 쪽으로), 지금 화면은 본문과 같은 바탕(--bg)이라 본문과 이어져 보임 + 보라 글자·왼쪽 막대(같은 날 재홍님) */
-  .nav-group-body { background: #dedaec; margin: 2px -12px 0; padding: 0; border-top: 1px solid #dcd9ea; }
+  .nav-group-body { background: #dedaec; margin: 0 -12px; padding: 0; border-top: 1px solid #dcd9ea; }
   .nav-group-body .nav-item { color: #3d3a4f; border-radius: 0; margin: 0; border-bottom: 1px solid #cdc7e0; padding: 8px 12px 8px 38px; position: relative; }
   .nav-group-body .nav-item .ic svg { stroke: #6a5fa8; }
   .nav-group-body .nav-item:hover:not(.active) { background: #cbc3e6; color: var(--accent); }
