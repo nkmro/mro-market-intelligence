@@ -3300,6 +3300,12 @@ exports.issueMailBatchTest = async (req, res) => {
   } catch (wsErr) {
     console.error('[weeklySalesMail] 오류: ' + String((wsErr && wsErr.message) || wsErr));
   }
+  // [2026-11-25] 확정 실적 알림 메일(올림·담당 모두 확정) — 자체 try/catch(실패해도 아래 이슈 메일은 그대로). 결과는 로그 한 줄만
+  try {
+    console.log('[confirmedMail] ' + JSON.stringify(await runConfirmedMail_(nowMs)));
+  } catch (cmErr) {
+    console.error('[confirmedMail] 오류: ' + String((cmErr && cmErr.message) || cmErr));
+  }
   try {
     const client = await getSheetsClient();
     const valueRanges = await batchGetValues(client, SPREADSHEET_ID, FEED_BATCH_RANGES, { unformatted: true });
@@ -5239,6 +5245,18 @@ exports.savePerformanceTest = async (req, res) => {
 // =====================================================================
 const weeklySales = require('./lib/weeklySales');
 const confirmedSales = require('./lib/confirmedSales'); // 2026-11-23 확정 실적
+const confirmedMail = require('./lib/confirmedMail'); // 2026-11-25 확정 실적 알림 메일(올림·담당 모두 확정)
+// 확정 실적 알림 메일 예약(Firestore confirmedSalesMails). 실제 발송은 issueMailBatchTest의 runConfirmedMail_(회사 메일 비밀번호가 그 함수에만 연결).
+// 실패해도 올리기·확정은 그대로 성공(로그만) — 메일은 부가 기능
+async function cfMailMark_(kind, year, month, team, make) {
+  try {
+    const ref = firestore.collection(confirmedMail.COLL).doc(confirmedMail.docId(kind, year, month, team));
+    const snap = await ref.get();
+    const rec = make(snap.exists ? snap.data() : null);
+    if (rec) await ref.set(Object.assign(rec, { updatedAt: FieldValue.serverTimestamp() }));
+    return rec ? 'pending' : 'none';
+  } catch (e) { console.error('[confirmedMail] 예약 실패(' + kind + ' ' + year + '-' + month + ' ' + team + '): ' + String((e && e.message) || e)); return 'error'; }
+}
 exports.getWeeklySalesTest = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -5613,6 +5631,7 @@ async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) 
         .concat(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; }))
         .concat(plan.progWrites.map(function (w) { return { range: q(confirmedSales.TAB_CPROG) + '!' + w.range, values: [w.values] }; }));
       const r = await write(data, cells(plan.linkWrites) + cells(plan.writes) + cells(plan.progWrites));
+      if (r.ok) summary.mail = await cfMailMark_(confirmedMail.KIND_UPLOAD, plan.year, plan.month, plan.team, function (prev) { return confirmedMail.uploadRecord(prev, plan, nowMs); }); // 2026-11-25 올림 알림 메일
       return Object.assign(r, r.ok ? summary : {});
     }
     if (b.action === 'cfLink') {
@@ -5645,6 +5664,12 @@ async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) 
       : confirmedSales.planFinal(common);
     if (!plan.ok) return plan;
     const r = await write([{ range: q(confirmedSales.TAB_CPROG) + '!' + plan.write.range, values: [plan.write.values] }], cells([plan.write]));
+    if (r.ok && b.action === 'cfConfirm') { // 2026-11-25 담당 모두 확정 → 팀장에게 '최종 확정' 알림 메일 예약
+      const y = Number(b.year), m = Number(b.month);
+      const st = confirmedSales.stateOf(f.progRows.concat([plan.write.values]), y, m, lead.team);
+      const rec = confirmedMail.doneRecord(y, m, lead.team, confirmedSales.confRowsOf(f.confRows, y, m, lead.team), st, nowMs);
+      if (rec) r.mail = await cfMailMark_(confirmedMail.KIND_DONE, y, m, lead.team, function () { return rec; });
+    }
     return Object.assign(r, { stage: plan.write.values[3] });
   } finally {
     await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId);
@@ -5854,6 +5879,65 @@ exports.saveWeeklySalesTest = async (req, res) => {
 
 // issueMailBatchTest(매시 2분)에서 부름: ① 4팀 완료 결과 메일(latest 문서가 있고 아직 안 보낸 주차) ② 16시 알림(입력일·마감 시각 이후·미완료 팀)
 // 메일 1건 = weeklySalesMails 문서 1개(done이면 건너뜀, 일부 실패면 다음 정시에 남은 사람만 — 성과 마감 메일과 같은 방식). 보낸 뒤 실적-진행에 기록 한 줄.
+// ===== [2026-11-25] 확정 실적 알림 메일 (lib/confirmedMail.js) =====
+// issueMailBatchTest(매시)에서 자체 try/catch로 돈다. Firestore confirmedSalesMails에서 status 'pending'만 읽고(없으면 시트도 안 읽음),
+// 결과메일대기분이 지난 건만 그해 실적관리 파일을 다시 읽어 지금 상태로 받는 사람을 정해 보냄. 보낸 뒤 실적-확정진행에 '알림 메일' 줄(사람이 시트에서 보게)
+async function runConfirmedMail_(nowMs) {
+  const snap = await firestore.collection(confirmedMail.COLL).where('status', '==', 'pending').get();
+  if (snap.empty) return { skipped: true, reason: 'NOTHING_PENDING' };
+  const client = await getSheetsClient();
+  const files = {}, summary = { sent: [], waiting: 0, skipped: [] }, logs = [];
+  let loggedIn = false;
+  for (const ds of snap.docs) {
+    const d = ds.data(), ref = ds.ref, year = Number(d.year);
+    if (!files[year]) { const mro = await weeklyMro_(client, '', year); files[year] = { mro: mro, f: mro.fileId ? await cfFile_(client, mro.fileId) : null }; }
+    const mro = files[year].mro, f = files[year].f;
+    if (!f || !f.ok) { summary.skipped.push(ds.id + ':NO_FILE'); continue; } // 파일·탭을 못 읽으면 기다렸다가 다음 정시에 다시
+    if (f.settings.메일사용 === false) { await ref.set({ status: 'off', updatedAt: FieldValue.serverTimestamp() }, { merge: true }); summary.skipped.push(ds.id + ':DISABLED'); continue; }
+    if (!confirmedMail.due(d, nowMs, f.settings)) { summary.waiting++; continue; }
+    const job = confirmedMail.buildJob({ doc: d, confRows: f.confRows, progRows: f.progRows, userRows: mro.userRows, mgrRows: f.mgrRows, customers: f.customers,
+      adminEmail: ADMIN_EMAIL, minNote: f.settings.확정비고최소글자 });
+    if (job.skip) { await ref.set({ status: 'skipped', reason: job.skip, updatedAt: FieldValue.serverTimestamp() }, { merge: true }); summary.skipped.push(ds.id + ':' + job.skip); continue; }
+    const before = {}; (d.sentTo || []).forEach(function (e) { before[e] = true; });
+    const msgs = job.recipients.filter(function (r) { return !before[r.email]; }).map(function (r) {
+      const parts = confirmedMail.mailParts(job.info, r, perfCloseMail.APP_URL);
+      return { to: parts.to, subject: parts.subject, text: perfCloseMail.buildText(parts), html: perfCloseMail.buildHtml(parts) };
+    });
+    if (!msgs.length) { await ref.set({ status: 'done', updatedAt: FieldValue.serverTimestamp() }, { merge: true }); continue; }
+    if (!loggedIn) {
+      try { await mailer.verifyLogin(); loggedIn = true; } catch (loginErr) { summary.loginFailed = mailer.describeError(loginErr); break; } // 로그인 1번만(계정 잠김 방지), 다음 정시에 다시
+    }
+    const sent = (d.sentTo || []).slice(); let failed = 0;
+    const res = await mailer.sendMessages(msgs);
+    if (!res.ok) failed = msgs.length; else res.results.forEach(function (x) { if (x.ok) sent.push(x.to); else failed++; });
+    const tries = (Number(d.tries) || 0) + 1;
+    const now = (await ref.get()).data() || {};
+    if (Number(now.atMs) !== Number(d.atMs)) { summary.skipped.push(ds.id + ':CHANGED'); continue; } // 보내는 사이 다시 올림·다시 확정 → 새 예약을 그대로 둠
+    await ref.set({ status: failed && tries < 3 ? 'pending' : (failed ? 'partial' : 'done'), sentTo: sent, failed: failed, tries: tries, updatedAt: FieldValue.serverTimestamp() }, { merge: true }); // 실패한 사람만 다음 정시에 다시(3번까지)
+    const n = msgs.length - failed;
+    summary.sent.push({ id: ds.id, sent: n, failed: failed });
+    if (n > 0) logs.push({ fileId: mro.fileId, year: year, month: Number(d.month), team: confirmedSales.cfTeam(d.team), stage: d.kind === confirmedMail.KIND_DONE ? '알림 메일(모두 확정)' : '알림 메일(올림)', n: n });
+  }
+  // 실적-확정진행에 기록(stateOf는 모르는 단계를 무시). 잠금 안에서 다시 읽고 이어 쓰기 — 실패해도 메일은 이미 나갔으므로 로그만
+  for (const fileId of Object.keys(logs.reduce(function (a, l) { a[l.fileId] = true; return a; }, {}))) {
+    const holderId = crypto.randomUUID();
+    try {
+      if (!(await acquireLock(firestore, WEEKLY_LOCK_NAME, holderId, { waitMs: WEEKLY_LOCK_WAIT_MS, staleMs: WEEKLY_LOCK_STALE_MS, pollMs: WEEKLY_LOCK_POLL_MS }))) continue;
+      try {
+        const fresh = await cfFile_(client, fileId);
+        if (!fresh.ok) continue;
+        const q = competency.quoteTab, stamp = weeklySales.seoulStamp(nowMs);
+        let row = (function () { let last = 1; (fresh.progRows || []).forEach(function (r, i) { if ((r || []).some(function (c) { return String(c === undefined || c === null ? '' : c).trim() !== ''; })) last = i + 2; }); return last + 1; })(); // 다음 빈 줄(confirmedSales nextFreeRow와 같은 규칙)
+        const data = logs.filter(function (l) { return l.fileId === fileId; }).map(function (l) {
+          const w = { range: q(confirmedSales.TAB_CPROG) + '!A' + row + ':G' + row, values: [[l.year, l.month, l.team, l.stage, l.n + '통', '자동', stamp]] }; row++; return w;
+        });
+        await perfBatchWrite_(fileId, data);
+      } finally { await releaseLock(firestore, WEEKLY_LOCK_NAME, holderId); }
+    } catch (logErr) { console.error('[confirmedMail] 진행 기록 실패(메일은 발송됨): ' + logErr); }
+  }
+  return summary;
+}
+
 async function runWeeklySalesMail_(nowMs) {
   const stateSnap = await firestore.collection(WEEKLY_STATE).doc('latest').get();
   const latest = stateSnap.exists ? stateSnap.data() : null;

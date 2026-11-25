@@ -1884,7 +1884,7 @@ function stashDeepLink_() {
   try {
     const q = new URLSearchParams(location.search);
     if (q.get('post') && q.get('comment')) sessionStorage.setItem('mro_pending_deeplink', location.search);
-    if (q.get('view') === 'perf' || q.get('view') === 'weekly') sessionStorage.setItem('mro_pending_view', location.search); // 2026-11-13 성과평가 마감 메일 링크 · 2026-11-17 주간 실적 메일 링크
+    if (q.get('view') === 'perf' || q.get('view') === 'weekly' || q.get('view') === 'confirmed') sessionStorage.setItem('mro_pending_view', location.search); // 2026-11-13 성과평가 마감 메일 링크 · 2026-11-17 주간 실적 메일 링크 · 2026-11-25 확정 실적 알림 메일
   } catch (e) {}
 }
 
@@ -2051,7 +2051,7 @@ try {
 // 2026-11-13 성과평가 마감 메일의 "성과평가 바로가기"(feed.html?view=perf, 임원은 &team=동부) → 성과평가 화면.
 // 로그인 전이었다면 stashDeepLink_()가 맡겨 둔 값을 쓴다. 처리 후 주소창 값은 지워 새로고침해도 다시 이동하지 않게. 실패해도 기존 화면 영향 없음.
 try {
-  const __pvSearch = ['perf', 'weekly'].indexOf(new URLSearchParams(location.search).get('view')) >= 0 ? location.search : (sessionStorage.getItem('mro_pending_view') || '');
+  const __pvSearch = ['perf', 'weekly', 'confirmed'].indexOf(new URLSearchParams(location.search).get('view')) >= 0 ? location.search : (sessionStorage.getItem('mro_pending_view') || '');
   sessionStorage.removeItem('mro_pending_view');
   const __pv = new URLSearchParams(__pvSearch);
   if (__pv.get('view') === 'perf') {
@@ -2063,6 +2063,14 @@ try {
   if (__pv.get('view') === 'weekly' && document.getElementById('nav-weekly').style.display !== 'none') {
     if (new URLSearchParams(location.search).get('view') === 'weekly') history.replaceState(null, '', location.pathname);
     switchView('weekly');
+  }
+  // 2026-11-25 확정 실적 알림 메일의 [확정 실적 열기](feed.html?view=confirmed&team=동부&month=10&year=2026) — 메뉴가 보이는 사람만, 그 팀·그 달로(볼 수 없는 팀이면 서버가 FORBIDDEN_TEAM)
+  if (__pv.get('view') === 'confirmed' && document.getElementById('nav-confirmed').style.display !== 'none') {
+    if (new URLSearchParams(location.search).get('view') === 'confirmed') history.replaceState(null, '', location.pathname);
+    if (__pv.get('team')) cf_.team = __pv.get('team');
+    if (/^\d{4}$/.test(__pv.get('year') || '')) cf_.year = Number(__pv.get('year'));
+    if (/^\d{1,2}$/.test(__pv.get('month') || '')) cf_.month = Number(__pv.get('month'));
+    switchView('confirmed');
   }
 } catch (e) {}
 // 2026-10-07 신규(재홍님 요청) — 이슈 댓글 메일의 "앱에서 이 댓글 보기" 링크
