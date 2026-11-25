@@ -867,7 +867,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .cf-in { width: 92px; text-align: right; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid #c9c5d8; border-radius: 6px; } .cf-in.chg { border-color: var(--accent); background: #f2eaf6; font-weight: 700; }
 .cf-orig { display: block; font-size: 10.5px; color: #9a9a9a; } .cf-orig.chg { color: #b3413a; }
 .cf-t td.cf-notecell { white-space: normal; min-width: 240px; }
-.cf-note { width: 100%; min-width: 220px; box-sizing: border-box; font: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid #c9c5d8; border-radius: 6px; } .cf-note.bad { border-color: #b3413a; background: #fdf3f1; }
+.cf-note { width: 100%; min-width: 220px; box-sizing: border-box; font: inherit; font-size: 12.5px; line-height: 1.5; padding: 5px 8px; border: 1px solid #c9c5d8; border-radius: 6px; resize: none; overflow: hidden; display: block; } /* 2026-11-25 묶음 비고: 글이 길면 칸이 아래로 늘어남 */ .cf-note.bad { border-color: #b3413a; background: #fdf3f1; }
 .cf-cnt { display: block; font-size: 10.5px; color: #1d6b43; text-align: right; } .cf-cnt.bad { color: #b3413a; } .cf-cnt.cf-left { text-align: left; margin-top: 3px; }
 .cf-rate.up { color: #1d6b43; font-weight: 700; } .cf-rate.dn { color: #b3413a; font-weight: 700; }
 .cf-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; } .cf-bar .pf-mut { font-size: 12.5px; }
@@ -8128,16 +8128,16 @@ function wkErr_(res) { return res && WK_ERR_[res.error] ? WK_ERR_[res.error] + (
 // 화면·출력에 담당·사무소는 없음(재홍님 2026-11-23). 매출은 고칠 수 없음, 이익·비고만
 const CF_FIRST_YEAR_ = 2026; // 확정 실적을 시작한 해(이보다 앞 연도로는 가지 않음)
 const CF_COLS_ = { name: '구매사명', buyer: '구매담당', dept: '실적부서명', sales: '매출금액_원화', cost: '매입금액_원화', saleDate: '매출마감일', costDate: '매입마감일' };
-let cf_ = { year: null, month: null, team: null, res: null, edits: {}, msg: null, busy: false, up: null }, cfReq_ = 0;
+let cf_ = { year: null, month: null, team: null, res: null, edits: {}, notes: {}, msg: null, busy: false, up: null }, cfReq_ = 0; // notes = 묶음 비고(2026-11-25)
 const CF_ERR_ = {
-  CF_TAB_MISSING: "실적관리 파일에 확정 실적 탭(실적-고객사연결·실적-확정·실적-확정진행)이 없어요. 관리자에게 알려 주세요.",
+  CF_TAB_MISSING: "실적관리 파일에 확정 실적 탭(실적-고객사연결·실적-확정·실적-확정진행·실적-담당지정·실적-확정비고)이 없어요. 관리자에게 알려 주세요.",
   CF_HEADER: '확정 실적 탭 머리줄이 달라요. 관리자에게 알려 주세요.', UNLINKED: '주간 고객사와 연결이 안 된 고객사가 있어요. 모두 골라 주세요.',
   BAD_LINK: '고른 주간 고객사가 목록에 없어요. 새로고침 후 다시 골라 주세요.', NO_DATA: '이 달에 올린 확정 실적이 없어요.', FINAL_DONE: '이미 최종 확정된 달이에요.',
   SALES_LOCKED: '매출은 고칠 수 없어요(계산서 기준).', NOT_MY_CUSTOMER: '내 담당 고객사가 아니에요. 새로고침 후 다시 해 주세요.', MY_DONE: '이미 [확정]했어요. [확정 취소] 뒤에 고쳐 주세요.',
   MANAGERS_NOT_DONE: '아직 [확정]하지 않은 담당이 있어요', NO_MANAGER: '담당이 정해지지 않은 고객사가 있어요(팀장 없음)', ALREADY_DONE: '이미 [확정]했어요.', NOT_DONE: '확정 상태가 아니에요.',
   BAD_MONTH: '엑셀의 매출마감일을 읽지 못했어요.', NO_ROWS: '확정할 내 고객사가 없어요.', TOO_MANY: '고객사가 너무 많아요(2,000곳까지).', DUPLICATE_CUSTOMER: '같은 이름이 두 번 있어요.',
   BAD_NUMBER: '이익에는 정수(천원)만 넣어 주세요.', NOTE_TOO_LONG: '비고는 200자까지예요.', BAD_NAME: '구매사명이 비었거나 너무 길어요.', NO_TEAM: '실적-고객사 탭에 이 팀 고객사가 없어요.',
-  FORBIDDEN_TEAM: '볼 수 없는 팀이에요.', BAD_MANAGER: '그 팀 담당·팀장 중에서 골라 주세요.', UNLINKED_LEFT: '주간 고객사와 연결이 안 된 고객사가 있어요', UNKNOWN_CUSTOMER: '이 달에 없는 고객사예요. 새로고침 후 다시 해 주세요.', NO_CHANGES: '바꾼 것이 없어요.', BAD_TEAM: '없는 팀이에요.', FORBIDDEN: '권한이 없어요.' };
+  FORBIDDEN_TEAM: '볼 수 없는 팀이에요.', BAD_MANAGER: '그 팀 담당·팀장 중에서 골라 주세요.', UNLINKED_LEFT: '주간 고객사와 연결이 안 된 고객사가 있어요', UNKNOWN_CUSTOMER: '이 달에 없는 고객사예요. 새로고침 후 다시 해 주세요.', NO_CHANGES: '바꾼 것이 없어요.', GROUP_DONE: '이 묶음 담당이 이미 [확정]했어요. [확정 취소] 뒤에 고쳐 주세요.', UNKNOWN_GROUP: '이 달에 없는 묶음이에요. 새로고침 후 다시 해 주세요.', NOTE_PER_GROUP: '비고는 묶음마다 써요. 새로고침 후 다시 해 주세요.', BAD_TEAM: '없는 팀이에요.', FORBIDDEN: '권한이 없어요.' };
 function cfErr_(res) {
   if (!res) return '서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.';
   if (res.error === 'NOTE_SHORT') return '비고를 ' + res.min + '자 이상 써 주세요: ' + (res.names || []).join(', ');
@@ -8159,21 +8159,31 @@ async function loadConfirmedPage(keepMsg) {
   const res = await wkFetch_({ view: 'confirmed', year: cf_.year || undefined, month: cf_.month || undefined, team: cf_.team || undefined });
   if (reqNo !== cfReq_) return;
   if (!res || !res.ok) { cf_.res = null; cf_.loading = false; root.innerHTML = `<div class="feed-empty">${escapeHtml(res && res.error === 'FORBIDDEN' ? '확정 실적은 임원·팀장·담당만 볼 수 있어요.' : cfErr_(res))}</div>`; return; }
-  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.links = {}; cf_.picks = {}; cf_.busy = false; cf_.loading = false;
+  cf_.res = res; cf_.year = res.year; cf_.month = res.month; cf_.team = res.team; cf_.edits = {}; cf_.notes = {}; cf_.links = {}; cf_.picks = {}; cf_.busy = false; cf_.loading = false;
   cfRender_();
 }
 function cfPick_(o) { Object.assign(cf_, o); if (o.year) cf_.month = null; cf_.up = null; cf_.loading = true; cfRender_(); loadConfirmedPage(); } // 누르면 바로 흐리게 + 불러오는 중
 function cfMe_() { return session ? session.email === ADMIN_EMAIL : false; }
 // 이 줄을 지금 고칠 수 있나: 최종 확정 전, 그 줄 담당이 확정 전, (내 줄 또는 관리자)
 function cfCanEdit_(s, d) { return !d.final && !s.done && (s.mine || cf_.res.isAdmin); }
-function cfVal_(s, k) { const e = cf_.edits[s.name]; return e && k in e ? e[k] : (k === 'profit' ? cfN_(s.edited ? s.profit : s.sysProfit) : s.note); } // 이익 = 화면에 보이는 글자(쉼표 포함)
+// 묶음 비고(2026-11-25 재홍님): 그 묶음에 내 고객사가 있거나 팀장·관리자, 최종 확정 전, 그 묶음 담당이 아무도 확정 전. 연결 안 된 묶음은 비고 없음
+function cfCanNote_(g, d) { return !d.final && !g.unlinked && (cf_.res.isAdmin || (session && session.role === '팀장') || g.subs.some(function (s) { return s.mine; })) && !g.subs.some(function (s) { return s.done; }); }
+function cfNoteVal_(g) { return g.name in cf_.notes ? cf_.notes[g.name] : (g.note || ''); }
+function cfNoteChanges_() { const d = cf_.res && cf_.res.data; if (!d) return []; return d.groups.filter(function (g) { return g.name in cf_.notes && String(cf_.notes[g.name]).trim() !== (g.note || ''); }).map(function (g) { return { group: g.name, note: String(cf_.notes[g.name]).trim() }; }); }
+function cfFit_(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; } // 글 길이만큼 칸 높이
+function cfNoteEdit_(i, v, el) {
+  const d = cf_.res.data, g = d.groups[Number(i)]; if (!g) return;
+  cf_.notes[g.name] = v; cf_.msg = null; cfFit_(el);
+  const n = cfLen_(v), bad = n < d.minNote; el.classList.toggle('bad', bad); const c = el.nextElementSibling; if (c) { c.className = 'cf-cnt' + (bad ? ' bad' : ''); c.textContent = n + '/' + d.minNote + '자' + (bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''); }
+  cfBar_();
+}
+function cfVal_(s, k) { const e = cf_.edits[s.name]; return e && k in e ? e[k] : cfN_(s.edited ? s.profit : s.sysProfit); } // 이익 = 화면에 보이는 글자(쉼표 포함)
 function cfChanges_() {
   const out = [], d = cf_.res && cf_.res.data; if (!d) return out;
   d.groups.forEach(function (g) { g.subs.forEach(function (s) {
     const e = cf_.edits[s.name]; if (!e) return;
     const o = { name: s.name }; let ch = false;
     if ('profit' in e) { const cur = s.edited ? String(s.profit) : '', v = String(e.profit).replace(/,/g, '').trim(); if (v !== cur && !(v === String(s.sysProfit) && cur === '')) { o.profit = v; ch = true; } }
-    if ('note' in e && String(e.note).trim() !== s.note) { o.note = String(e.note).trim(); ch = true; }
     if (ch) out.push(o);
   }); });
   return out;
@@ -8216,35 +8226,40 @@ ${cfSteps_(d)}</div>`;
       return m.done ? `<span class="wi-chip done">✓ ${escapeHtml(m.name)}${m.at ? ' · ' + escapeHtml(m.at.slice(5).replace('-', '/')) : ''}${r.isAdmin && !d.final ? ` <button type="button" class="cf-x" onclick="cfCancel_('${cfAttr_(m.name)}')">취소</button>` : ''}</span>`
         : `<span class="wi-chip ing">✎ ${escapeHtml(m.name)} · 확정 전</span>`; }).join('')}</div></div>`;
   }
-  const anyEdit = d.groups.some(function (g) { return g.subs.some(function (s) { return cfCanEdit_(s, d); }); });
-  if (anyEdit) h += `<div class="pf-hint"><b>매출은 계산서 기준이라 고칠 수 없어요</b>(틀리면 시스템·계산서를 고친 뒤 관리자가 엑셀을 다시 올려요). 매입 마감 차이 등으로 <b>이익만 고칠 수 있고</b>, 고친 칸은 보라색·원래 시스템 값은 아래 작게 남아요. 고객사마다 <b>비고를 ${d.minNote}자 이상</b> 써 주세요(계획 대비 차이·고객사 특이사항).</div>`;
+  const anyEdit = d.groups.some(function (g) { return cfCanNote_(g, d) || g.subs.some(function (s) { return cfCanEdit_(s, d); }); });
+  if (anyEdit) h += `<div class="pf-hint"><b>매출은 계산서 기준이라 고칠 수 없어요</b>(틀리면 시스템·계산서를 고친 뒤 관리자가 엑셀을 다시 올려요). 매입 마감 차이 등으로 <b>이익만 고칠 수 있고</b>, 고친 칸은 보라색·원래 시스템 값은 아래 작게 남아요. <b>비고는 묶음(취합 고객사)마다 ${d.minNote}자 이상</b> 써 주세요(계획 대비 차이·특이사항 — 묶음 안 고객사 내용을 함께).</div>`;
   h += cfLinkHtml_(d, r) + cfMgrHtml_(d, r);
   h += cfTable_(d, r.isAdmin || session.role !== '담당' ? (r.team + ' 합계') : '내 담당 합계');
   if (!d.groups.length) h += `<div class="feed-empty">${mineAny || r.isAdmin ? '고객사가 없어요.' : '이번 달 내 담당 고객사가 없어요.'}</div>`;
   h += cf_.msg ? `<div class="cy-band ${cf_.msg.ok ? 'pf-green' : 'cy-red'}">${escapeHtml(cf_.msg.text)}</div>` : '';
   h += `<div class="cf-bar" id="cf-bar"></div></div>`;
   root.innerHTML = h;
+  root.querySelectorAll('textarea.cf-note').forEach(cfFit_);
   cfBar_();
 }
+function cfGroupNote_(g, gi, d) {
+  if (cfCanNote_(g, d)) {
+    const nt = cfNoteVal_(g), n = cfLen_(nt), bad = n < d.minNote;
+    return `<textarea class="cf-note ${bad ? 'bad' : ''}" rows="1" maxlength="200" placeholder="계획 대비 차이·특이사항 (${d.minNote}자 이상)" oninput="cfNoteEdit_(${gi}, this.value, this)" aria-label="${cfAttr_(g.name)} 비고">${escapeHtml(nt)}</textarea><span class="cf-cnt ${bad ? 'bad' : ''}">${n}/${d.minNote}자${bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''}</span>`;
+  }
+  return g.note ? `<span style="font-weight:400;white-space:pre-wrap">${escapeHtml(g.note)}</span>` : '<span class="pf-mut">—</span>';
+}
 function cfTable_(d, totLabel) {
-  let h = `<div class="pf-tablewrap"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
-  d.groups.forEach(function (g) {
+  let h = `<div class="pf-tablewrap"><table class="pf-t wk-t cf-t"><tr class="wk-h1"><th class="sticky" rowspan="2">구매사명</th><th colspan="3">매출</th><th colspan="3">이익</th><th rowspan="2">비고 <small>(묶음마다 · 확정 전 ${d.minNote}자 이상)</small></th></tr><tr class="wk-h2"><th>계획</th><th>실적</th><th>달성률</th><th>계획</th><th>실적</th><th>달성률</th></tr>`;
+  d.groups.forEach(function (g, gi) {
     if (g.unlinked) { h += `<tr><td class="l sticky grp cf-loose">⚠ ${escapeHtml(g.name)} (${g.subs.length}곳)</td><td class="grp cf-loose" colspan="7" style="text-align:left;font-weight:400">주간 고객사와 연결되면 그 묶음 아래로 옮겨져요 · 팀장이 위에서 연결</td></tr>`; }
-    else h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="grp"></td></tr>`;
+    else h += `<tr><td class="l sticky grp">${escapeHtml(g.name)}</td><td class="grp">${cfN_(g.planSales)}</td><td class="grp">${cfN_(g.sales)}</td>${cfRate_(g.sales, g.planSales, 'grp')}<td class="grp">${cfN_(g.planProfit)}</td><td class="grp">${cfN_(g.profit)}</td>${cfRate_(g.profit, g.planProfit, 'grp')}<td class="l grp cf-notecell">${cfGroupNote_(g, gi, d)}</td></tr>`;
     g.subs.forEach(function (s) {
       const ed = cfCanEdit_(s, d), k = cfAttr_(s.name);
-      const re = s.recheck ? `<span class="cf-cnt bad cf-left"><span class="cf-tag">다시 확인</span>${escapeHtml(cfRe_(s.recheck))} · 비고가 맞는지 확인해 주세요</span>` : '';
-      let pv, nv;
+      const re = s.recheck ? `<span class="cf-cnt bad cf-left"><span class="cf-tag">다시 확인</span>${escapeHtml(cfRe_(s.recheck))} · 묶음 비고가 맞는지 확인해 주세요</span>` : '';
+      let pv;
       if (ed) {
         const v = cfVal_(s, 'profit'), chg = String(v).replace(/,/g, '').trim() !== String(s.sysProfit);
         pv = `<input class="cf-in ${chg ? 'chg' : ''}" inputmode="numeric" value="${cfAttr_(v)}" oninput="cfEdit_('${k}', 'profit', this.value, this)" aria-label="${k} 이익"><span class="cf-orig ${chg ? 'chg' : ''}">시스템 ${cfN_(s.sysProfit)}</span>`;
-        const nt = cfVal_(s, 'note'), n = cfLen_(nt), bad = n < d.minNote;
-        nv = `<input class="cf-note ${bad ? 'bad' : ''}" maxlength="200" value="${cfAttr_(nt)}" placeholder="계획 대비 차이·고객사 특이사항 (${d.minNote}자 이상)" oninput="cfEdit_('${k}', 'note', this.value, this)" aria-label="${k} 비고"><span class="cf-cnt ${bad ? 'bad' : ''}">${n}/${d.minNote}자${bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''}</span>`;
       } else {
         pv = cfN_(s.profit) + (s.edited ? `<span class="cf-orig chg">시스템 ${cfN_(s.sysProfit)}</span>` : '');
-        nv = s.note ? escapeHtml(s.note) : '<span class="pf-mut">—</span>';
       }
-      h += `<tr><td class="l sticky sys">${escapeHtml(s.name)}${s.office ? ` <span class="cf-off">${escapeHtml(s.office)}</span>` : ''}${s.unclosed ? `<span class="cf-k">매입 미마감 ${s.unclosed}줄</span>` : ''}</td><td></td><td>${cfN_(s.sales)}</td><td></td><td></td><td>${pv}</td><td></td><td class="l cf-notecell">${nv}${re}</td></tr>`;
+      h += `<tr><td class="l sticky sys">${escapeHtml(s.name)}${s.office ? ` <span class="cf-off">${escapeHtml(s.office)}</span>` : ''}${s.unclosed ? `<span class="cf-k">매입 미마감 ${s.unclosed}줄</span>` : ''}</td><td></td><td>${cfN_(s.sales)}</td><td></td><td></td><td>${pv}</td><td></td><td class="l cf-notecell">${re}</td></tr>`;
     });
   });
   const t = d.total;
@@ -8312,21 +8327,21 @@ async function cfLinkSave_() {
 function cfEdit_(name, k, v, el) {
   const e = cf_.edits[name] || (cf_.edits[name] = {}); e[k] = v; cf_.msg = null;
   const d = cf_.res.data;
-  if (k === 'note' && el) { const n = cfLen_(v), bad = n < d.minNote; el.classList.toggle('bad', bad); const c = el.nextElementSibling; if (c) { c.className = 'cf-cnt' + (bad ? ' bad' : ''); c.textContent = n + '/' + d.minNote + '자' + (bad ? ' — ' + d.minNote + '자 이상 써 주세요' : ''); } }
   if (k === 'profit' && el) { const s = cfSub_(name), chg = String(v).replace(/,/g, '').trim() !== String(s.sysProfit); el.classList.toggle('chg', chg); if (el.nextElementSibling) el.nextElementSibling.classList.toggle('chg', chg); }
   cfBar_();
 }
 function cfSub_(name) { let f = null; cf_.res.data.groups.forEach(function (g) { g.subs.forEach(function (s) { if (s.name === name) f = s; }); }); return f; }
 function cfBar_() {
   const el = document.getElementById('cf-bar'), r = cf_.res; if (!el || !r || !r.data) return;
-  const d = r.data, ch = cfChanges_(), busy = cf_.busy ? 'disabled' : '';
+  const d = r.data, ch = cfChanges_().concat(cfNoteChanges_()), busy = cf_.busy ? 'disabled' : '';
   const mine = []; d.groups.forEach(function (g) { g.subs.forEach(function (s) { if (s.mine) mine.push(s); }); });
-  const short = mine.filter(function (s) { return cfLen_(cfVal_(s, 'note')) < d.minNote; });
+  const myGroups = d.groups.filter(function (g) { return !g.unlinked && g.subs.some(function (s) { return s.mine; }); }); // 확정 조건 = 내 고객사가 들어 있는 묶음 비고(2026-11-25)
+  const short = myGroups.filter(function (g) { return cfLen_(cfNoteVal_(g)) < d.minNote; });
   let h = '';
-  if (d.groups.some(function (g) { return g.subs.some(function (s) { return cfCanEdit_(s, d); }); })) h += `<button type="button" class="pf-btn" ${ch.length && !cf_.busy ? '' : 'disabled'} onclick="cfSave_()">${cf_.busy ? '저장 중...' : '저장'}</button>`;
+  if (d.groups.some(function (g) { return cfCanNote_(g, d) || g.subs.some(function (s) { return cfCanEdit_(s, d); }); })) h += `<button type="button" class="pf-btn" ${ch.length && !cf_.busy ? '' : 'disabled'} onclick="cfSave_()">${cf_.busy ? '저장 중...' : '저장'}</button>`;
   if (mine.length && !d.final) {
     h += d.myDone ? `<button type="button" class="pf-btn" ${busy} onclick="cfCancel_('')">확정 취소</button><span class="pf-mut">✓ 내 고객사 확정함 · 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요</span>`
-      : `<button type="button" class="btn-primary" ${short.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfConfirm_()">확정</button><span class="pf-mut">${short.length ? '비고 ' + d.minNote + '자 미만 ' + short.length + '곳 — 모두 쓰면 [확정]할 수 있어요' : '비고 ' + mine.length + '곳 모두 ' + d.minNote + '자 이상 ✓ · 확정 뒤에도 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요'}${ch.length ? ' · [확정]하면 고친 값도 같이 저장돼요' : ''}</span>`;
+      : `<button type="button" class="btn-primary" ${short.length || cf_.busy ? 'disabled style="opacity:.5"' : ''} onclick="cfConfirm_()">확정</button><span class="pf-mut">${short.length ? '비고 ' + d.minNote + '자 미만 묶음 ' + short.length + '곳 — 모두 쓰면 [확정]할 수 있어요' : '묶음 비고 ' + myGroups.length + '곳 모두 ' + d.minNote + '자 이상 ✓ · 확정 뒤에도 팀장 최종 확정 전까지 [확정 취소]로 다시 고칠 수 있어요'}${ch.length ? ' · [확정]하면 고친 값도 같이 저장돼요' : ''}</span>`;
   }
   if (r.canFinal && !d.final) {
     const left = d.managers.filter(function (m) { return !m.done; }).map(function (m) { return m.name; }), loose = (d.unlinked || []).length;
@@ -8337,13 +8352,14 @@ function cfBar_() {
 }
 async function cfPost_(body) { cf_.busy = true; cfBar_(); const res = await wkPost_(Object.assign({ year: cf_.year, month: cf_.month, team: cf_.team }, body)); cf_.busy = false; return res; }
 async function cfSaveEdits_() {
-  const ch = cfChanges_(); if (!ch.length) return { ok: true, rows: 0 };
-  for (const c of ch) { if (c.profit !== undefined && c.profit !== '' && !/^-?\d+$/.test(c.profit)) return { ok: false, error: 'BAD_NUMBER', field: c.name }; if (c.note !== undefined && c.note.length > 200) return { ok: false, error: 'NOTE_TOO_LONG', field: c.name }; }
-  return cfPost_({ action: 'cfSave', edits: ch });
+  const ch = cfChanges_(), nch = cfNoteChanges_(); if (!ch.length && !nch.length) return { ok: true, rows: 0, notes: 0 };
+  for (const c of ch) { if (c.profit !== undefined && c.profit !== '' && !/^-?\d+$/.test(c.profit)) return { ok: false, error: 'BAD_NUMBER', field: c.name }; }
+  for (const c of nch) { if (c.note.length > 200) return { ok: false, error: 'NOTE_TOO_LONG', field: c.group }; }
+  return cfPost_({ action: 'cfSave', edits: ch, notes: nch });
 }
 async function cfSave_() {
   const res = await cfSaveEdits_();
-  cf_.msg = res && res.ok ? { ok: true, text: '저장했어요 (' + res.rows + '곳).' } : { text: cfErr_(res) };
+  cf_.msg = res && res.ok ? { ok: true, text: '저장했어요' + (res.rows ? ' · 이익 ' + res.rows + '곳' : '') + (res.notes ? ' · 묶음 비고 ' + res.notes + '곳' : '') + '.' } : { text: cfErr_(res) };
   if (res && res.ok) loadConfirmedPage(true); else cfRender_();
 }
 async function cfConfirm_() {

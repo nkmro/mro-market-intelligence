@@ -52,8 +52,10 @@ t('U7 검사: 같은 이름 두 번·숫자 아님·빈 목록·잘못된 달', 
 const CONF = u.writes.map(function (w) { return w.values.slice(); });
 CONF[0][9] = 9000; CONF[0][10] = '신규 설비 교체 수요로 증가'; CONF[1][10] = '매입 미마감 1건 이익 차감 반영'; CONF[2][10] = '공구류 단가 인하 영향'; CONF[3][10] = '짧음';
 let PROG = [[2026, 10, '동부', '올림', '', 'admin@nkmro.com', '2026-11-03 10:00']];
+// 2026-11-25 재홍님: 비고 = 묶음마다 1줄(실적-확정비고 A:G). 실적-확정 K칸(옛 고객사별 비고)은 화면·확정에 안 씀
+const NOTES = [[2026, 10, '동부', '다온계열', '짧음', 'a@nkmro.com', ''], [2026, 9, '동부', '가람정밀(주)', '9월 비고는 10월에 안 보임', 'x', ''], [2026, 10, '동부', '가람정밀(주)', '공구류 단가 인하 영향 반영', 'b@nkmro.com', '']];
 // 3) 화면
-let v = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF, progRows: PROG, minNote: 10, me: '가담당', scope: 'all' });
+let v = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF, progRows: PROG, noteRows: NOTES, minNote: 10, me: '가담당', scope: 'all' });
 t('V1 묶음 = 주간 고객사 순서, 사용 끔·실적 없는 고객사는 빠짐, 계획은 그 달 칸', v.groups.map(function (g) { return g.name; }).join() === '다온계열,가람정밀(주),바른전자계열' && v.groups[0].planSales === 182000 && v.groups[0].planProfit === 16400);
 t('V2 다온계열 = 3곳 합(고친 이익 9000 반영), 고친 칸 표시·시스템 값 남김', v.groups[0].sales === 98420 + 63100 + 6420 && v.groups[0].profit === 9000 + 5480 + 500 && v.groups[0].subs[0].edited && v.groups[0].subs[0].sysProfit === 8830);
 t('V3 화면 자료: 사무소는 보임(2026-11-25 재홍님), 담당 이름은 팀장·관리자 화면(withNames)에만', v.groups[0].subs[0].office === '포항' && v.groups[0].subs[0].manager === undefined && v.groups[0].subs[0].mine === true && v.groups[1].subs[0].mine === false);
@@ -62,30 +64,32 @@ const vm = cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST
 t('V5 담당(mine) = 자기 줄만, 합계도 자기 줄', vm.groups.length === 1 && vm.groups[0].name === '가람정밀(주)' && vm.total.sales === 88760);
 t('V6 올린 달 목록', cs.monthsOf(CONF.concat([[2026, 9, '동부', 'x']]), 2026, '동부').join() === '9,10');
 // 4) 담당 저장
-function ed(o) { return cs.planEdit(Object.assign({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, me: '가담당', isAdmin: false, who: 'a@nkmro.com', nowMs: NOW }, o)); }
-let e = ed({ edits: [{ name: '다온강판(주)', profit: '5,210', note: '매입 미마감 1건 이익 차감 반영, 소폭 미달' }] });
-t('E1 이익·비고 저장 → J:K + M:O(다시확인 지움), 3행', e.ok && e.writes[0].range === 'J3:K3' && e.writes[0].values[0] === 5210 && e.writes[1].range === 'M3:O3' && e.writes[1].values[2] === '');
+function ed(o) { return cs.planEdit(Object.assign({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, noteRows: NOTES, me: '가담당', isAdmin: false, who: 'a@nkmro.com', nowMs: NOW }, o)); }
+let e = ed({ edits: [{ name: '다온강판(주)', profit: '5,210' }] });
+t('E1 이익 저장 → J칸(K칸 비고는 안 건드림) + M:O(다시확인 지움), 3행', e.ok && e.writes.length === 2 && e.writes[0].range === 'J3' && e.writes[0].values[0] === 5210 && e.writes[1].range === 'M3:O3' && e.writes[1].values[2] === '' && e.noteWrites.length === 0 && e.rows === 1);
 t('E2 매출을 보내면 SALES_LOCKED', ed({ edits: [{ name: '다온강판(주)', sales: 1 }] }).error === 'SALES_LOCKED');
-t('E3 남의 고객사 → NOT_MY_CUSTOMER, 관리자는 가능', ed({ edits: [{ name: '가람정밀(주)', note: '관리자 고침 테스트' }] }).error === 'NOT_MY_CUSTOMER' && ed({ isAdmin: true, me: '', edits: [{ name: '가람정밀(주)', note: '관리자 고침 테스트' }] }).ok);
+t('E3 남의 고객사 이익 → NOT_MY_CUSTOMER, 관리자는 가능', ed({ edits: [{ name: '가람정밀(주)', profit: '7000' }] }).error === 'NOT_MY_CUSTOMER' && ed({ isAdmin: true, me: '', edits: [{ name: '가람정밀(주)', profit: '7000' }] }).ok);
 t('E4 시스템 값과 같은 이익·빈칸 → 고친 값 지움', ed({ edits: [{ name: '다온스틸(주)', profit: '8830' }] }).writes[0].values[0] === '' && ed({ edits: [{ name: '다온스틸(주)', profit: '' }] }).writes[0].values[0] === '');
-t('E5 숫자 아님·비고 201자·없는 고객사', ed({ edits: [{ name: '다온스틸(주)', profit: 'abc' }] }).error === 'BAD_NUMBER' && ed({ edits: [{ name: '다온스틸(주)', note: 'x'.repeat(201) }] }).error === 'NOTE_TOO_LONG' &&
-  ed({ edits: [{ name: '없음', note: 'x' }] }).error === 'UNKNOWN_CUSTOMER');
-t('E6 바뀐 것 없으면 쓰기 0', ed({ edits: [{ name: '다온스틸(주)', profit: '9000', note: '신규 설비 교체 수요로 증가' }] }).writes.length === 0);
+t('E5 숫자 아님·묶음 비고 201자·없는 고객사·없는 묶음·고객사별 비고는 거절', ed({ edits: [{ name: '다온스틸(주)', profit: 'abc' }] }).error === 'BAD_NUMBER' && ed({ notes: [{ group: '다온계열', note: 'x'.repeat(201) }] }).error === 'NOTE_TOO_LONG' &&
+  ed({ edits: [{ name: '없음', profit: '1' }] }).error === 'UNKNOWN_CUSTOMER' && ed({ notes: [{ group: '바른전자계열', note: '실적 없는 묶음' }] }).error === 'UNKNOWN_GROUP' && ed({ notes: [{ group: '', note: 'x' }] }).error === 'UNKNOWN_GROUP' &&
+  ed({ edits: [{ name: '다온스틸(주)', note: '고객사별 비고' }] }).error === 'NOTE_PER_GROUP' && ed({}).error === 'NO_CHANGES');
+t('E6 바뀐 것 없으면 쓰기 0', (function () { const x = ed({ edits: [{ name: '다온스틸(주)', profit: '9000' }], notes: [{ group: '다온계열', note: ' 짧음 ' }] }); return x.ok && x.writes.length === 0 && x.noteWrites.length === 0; })());
 // 5) 확정·취소·최종
-function cf(fn, o) { return cs[fn](Object.assign({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, minNote: 10, who: 'a@nkmro.com', nowMs: NOW }, o)); }
+function cf(fn, o) { return cs[fn](Object.assign({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, noteRows: NOTES, minNote: 10, who: 'a@nkmro.com', nowMs: NOW }, o)); }
 let c = cf('planConfirm', { manager: '가담당' });
-t('C1 비고가 10자 미만인 곳이 있으면 NOTE_SHORT(이름 목록)', !c.ok && c.error === 'NOTE_SHORT' && c.names.join() === '세온테크(주)' && c.min === 10);
+t('C1 내 고객사가 든 묶음 비고가 10자 미만이면 NOTE_SHORT(묶음 이름 목록), 나담당은 가람정밀 묶음 비고 14자로 통과', !c.ok && c.error === 'NOTE_SHORT' && c.names.join() === '다온계열' && c.min === 10 && cf('planConfirm', { manager: '나담당' }).ok);
 t('C2 최소 글자 0이면 확정 → 실적-확정진행 다음 줄(3행) "담당 확정"', cf('planConfirm', { manager: '가담당', minNote: 0 }).write.range === 'A3:G3' && cf('planConfirm', { manager: '가담당', minNote: 0 }).write.values[3] === '담당 확정');
 t('C3 줄 없는 사람 → NO_ROWS', cf('planConfirm', { manager: '모름' }).error === 'NO_ROWS');
 PROG = PROG.concat([[2026, 10, '동부', '담당 확정', '나담당', 'b@nkmro.com', '2026-11-03 11:00']]);
-t('C4 확정한 담당은 저장 불가(MY_DONE)·다시 확정 불가', cs.planEdit({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, me: '나담당', edits: [{ name: '가람정밀(주)', note: '공구류 단가 인하 영향 확인' }] }).error === 'MY_DONE' &&
+t('C4 확정한 담당은 저장 불가(이익 MY_DONE·묶음 비고 GROUP_DONE — 팀장·관리자도)·다시 확정 불가', cs.planEdit({ year: 2026, month: 10, team: '동부', confRows: CONF, progRows: PROG, noteRows: NOTES, me: '나담당', edits: [{ name: '가람정밀(주)', profit: '7000' }] }).error === 'MY_DONE' &&
+  ed({ progRows: PROG, me: '나담당', notes: [{ group: '가람정밀(주)', note: '공구류 단가 인하 영향 확인' }] }).error === 'GROUP_DONE' && ed({ progRows: PROG, me: '', isAdmin: true, notes: [{ group: '가람정밀(주)', note: '공구류 단가 인하 영향 확인' }] }).error === 'GROUP_DONE' &&
   cf('planConfirm', { manager: '나담당', progRows: PROG }).error === 'ALREADY_DONE');
 t('C5 최종 확정: 남은 담당 있으면 MANAGERS_NOT_DONE', cf('planFinal', { progRows: PROG }).error === 'MANAGERS_NOT_DONE' && cf('planFinal', { progRows: PROG }).names.join() === '가담당');
 t('C6 확정 취소: 확정 안 한 사람 NOT_DONE, 한 사람은 "확정 취소"', cf('planCancel', { manager: '가담당', progRows: PROG }).error === 'NOT_DONE' && cf('planCancel', { manager: '나담당', progRows: PROG }).write.values[3] === '확정 취소');
 PROG = PROG.concat([[2026, 10, '동부', '담당 확정', '가담당', 'a@nkmro.com', '2026-11-03 12:00']]);
 t('C7 모두 확정 → 최종 확정 가능', cf('planFinal', { progRows: PROG }).ok && cf('planFinal', { progRows: PROG }).write.values[3] === '최종 확정');
 PROG = PROG.concat([[2026, 10, '동부', '최종 확정', '', 'admin@nkmro.com', '2026-11-05 09:00']]);
-t('C8 최종 확정 뒤 저장·확정 취소·최종 다시 → FINAL_DONE', ed({ progRows: PROG, edits: [{ name: '다온스틸(주)', note: '바꿈 시험 메모' }] }).error === 'FINAL_DONE' && cf('planCancel', { manager: '가담당', progRows: PROG }).error === 'FINAL_DONE' &&
+t('C8 최종 확정 뒤 저장·확정 취소·최종 다시 → FINAL_DONE', ed({ progRows: PROG, notes: [{ group: '다온계열', note: '바꿈 시험 메모입니다' }] }).error === 'FINAL_DONE' && cf('planCancel', { manager: '가담당', progRows: PROG }).error === 'FINAL_DONE' &&
   cf('planFinal', { progRows: PROG }).error === 'FINAL_DONE');
 const st = cs.stateOf(PROG, 2026, 10, '동부');
 t('C9 상태: 올림·담당 2명 확정·최종 확정', st.uploaded && Object.keys(st.confirmed).sort().join() === '가담당,나담당' && st.final && st.final.at === '2026-11-05 09:00');
@@ -138,8 +142,8 @@ t('F4 메뉴: 주간 실적 다음·실적 설정 앞, 관리자·임원·팀장
 t('F5 화면에 담당·사무소 칸 없음(표 머리), 매출은 입력 칸 없음', !uiGrab('cfTable_').includes('사무소') && !/<th[^>]*>담당/.test(uiGrab('cfTable_')) && (uiGrab('cfTable_').match(/class="cf-in/g) || []).length === 1);
 const chg = new Function('cf_', uiGrab('cfChanges_') + '; return cfChanges_();');
 const RES = { data: { groups: [{ subs: [{ name: 'A', edited: false, profit: 100, sysProfit: 100, note: '메모' }, { name: 'B', edited: true, profit: 90, sysProfit: 100, note: '' }] }] } };
-t('F6 바뀐 값: 쉼표 무시·시스템 값 그대로는 안 보냄·고친 값을 시스템 값으로 되돌리면 보냄·비고', JSON.stringify(chg({ res: RES, edits: { A: { profit: '100', note: '메모' }, B: { profit: '1,00' } } })) === JSON.stringify([{ name: 'B', profit: '100' }]) &&
-  JSON.stringify(chg({ res: RES, edits: { A: { profit: '1,234', note: ' 새 메모 ' } } })) === JSON.stringify([{ name: 'A', profit: '1234', note: '새 메모' }]));
+t('F6 바뀐 값: 쉼표 무시·시스템 값 그대로는 안 보냄·고친 값을 시스템 값으로 되돌리면 보냄(고객사별 비고는 안 보냄)', JSON.stringify(chg({ res: RES, edits: { A: { profit: '100' }, B: { profit: '1,00' } } })) === JSON.stringify([{ name: 'B', profit: '100' }]) &&
+  JSON.stringify(chg({ res: RES, edits: { A: { profit: '1,234', note: ' 새 메모 ' } } })) === JSON.stringify([{ name: 'A', profit: '1234' }]));
 t('F7 [최종 확정] 버튼 = canFinal(팀장·관리자), 단계 이름 "③ 팀장 최종 확정"', uiGrab('cfBar_').includes('if (r.canFinal && !d.final) {') && uiGrab('cfSteps_').includes('③ 팀장 최종 확정') && !FH.includes('관리자 최종 확정'));
 // 10) 2026-11-25 재홍님: 연결 안 돼도 올라감 · 팀장이 화면에서 연결 · 연결 안 된 곳이 있으면 최종 확정 막힘 · 파일 안 팀을 한 번에(관리자만)
 {
@@ -189,8 +193,31 @@ t('M4 새 담당이 이미 확정했으면 그 담당 확정 다시 열림', (fu
 const MG = [['가람정밀(주)', '동부', '카담당', 'x', '']];
 t('M5 기억한 담당 → 다음 달 올릴 때 바로 그 담당(담당 정하기 목록에서도 빠짐)', (function () { const u = up({ month: 11, userRows: U2, mgrRows: MG, links: { '세온테크(주)': '다온계열' } }); return u.writes.find(function (w) { return w.values[3] === '가람정밀(주)'; }).values[6] === '카담당'; })() &&
   cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CA, progRows: PA, minNote: 10, me: '', scope: 'all', withNames: true, userRows: U2, mgrRows: MG }).mgrChoices.length === 0);
-t('M6 탭 4개(실적-담당지정 머리줄 5칸), index cfAssign·담당지정 읽기, 화면 담당 정하기·사무소 표시', cs.CF_TABS.length === 4 && cs.CF_HEADERS[cs.TAB_MGR].join() === '시스템구매사명,팀,담당,등록자,등록일시' &&
-  IX.includes('confirmedSales.planAssign(') && IX.includes("q(confirmedSales.TAB_MGR) + '!A2:E'") && IX.includes('v(7 + i)') && uiGrab('cfMgrSave_').includes("action: 'cfAssign'") && uiGrab('cfTable_').includes('cf-off'));
+t('M6 탭 4개(실적-담당지정 머리줄 5칸), index cfAssign·담당지정 읽기, 화면 담당 정하기·사무소 표시', cs.CF_TABS.length === 5 && cs.CF_HEADERS[cs.TAB_MGR].join() === '시스템구매사명,팀,담당,등록자,등록일시' &&
+  IX.includes('confirmedSales.planAssign(') && IX.includes("q(confirmedSales.TAB_MGR) + '!A2:E'") && IX.includes('v(8 + i)') && uiGrab('cfMgrSave_').includes("action: 'cfAssign'") && uiGrab('cfTable_').includes('cf-off'));
+}
+// 12) 2026-11-25 재홍님: 비고는 묶음(취합 고객사)마다 1칸 — 탭 실적-확정비고, 출력 때 묶음 줄에 나옴
+{
+t('N1 탭 5개 — 실적-확정비고 머리줄 7칸', cs.CF_TABS.indexOf(cs.TAB_NOTE) === 4 && cs.CF_HEADERS[cs.TAB_NOTE].join() === '연도,월,팀,주간고객사명,비고,수정자,수정일시');
+t('N2 화면: 묶음마다 비고(그 연·월·팀만, 아래 줄이 이김), 고객사 줄에는 비고 없음, 연결 안 된 묶음도 없음', v.groups[0].note === '짧음' && v.groups[1].note === '공구류 단가 인하 영향 반영' && v.groups[2].note === '' && !('note' in v.groups[0].subs[0]) &&
+  cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF, progRows: PROG, noteRows: NOTES.concat([[2026, 10, '동부지역', '다온계열', '아래 줄이 이겨요 비고', 'x', '']]), minNote: 10, me: '', scope: 'all' }).groups[0].note === '아래 줄이 이겨요 비고');
+const P0 = [[2026, 10, '동부', '올림', '', 'x', '']];
+const n1 = ed({ progRows: P0, notes: [{ group: '다온계열', note: '설비 교체 수요 증가, 미마감 1건 반영' }] });
+t('N3 있던 묶음 비고 고침 → 실적-확정비고 그 줄(2행) A:G, 실적-확정은 안 씀', n1.ok && n1.noteWrites.length === 1 && n1.noteWrites[0].range === 'A2:G2' && n1.noteWrites[0].values.join('|') === '2026|10|동부|다온계열|설비 교체 수요 증가, 미마감 1건 반영|a@nkmro.com|2026-11-03 10:00' && n1.writes.length === 0 && n1.notes === 1);
+const CONFb = CONF.map(function (r) { return r.slice(); }); CONFb[2][4] = '바른전자계열';
+const n2 = ed({ progRows: P0, confRows: CONFb, isAdmin: true, me: '', notes: [{ group: '바른전자계열', note: '신규 묶음 비고 테스트입니다' }] });
+t('N4 처음 쓰는 묶음 → 실적-확정비고 다음 빈 줄(5행)', n2.ok && n2.noteWrites[0].range === 'A5:G5' && n2.noteWrites[0].values[3] === '바른전자계열');
+t('N5 쓰는 사람: 그 묶음에 내 고객사가 있는 담당·그 팀 팀장(isLead)·관리자 — 다른 담당은 NOT_MY_CUSTOMER', ed({ progRows: P0, notes: [{ group: '가람정밀(주)', note: '남의 묶음 비고 시험' }] }).error === 'NOT_MY_CUSTOMER' &&
+  ed({ progRows: P0, me: '한팀장', isLead: true, notes: [{ group: '가람정밀(주)', note: '팀장이 쓴 묶음 비고' }] }).ok && ed({ progRows: P0, me: '', isAdmin: true, notes: [{ group: '가람정밀(주)', note: '관리자가 쓴 묶음 비고' }] }).ok);
+const CONFr = CONF.map(function (r) { return r.slice(); }); CONFr[1][14] = '매출 1→2';
+const n3 = ed({ progRows: P0, confRows: CONFr, notes: [{ group: '다온계열', note: '다시 확인 뒤 비고 저장' }], edits: [{ name: '다온스틸(주)', profit: '9100' }] });
+t('N6 이익+묶음 비고 같이 저장, 묶음 비고 저장 = 그 묶음 "다시확인" 지움(O3)', n3.ok && n3.writes.some(function (w) { return w.range === 'J2' && w.values[0] === 9100; }) && n3.writes.some(function (w) { return w.range === 'O3' && w.values[0] === ''; }) && n3.noteWrites.length === 1 && n3.rows === 2);
+t('N7 다시 올리기·연결 고치기는 묶음 비고를 안 건드림(묶음 이름으로 붙어 있음) — 연결 고치면 옮겨 간 묶음 비고를 따름', !('noteWrites' in up({})) && (function () { const x = cs.planLink({ year: 2026, month: 10, team: '동부', confRows: CONF, linkRows: LINKS, progRows: P0, customers: CUST, links: { '세온테크(주)': '가람정밀(주)' }, who: 'x', nowMs: NOW }); return x.ok && x.writes.length === 1 && x.writes[0].range === 'E5'; })() &&
+  cs.buildView({ year: 2026, month: 10, team: '동부', customers: CUST, planRows: PLAN, confRows: CONF.map(function (r, i) { const x = r.slice(); if (i === 3) x[4] = '가람정밀(주)'; return x; }), progRows: P0, noteRows: NOTES, minNote: 10, me: '', scope: 'all' }).groups[1].note === '공구류 단가 인하 영향 반영');
+t('N8 index: 실적-확정비고 A2:G 읽기·planEdit에 notes·noteRows·isLead(팀장), 확정에 noteRows, 쓰기는 같은 batch 1번', IX.includes("q(confirmedSales.TAB_NOTE) + '!A2:G'") && IX.includes('noteRows: v(7)') && IX.includes("notes: b.notes, noteRows: f.noteRows, me: myName, isAdmin: isAdmin, isLead: !isAdmin && me.role === '팀장'") &&
+  IX.includes("minNote: f.settings.확정비고최소글자, noteRows: f.noteRows }") && IX.includes("q(confirmedSales.TAB_NOTE) + '!' + w.range") && IX.includes('mgrRows: f.mgrRows, noteRows: f.noteRows });'));
+t('N9 화면: 비고 칸은 묶음 줄에만(고객사 줄 입력 없음), 확정 조건 = 내 고객사 든 묶음, 저장에 notes', !uiGrab('cfTable_').includes('class="cf-note ') && uiGrab('cfGroupNote_').includes('cfNoteEdit_(') && uiGrab('cfBar_').includes('myGroups') && uiGrab('cfSaveEdits_').includes("edits: ch, notes: nch") &&
+  uiGrab('cfCanNote_').includes('!g.unlinked') && uiGrab('cfCanNote_').includes("session.role === '팀장'") && uiGrab('cfCanNote_').includes('!g.subs.some(function (s) { return s.done; })'));
 }
 console.log(`confirmed_sales_tests: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

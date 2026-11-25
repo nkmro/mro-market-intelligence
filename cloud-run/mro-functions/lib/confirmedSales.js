@@ -9,6 +9,8 @@
 // - 담당(배정·수정 권한에만 씀, 화면·출력에는 안 나옴): 구매담당(K) → 사용자팀마스터 J열 사무소(줄 수가 가장 많은 사무소) → 그 사무소의 활성 '담당'
 //   (계정 없는 구매담당은 건너뜀 = 같은 고객사 다른 구매담당을 따름) · 사무소를 못 찾거나 그 사무소 담당이 0명·2명 이상이면 팀장
 // - 매출은 고칠 수 없음(계산서 기준). 이익만 고침 + 비고(확정 전 확정비고최소글자 이상, 실적-설정)
+//   2026-11-25 재홍님: 비고는 주간 고객사 묶음(취합 고객사)마다 1칸 → 탭 '실적-확정비고'(연도·월·팀·주간고객사명마다 1줄, 아래 줄이 이김).
+//   쓰는 사람 = 그 묶음에 고객사가 있는 담당·그 팀 팀장·관리자. 연결 안 된 고객사는 비고 없음. 실적-확정 K칸(고객사별 비고)은 더 쓰지 않음
 // - 다시 올리기(2026-11-23 재홍님): 시스템 구매사명별로 비교 — 그대로면 고친 이익·비고·확정 유지 / 매출·시스템 이익이 바뀌면 고친 이익 지우고
 //   비고는 남기고 '다시확인' 표시, 그 담당 확정만 다시 열림 / 새로 생기면 추가 / 빠지면 지움(경고). 바뀐 곳이 있으면 최종 확정이 풀림
 
@@ -18,13 +20,15 @@ const teamsLib = require('./teams');
 const TAB_LINK = '실적-고객사연결';
 const TAB_CONF = '실적-확정';
 const TAB_CPROG = '실적-확정진행';
+const TAB_NOTE = '실적-확정비고'; // 2026-11-25 재홍님: 묶음(취합 고객사)마다 비고 1줄
 const TAB_MGR = '실적-담당지정'; // 2026-11-25 재홍님: 사무소 담당이 2명 이상일 때 팀장이 고른 담당(기억 → 다음 달부터 자동)
-const CF_TABS = [TAB_LINK, TAB_CONF, TAB_CPROG, TAB_MGR];
+const CF_TABS = [TAB_LINK, TAB_CONF, TAB_CPROG, TAB_MGR, TAB_NOTE];
 const CF_HEADERS = {};
 CF_HEADERS[TAB_LINK] = ['시스템구매사명', '팀', '주간고객사명', '등록자', '등록일시'];
 CF_HEADERS[TAB_CONF] = ['연도', '월', '팀', '시스템구매사명', '주간고객사명', '사무소', '담당', '시스템매출', '시스템이익', '이익(수정)', '비고', '매입미마감줄수', '수정자', '수정일시', '다시확인'];
 CF_HEADERS[TAB_CPROG] = ['연도', '월', '팀', '단계', '담당', '처리자', '일시'];
 CF_HEADERS[TAB_MGR] = ['시스템구매사명', '팀', '담당', '등록자', '등록일시'];
+CF_HEADERS[TAB_NOTE] = ['연도', '월', '팀', '주간고객사명', '비고', '수정자', '수정일시'];
 const CONF_COLS = 15, LINK_COLS = 5, CPROG_COLS = 7; // A:O · A:E · A:G
 
 const ST_UPLOAD = '올림', ST_REUPLOAD = '다시 올림', ST_CONFIRM = '담당 확정', ST_CANCEL = '확정 취소', ST_REOPEN = '확정 다시 열림',
@@ -138,6 +142,12 @@ function confRowsOf(confRows, year, month, team) {
   return out;
 }
 // 그 팀 그 달 담당 목록(줄 순서, 빈 이름 제외)
+// 실적-확정비고 → { 주간고객사명: { row, note } } (그 연·월·팀, 아래 줄이 이김)
+function noteMap(noteRows, year, month, team) {
+  const m = {};
+  indexRows(noteRows).forEach(function (x) { const r = x.v; if (ws.num(r[0]) === year && ws.num(r[1]) === month && cfTeam(r[2]) === team && cell(r[3])) m[cell(r[3])] = { row: x.row, note: cell(r[4]) }; });
+  return m;
+}
 function managersIn(rows) { const out = []; rows.forEach(function (r) { if (r.manager && out.indexOf(r.manager) < 0) out.push(r.manager); }); return out; }
 function confRowValues(year, month, team, it, a, profit, note, who, at, recheck) {
   return [year, month, team, it.name, it.weekly, a.office, a.manager, it.sales, it.profit, profit === null ? '' : profit, note, it.unclosed, who, at, recheck];
@@ -236,7 +246,7 @@ function planUpload(p) {
 // 묶음 = 주간 고객사 순서(사용 끔이어도 실적이 있으면 보임) + 주간 고객사에 없는 묶음(새 고객사로 따로)은 뒤. 담당·사무소는 돌려주지 않음(mine 표시만)
 function buildView(p) {
   const year = p.year, month = p.month, team = p.team;
-  const rows = confRowsOf(p.confRows, year, month, team), st = stateOf(p.progRows, year, month, team);
+  const rows = confRowsOf(p.confRows, year, month, team), st = stateOf(p.progRows, year, month, team), nm = noteMap(p.noteRows, year, month, team);
   const plan = {};
   (p.planRows || []).forEach(function (r) {
     if (ws.num(r && r[0]) !== year || ws.normTeam(r[1]) !== team) return;
@@ -246,7 +256,7 @@ function buildView(p) {
   function group(name, active) {
     if (byName[name]) return byName[name];
     const pl = plan[name] || { sales: null, profit: null };
-    const g = { name: name, planSales: pl.sales, planProfit: pl.profit, sales: 0, profit: 0, subs: [], active: active };
+    const g = { name: name, planSales: pl.sales, planProfit: pl.profit, sales: 0, profit: 0, subs: [], active: active, note: nm[name] ? nm[name].note : '' }; // 묶음 비고
     byName[name] = g; groups.push(g); return g;
   }
   const wc = weeklyCustomers(p.customers, team, month);
@@ -255,7 +265,7 @@ function buildView(p) {
   rows.forEach(function (r) {
     const g = r.weekly ? group(r.weekly, true) : loose;
     const profit = r.profit === null ? r.sysProfit : r.profit;
-    g.subs.push({ name: r.name, office: r.office, sales: r.sales, sysProfit: r.sysProfit, profit: profit, edited: r.profit !== null && r.profit !== r.sysProfit, note: r.note,
+    g.subs.push({ name: r.name, office: r.office, sales: r.sales, sysProfit: r.sysProfit, profit: profit, edited: r.profit !== null && r.profit !== r.sysProfit,
       unclosed: r.unclosed, recheck: r.recheck, mine: !!me && r.manager === me, done: !!st.confirmed[r.manager], manager: p.withNames ? r.manager : undefined }); // 담당 이름은 팀장·관리자 화면(담당 정하기)에만
     g.sales += r.sales; g.profit += profit;
   });
@@ -294,24 +304,27 @@ function monthsOf(confRows, year, team) {
   return out.sort(function (a, b) { return a - b; });
 }
 
-// 담당 [저장]: 이익(수정)·비고. p = { year, month, team, edits:[{ name, profit, note }], confRows, progRows, me, isAdmin, who, nowMs }
+// 담당 [저장]: 이익(수정)·묶음 비고. p = { year, month, team, edits:[{ name, profit }], notes:[{ group, note }], confRows, progRows, noteRows, me, isAdmin, isLead, who, nowMs }
 // profit: 빈칸 = 시스템 값으로 되돌림(고친 값 지움), 시스템 값과 같아도 지움. 매출 칸을 보내면 거절(SALES_LOCKED)
+// 비고(2026-11-25 재홍님 — 묶음마다 1줄, 탭 실적-확정비고): 그 묶음에 고객사가 있는 담당·그 팀 팀장(isLead)·관리자.
+//   그 묶음 담당 중 [확정]한 사람이 있으면 거절(GROUP_DONE). 있던 줄은 고치고 없으면 새 줄. 고객사별 비고(edits[].note)는 받지 않음(NOTE_PER_GROUP)
 function planEdit(p) {
   const year = Number(p.year), month = Number(p.month), team = cfTeam(p.team);
   const rows = confRowsOf(p.confRows, year, month, team), st = stateOf(p.progRows, year, month, team);
   if (!rows.length) return { ok: false, error: 'NO_DATA' };
   if (st.final) return { ok: false, error: 'FINAL_DONE' };
-  const edits = Array.isArray(p.edits) ? p.edits : [];
-  if (!edits.length) return { ok: false, error: 'NO_CHANGES' };
+  const edits = Array.isArray(p.edits) ? p.edits : [], notes = Array.isArray(p.notes) ? p.notes : [];
+  if (!edits.length && !notes.length) return { ok: false, error: 'NO_CHANGES' };
   const by = {}; rows.forEach(function (r) { by[r.name] = r; });
-  const writes = [], seen = {}, who = lcs(p.who), at = ws.seoulStamp(p.nowMs);
+  const me = cell(p.me), seen = {}, gseen = {}, who = lcs(p.who), at = ws.seoulStamp(p.nowMs), writes = [], noteWrites = [], clear = {};
   for (let i = 0; i < edits.length; i++) {
     const e = edits[i] || {}, name = cell(e.name), r = by[name];
     if (!r) return { ok: false, error: 'UNKNOWN_CUSTOMER', field: name };
     if (seen[name]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: name };
     seen[name] = true;
     if ('sales' in e) return { ok: false, error: 'SALES_LOCKED', field: name };
-    if (!p.isAdmin && r.manager !== cell(p.me)) return { ok: false, error: 'NOT_MY_CUSTOMER', field: name };
+    if ('note' in e) return { ok: false, error: 'NOTE_PER_GROUP', field: name };
+    if (!p.isAdmin && r.manager !== me) return { ok: false, error: 'NOT_MY_CUSTOMER', field: name };
     if (st.confirmed[r.manager]) return { ok: false, error: 'MY_DONE', field: name };
     let profit = r.profit;
     if ('profit' in e) {
@@ -319,12 +332,28 @@ function planEdit(p) {
       if (Number.isNaN(n)) return { ok: false, error: 'BAD_NUMBER', field: name };
       profit = n === null || n === r.sysProfit ? null : n;
     }
-    const note = 'note' in e ? cell(e.note) : r.note;
-    if (note.length > NOTE_MAX) return { ok: false, error: 'NOTE_TOO_LONG', field: name };
-    if (profit === r.profit && note === r.note && !r.recheck) continue;
-    writes.push({ range: 'J' + r.row + ':K' + r.row, values: [profit === null ? '' : profit, note] }, { range: 'M' + r.row + ':O' + r.row, values: [who, at, ''] }); // 저장하면 '다시확인' 표시 지움
+    if (profit === r.profit && !r.recheck) continue;
+    writes.push({ range: 'J' + r.row, values: [profit === null ? '' : profit] }, { range: 'M' + r.row + ':O' + r.row, values: [who, at, ''] }); clear[r.row] = true; // 저장하면 '다시확인' 표시 지움
   }
-  return { ok: true, writes: writes, rows: writes.length / 2 };
+  const nm = noteMap(p.noteRows, year, month, team);
+  let nn = nextFreeRow(indexRows(p.noteRows));
+  for (let i = 0; i < notes.length; i++) {
+    const e = notes[i] || {}, g = cell(e.group), gr = g ? rows.filter(function (r) { return r.weekly === g; }) : [];
+    if (!gr.length) return { ok: false, error: 'UNKNOWN_GROUP', field: g };
+    if (gseen[g]) return { ok: false, error: 'DUPLICATE_CUSTOMER', field: g };
+    gseen[g] = true;
+    if (!p.isAdmin && !p.isLead && !gr.some(function (r) { return r.manager === me; })) return { ok: false, error: 'NOT_MY_CUSTOMER', field: g };
+    if (gr.some(function (r) { return st.confirmed[r.manager]; })) return { ok: false, error: 'GROUP_DONE', field: g };
+    const note = cell(e.note);
+    if (note.length > NOTE_MAX) return { ok: false, error: 'NOTE_TOO_LONG', field: g };
+    const old = nm[g];
+    if (!(old ? old.note === note : note === '')) {
+      const row = old ? old.row : nn++;
+      noteWrites.push({ range: 'A' + row + ':G' + row, values: [year, month, team, g, note, who, at] });
+    }
+    gr.forEach(function (r) { if (r.recheck && !clear[r.row]) { writes.push({ range: 'O' + r.row, values: [''] }); clear[r.row] = true; } }); // 묶음 비고 저장 = 확인함 → '다시확인' 표시 지움
+  }
+  return { ok: true, writes: writes, noteWrites: noteWrites, rows: Object.keys(clear).length, notes: noteWrites.length };
 }
 
 // [확정] / [확정 취소] / [최종 확정]. p = { year, month, team, confRows, progRows, manager(누구의 확정인지), minNote, isAdmin, who, nowMs }
@@ -340,8 +369,9 @@ function planConfirm(p) {
   const mine = rows.filter(function (r) { return r.manager === mgr; });
   if (!mgr || !mine.length) return { ok: false, error: 'NO_ROWS' };
   if (st.confirmed[mgr]) return { ok: false, error: 'ALREADY_DONE' };
-  const min = Number(p.minNote) || 0;
-  const short = mine.filter(function (r) { return noteLen(r.note) < min; }).map(function (r) { return r.name; });
+  const min = Number(p.minNote) || 0, nm = noteMap(p.noteRows, year, month, team), gs = []; // 2026-11-25: 내 고객사가 들어 있는 묶음의 비고만 봄(연결 안 된 고객사는 비고 없음)
+  mine.forEach(function (r) { if (r.weekly && gs.indexOf(r.weekly) < 0) gs.push(r.weekly); });
+  const short = gs.filter(function (g) { return noteLen(nm[g] ? nm[g].note : '') < min; });
   if (short.length) return { ok: false, error: 'NOTE_SHORT', min: min, names: short };
   return { ok: true, write: progRow_(p, team, ST_CONFIRM, mgr) };
 }
@@ -426,7 +456,7 @@ const UNLINKED_GROUP = '연결 안 된 고객사';
 module.exports = {
   TAB_LINK, TAB_CONF, TAB_CPROG, CF_TABS, CF_HEADERS, CONF_COLS, LINK_COLS, CPROG_COLS,
   ST_UPLOAD, ST_REUPLOAD, ST_CONFIRM, ST_CANCEL, ST_REOPEN, ST_FINAL, ST_UNFINAL,
-  TAB_MGR, mgrMap, planAssign, teamManagers,
+  TAB_MGR, mgrMap, planAssign, teamManagers, TAB_NOTE, noteMap,
   cfTeam, checkHeaders, peopleOf, leadOf, assign, weeklyCustomers, linkMap, stateOf, confRowsOf, managersIn,
   planUpload, buildView, monthsOf, planEdit, planConfirm, planCancel, planFinal, noteLen, planLink, UNLINKED_GROUP
 };

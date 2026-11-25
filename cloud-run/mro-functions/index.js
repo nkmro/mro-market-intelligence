@@ -5514,7 +5514,7 @@ async function cfFile_(client, fileId) {
   let vr;
   try {
     vr = await batchGetValues(client, fileId, [q(weeklySales.TAB_SETTINGS) + '!A2:C', q(weeklySales.TAB_CUSTOMERS) + '!A2:L', q(weeklySales.TAB_PLAN) + '!A2:AO',
-      q(confirmedSales.TAB_LINK) + '!A2:E', q(confirmedSales.TAB_CONF) + '!A2:O', q(confirmedSales.TAB_CPROG) + '!A2:G', q(confirmedSales.TAB_MGR) + '!A2:E']
+      q(confirmedSales.TAB_LINK) + '!A2:E', q(confirmedSales.TAB_CONF) + '!A2:O', q(confirmedSales.TAB_CPROG) + '!A2:G', q(confirmedSales.TAB_MGR) + '!A2:E', q(confirmedSales.TAB_NOTE) + '!A2:G']
       .concat(confirmedSales.CF_TABS.map(function (t) { return q(t) + '!1:1'; })).map(encodeURIComponent), { unformatted: true });
   } catch (e) {
     const status = (e && e.response && e.response.status) || (e && e.code) || null;
@@ -5522,10 +5522,10 @@ async function cfFile_(client, fileId) {
     return { ok: false, error: status === 400 && /parse range/i.test(msg) ? 'CF_TAB_MISSING' : 'SHEET_ACCESS_FAILED', httpStatus: status, tabs: confirmedSales.CF_TABS };
   }
   const v = function (i) { return (vr[i] && vr[i].values) || []; };
-  const heads = confirmedSales.CF_TABS.map(function (t, i) { return confirmedSales.checkHeaders(t, v(7 + i)[0]); });
+  const heads = confirmedSales.CF_TABS.map(function (t, i) { return confirmedSales.checkHeaders(t, v(8 + i)[0]); });
   const bad = heads.filter(function (h) { return !h.ok; });
   if (bad.length) return { ok: false, error: 'CF_HEADER', tabs: bad.map(function (h) { return h.tab; }) };
-  return { ok: true, settings: weeklySales.readSettings(v(0)), customers: v(1), planRows: v(2), linkRows: v(3), confRows: v(4), progRows: v(5), mgrRows: v(6) };
+  return { ok: true, settings: weeklySales.readSettings(v(0)), customers: v(1), planRows: v(2), linkRows: v(3), confRows: v(4), progRows: v(5), mgrRows: v(6), noteRows: v(7) };
 }
 // 볼 수 있는 팀: 관리자·임원 = 고른 팀(없으면 자기 팀 → 첫 팀), 팀장 = 맡은 팀(겸임 포함), 담당 = 자기 팀
 function cfTeam_(me, isAdmin, reqTeam, teams) {
@@ -5571,7 +5571,7 @@ async function confirmedView_(req, res, auth, t0, timings) {
     isAdmin: isAdmin, canUpload: isAdmin, canFinal: isAdmin || me.role === '팀장', canLink: isAdmin || me.role === '팀장', minNote: f.settings.확정비고최소글자 }; // 2026-11-24 재홍님: 최종 확정 = 그 팀 팀장 + 관리자
   if (!month) { res.status(200).json(Object.assign(base, { month: null, data: null })); return; }
   const data = confirmedSales.buildView({ year: year, month: month, team: lead.team, customers: f.customers, planRows: f.planRows, confRows: f.confRows, progRows: f.progRows,
-    minNote: f.settings.확정비고최소글자, me: me ? me.name : '', scope: !isAdmin && me.role === '담당' ? 'mine' : 'all', withNames: isAdmin || me.role === '팀장', userRows: mro.userRows, mgrRows: f.mgrRows });
+    minNote: f.settings.확정비고최소글자, me: me ? me.name : '', scope: !isAdmin && me.role === '담당' ? 'mine' : 'all', withNames: isAdmin || me.role === '팀장', userRows: mro.userRows, mgrRows: f.mgrRows, noteRows: f.noteRows });
   res.status(200).json(Object.assign(base, { month: month, data: data }));
 }
 // saveWeeklySalesTest 확정 실적 동작. 관리자: cfPreview·cfUpload(+ 모든 줄 저장·아무 담당 확정 취소). 담당·팀장(배정된 줄): cfSave·cfConfirm·cfCancel(자기 확정)
@@ -5633,13 +5633,14 @@ async function confirmedAction_(client, b, mro, email, isAdmin, nowMs, timings) 
       return Object.assign(r, { assigned: Object.keys(b.picks || {}).length, months: plan.months, kept: plan.kept, reopened: plan.reopened });
     }
     if (b.action === 'cfSave') {
-      const plan = confirmedSales.planEdit(Object.assign({}, common, { edits: b.edits, me: myName, isAdmin: isAdmin }));
+      const plan = confirmedSales.planEdit(Object.assign({}, common, { edits: b.edits, notes: b.notes, noteRows: f.noteRows, me: myName, isAdmin: isAdmin, isLead: !isAdmin && me.role === '팀장' })); // 2026-11-25 비고 = 묶음마다(실적-확정비고 탭, 그 팀 팀장도 씀 — 팀은 cfTeam_)
       if (!plan.ok) return plan;
-      const r = await write(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; }), cells(plan.writes));
-      return Object.assign(r, { rows: plan.rows });
+      const r = await write(plan.writes.map(function (w) { return { range: q(confirmedSales.TAB_CONF) + '!' + w.range, values: [w.values] }; })
+        .concat(plan.noteWrites.map(function (w) { return { range: q(confirmedSales.TAB_NOTE) + '!' + w.range, values: [w.values] }; })), cells(plan.writes) + cells(plan.noteWrites));
+      return Object.assign(r, { rows: plan.rows, notes: plan.notes });
     }
     // 확정 = 자기 이름. 확정 취소 = 자기 이름(관리자는 고른 담당도). 최종 확정 = 그 팀 팀장·관리자
-    const plan = b.action === 'cfConfirm' ? confirmedSales.planConfirm(Object.assign({}, common, { manager: myName, minNote: f.settings.확정비고최소글자 }))
+    const plan = b.action === 'cfConfirm' ? confirmedSales.planConfirm(Object.assign({}, common, { manager: myName, minNote: f.settings.확정비고최소글자, noteRows: f.noteRows }))
       : b.action === 'cfCancel' ? confirmedSales.planCancel(Object.assign({}, common, { manager: isAdmin && b.manager ? b.manager : myName }))
       : confirmedSales.planFinal(common);
     if (!plan.ok) return plan;
