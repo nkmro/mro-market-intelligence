@@ -845,7 +845,8 @@ font-size: 13px; padding: 2px 4px; display: none;
 .wi-px.undo { border-width: 1px; border-color: #9cc9ae; color: #1d6b43; padding: 1px 8px; font-size: 11.5px; box-shadow: none; } .wi-px.undo:hover:not(:disabled) { background: #1d6b43; color: #fff; }
 /* 실적 관리 › 확정 실적 (2026-11-24 시안 승인) */
 .cf-wrap { max-width: none; }
-.main.main-wide { max-width: 1240px; } /* 확정 실적 표(구매사명·매출 3칸·이익 3칸·비고)가 잘리지 않게 이 화면만 넓힘 */
+.main.main-wide { max-width: 1240px; } /* 확정 실적 표(구매사명·매출 3칸·이익 3칸·비고)가 잘리지 않게 이 화면만 넓힘 · 2026-11-25 재홍님: 주간 실적도 같은 폭 */
+#weekly-view .pf-wrap { max-width: none; } /* 주간 실적 표(구매사명·사무소·매출 3·이익 3·이익률 3·비고 ≈ 1,170px)가 넓힌 폭을 다 쓰게 */
 .cf-busy { opacity: .5; pointer-events: none; transition: opacity .15s; } /* 연도·월·팀을 바꾸는 동안 */
 .cf-wrap .wk-card .cf-step { margin: 12px 0 0; justify-content: center; }
 .cf-wrap .wk-nav:not(:disabled):hover, .cf-pills button:hover:not(.on) { background: var(--accent-soft); }
@@ -1684,7 +1685,7 @@ document.getElementById('perf-criteria-view').style.display = view === 'perf-cri
 document.getElementById('weekly-view').style.display = view === 'weekly' ? 'block' : 'none';
 document.getElementById('sales-settings-view').style.display = view === 'sales-settings' ? 'block' : 'none';
 document.getElementById('confirmed-view').style.display = view === 'confirmed' ? 'block' : 'none';
-document.querySelector('.main').classList.toggle('main-wide', view === 'confirmed');
+document.querySelector('.main').classList.toggle('main-wide', view === 'confirmed' || view === 'weekly'); // 2026-11-25 재홍님: 주간 실적·확정 실적 같은 폭(1240px)
 openNavGroupOf_(view);
 const topbarEl = document.querySelector('.topbar');
 if (topbarEl) topbarEl.style.display = view === 'feed' ? '' : 'none';

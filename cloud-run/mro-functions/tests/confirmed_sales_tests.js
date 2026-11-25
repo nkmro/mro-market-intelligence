@@ -137,8 +137,8 @@ t('F1 엑셀 합계: 팀(동부지역→동부)·구매사명별(앞뒤 빈칸 �
 t('F2 매출마감월이 둘 이상이면 거절, 머리줄 칸이 없으면 칸 이름을 알려 줌, 엑셀 날짜 숫자도 읽음', /여러 개/.test(agg([HEAD, ['x', 'a', '동부', '1', '1', '가', '2026/10/01', ''], ['x', 'a', '동부', '1', '1', '가', '2026/11/01', '']]).error) &&
   /매입마감일/.test(agg([HEAD.slice(0, 7), ['x']]).error) && agg([HEAD, ['x', 'a', '동부', '1000', '0', '가', '46310', '']]).month === 10);
 t('F3 엑셀 읽기: 외부 도구 없이 zip(deflate-raw)·inlineStr·공유 글자', FH.includes("new DecompressionStream('deflate-raw')") && FH.includes("if (t === 'inlineStr')") && FH.includes("if (t === 's') v = shared[Number(v)]") && !FH.includes('exceljs.min.js'));
-t('F4 메뉴: 주간 실적 다음·실적 설정 앞, 관리자·임원·팀장·담당(주간 실적과 같은 조건), 화면만 넓힘', FH.indexOf('id="nav-weekly"') < FH.indexOf('id="nav-confirmed"') && FH.indexOf('id="nav-confirmed"') < FH.indexOf('id="nav-sales-settings"') &&
-  FH.includes("document.getElementById('nav-confirmed').style.display = 'flex';") && FH.includes("if (view === 'confirmed') {\nloadConfirmedPage();") && FH.includes("classList.toggle('main-wide', view === 'confirmed')"));
+t('F4 메뉴: 주간 실적 다음·실적 설정 앞, 관리자·임원·팀장·담당(주간 실적과 같은 조건), 확정·주간 실적 화면만 넓힘(2026-11-25 같은 폭)', FH.indexOf('id="nav-weekly"') < FH.indexOf('id="nav-confirmed"') && FH.indexOf('id="nav-confirmed"') < FH.indexOf('id="nav-sales-settings"') &&
+  FH.includes("document.getElementById('nav-confirmed').style.display = 'flex';") && FH.includes("if (view === 'confirmed') {\nloadConfirmedPage();") && FH.includes("classList.toggle('main-wide', view === 'confirmed' || view === 'weekly')") && FH.includes('#weekly-view .pf-wrap { max-width: none; }'));
 t('F5 화면에 담당·사무소 칸 없음(표 머리), 매출은 입력 칸 없음', !uiGrab('cfTable_').includes('사무소') && !/<th[^>]*>담당/.test(uiGrab('cfTable_')) && (uiGrab('cfTable_').match(/class="cf-in/g) || []).length === 1);
 const chg = new Function('cf_', uiGrab('cfChanges_') + '; return cfChanges_();');
 const RES = { data: { groups: [{ subs: [{ name: 'A', edited: false, profit: 100, sysProfit: 100, note: '메모' }, { name: 'B', edited: true, profit: 90, sysProfit: 100, note: '' }] }] } };
