@@ -730,6 +730,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .pf-in:disabled { background: var(--bg); color: var(--text-muted); }
 .pf-int tr.pf-off td { color: #9a978f; }
 .pf-int tr.pf-costrow td { background: #faf9f6; }
+.pf-int tr.pf-sumrow td { background: var(--accent-soft); color: var(--accent); font-weight: 700; text-align: right; padding-right: 14px; } .pf-int tr.pf-sumrow td.l, .pf-int tr.pf-sumrow td.c { text-align: left; } .pf-int tr.pf-sumrow td.c { text-align: center; } /* 2026-11-27 재홍님: 실적 입력 합계 줄 */
 .pf-newoff { width: 140px; min-width: 0; text-align: left; margin-left: 4px; }
 .pf-btns { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .pf-btn { border: 1px solid var(--border); background: var(--card); border-radius: 7px; padding: 8px 16px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
@@ -5194,7 +5195,15 @@ function perfInRender_() {
     const ok = off || v.work;
     return `<tr${!ok ? ' class="pf-off"' : ''}><td class="l">${escapeHtml(row.name)} ${sub}</td>${work}<td>${inp(row.key, 'sales', v.sales, ok)}</td><td>${inp(row.key, 'profit', v.profit, ok)}</td>${off ? `<td>${inp(row.key, 'heads', v.heads)}</td>` : ''}${base ? '' : `<td class="l">${noteInp(row.key, v.note, ok)}</td>`}</tr>`;
   }).join('');
-  const costRow = `<tr class="pf-costrow"><td class="l"><b>팀 총비용</b></td>${off ? '' : '<td></td>'}<td>${inp('__cost', 'cost', perfIn_.cost)}</td><td class="c pf-mut">—</td>${off ? '<td class="c pf-mut">—</td>' : ''}${base ? '' : '<td></td>'}</tr>`;
+  // 2026-11-27 재홍님: 합계 줄(매출·이익·인원) — 지금 칸에 보이는 값(저장 전 포함)을 더함. 개인 팀은 근무 끈 줄 빼고, 근무 칸에 근무 인원 수
+  const sumOf = function (f) { let t = 0, n = 0; (r.rows || []).forEach(function (row) { const v = perfIn_.vals[row.key]; if (!off && !v.work) return; const x = perfInNum_(v[f]); if (x !== null && isFinite(x)) { t += x; n++; } }); return n ? t : null; };
+  const fmtSum = function (x) { return x === null ? '<span class="pf-mut">—</span>' : x.toLocaleString('ko-KR', { maximumFractionDigits: 2 }); };
+  const workCnt = off ? 0 : (r.rows || []).filter(function (row) { return perfIn_.vals[row.key].work; }).length;
+  const sumRow = `<tr class="pf-sumrow"><td class="l">합계</td>${off ? '' : `<td class="c">${workCnt}명</td>`}<td>${fmtSum(sumOf('sales'))}</td><td>${fmtSum(sumOf('profit'))}</td>${off ? `<td>${fmtSum(sumOf('heads'))}</td>` : ''}${base ? '' : '<td></td>'}</tr>`;
+  // 2026-11-27 재홍님: 팀 총비용 칸은 이익 열 아래로, 그 아래 경상이익(= 이익 합계 − 팀 총비용, 성과평가 계산과 같은 정의) 줄
+  const costRow = `<tr class="pf-costrow"><td class="l"><b>팀 총비용</b></td>${off ? '' : '<td></td>'}<td class="c pf-mut">—</td><td>${inp('__cost', 'cost', perfIn_.cost)}</td>${off ? '<td class="c pf-mut">—</td>' : ''}${base ? '' : '<td></td>'}</tr>`;
+  const profitSum = sumOf('profit'), costNum = perfInNum_(perfIn_.cost);
+  const opRow = `<tr class="pf-sumrow"><td class="l">경상이익<br><small style="font-weight:400">이익 − 총비용</small></td>${off ? '' : '<td></td>'}<td></td><td>${profitSum === null || costNum === null || !isFinite(costNum) ? '<span class="pf-mut">—</span>' : fmtSum(profitSum - costNum)}</td>${off ? '<td></td>' : ''}${base ? '' : '<td></td>'}</tr>`;
   const head = `<tr><th>${off ? '사무소' : '팀원'}</th>${off ? '' : '<th>근무</th>'}<th>매출액 (천원)</th><th>이익 (천원)</th>${off ? '<th>인원 (명)</th>' : ''}${base ? '' : '<th>비고 <small>(마감 후 팀 전체 공개)</small></th>'}</tr>`;
   const nc = r.nextClose;
   const dirty = perfInDirty_();
@@ -5217,7 +5226,7 @@ function perfInRender_() {
   el.innerHTML = `<div class="pf-inrow">${yearSel}<div class="pf-months">${months.join('')}</div></div>
 ${band}${msg}
 <div class="pf-hint">💡 칸을 눌러 직접 입력하거나, 엑셀에 정리한 실적을 복사해 표의 첫 칸(${escapeHtml(((r.rows || [])[0] || {}).name || '')} 매출액)에 붙여넣으면 한 번에 채워져요. 붙여넣은 칸은 노란색 — 확인 후 저장하세요.</div>
-<div class="pf-tablewrap"><table class="pf-t pf-int"><thead>${head}</thead><tbody>${rowsHtml}${costRow}</tbody></table></div>
+<div class="pf-tablewrap"><table class="pf-t pf-int"><thead>${head}</thead><tbody>${rowsHtml}${sumRow}${costRow}${opRow}</tbody></table></div>
 <div class="pf-btns"><button type="button" class="pf-btn pri" ${perfIn_.busy || !dirty ? 'disabled' : ''} onclick="perfInSave_()">${perfIn_.busy ? '처리 중...' : closed ? '비고 저장' : '저장'}</button>${closeBtn}${reopenBtn}<span class="pf-mut" style="font-size:12px;">${status.join(' · ')}</span></div>
 <p class="cc-note">${off ? '인원 칸 기본값 = 그 사무소 활성 팀원 수(팀 설정의 사무소 기준). 그 달에 이동이 있었으면 고쳐 주세요.' : '근무 = 그 달 우리 팀에서 일했는지. 체크를 끄고 저장하면 그 사람 그 달 줄이 비워져요. 이미 저장한 달은 줄이 있는 팀원만 체크돼요.'}
  금액은 천원 단위 정수예요. 엑셀에서 옮긴 소수 값은 고치지 않으면 그대로 둬요.</p>`;
@@ -5245,7 +5254,7 @@ function perfInRefreshButtons_() {
   }
 }
 function perfInWork_(key, on) { perfIn_.vals[key].work = on; perfIn_.msg = null; perfInRender_(); }
-// 엑셀 붙여넣기: 누른 칸부터 오른쪽(매출·이익·인원)·아래(다음 줄 … 팀 총비용)로 채운다. 쉼표·공백은 지움
+// 엑셀 붙여넣기: 누른 칸부터 오른쪽(매출·이익·인원)·아래(다음 줄 … 팀 총비용 — 2026-11-27부터 이익 열)로 채운다. 쉼표·공백은 지움
 function perfInPaste_(ev, el) {
   const text = (ev.clipboardData || window.clipboardData).getData('text');
   if (!text || (text.indexOf('\t') < 0 && text.indexOf('\n') < 0)) return; // 한 칸 붙여넣기는 브라우저 기본 동작
@@ -5253,14 +5262,14 @@ function perfInPaste_(ev, el) {
   const r = perfIn_.res, off = r.mode === '사무소';
   const cols = off ? ['sales', 'profit', 'heads'] : ['sales', 'profit'];
   const keys = (r.rows || []).map(function (x) { return x.key; }).concat(['__cost']);
-  let ri = keys.indexOf(el.dataset.k), ci = el.dataset.f === 'cost' ? 0 : cols.indexOf(el.dataset.f);
+  let ri = keys.indexOf(el.dataset.k), ci = el.dataset.f === 'cost' ? 1 : cols.indexOf(el.dataset.f); // 2026-11-27: 팀 총비용 칸이 이익 열(1번째)로 옮겨짐
   const lines = text.replace(/\r/g, '').split('\n').filter(function (l, i, a) { return l !== '' || i < a.length - 1; });
   lines.forEach(function (line, li) {
     const k = keys[ri + li]; if (!k) return;
     line.split('\t').forEach(function (cell, cj) {
       const c = ci + cj;
       const v = cell.replace(/[,\s]/g, '');
-      if (k === '__cost') { if (c === 0) { perfIn_.cost = v; perfIn_.pasted['__cost|cost'] = true; } return; }
+      if (k === '__cost') { if (c === 1) { perfIn_.cost = v; perfIn_.pasted['__cost|cost'] = true; } return; }
       if (c >= cols.length) return;
       if (!off && !perfIn_.vals[k].work) return;
       perfIn_.vals[k][cols[c]] = v; perfIn_.pasted[k + '|' + cols[c]] = true;
