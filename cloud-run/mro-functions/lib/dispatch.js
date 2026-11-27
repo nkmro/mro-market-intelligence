@@ -30,12 +30,12 @@ function kstMinute(nowMs) {
 // 분을 5분 칸(slot 0~11)으로 바꿔서 판단한다. slot 0 = 매시 2~6분.
 //   push     : 매번(5분)
 //   sweep    : slot 0,3,6,9 = 매시 2·17·32·47분(기존 material-sweep-15m과 같은 분)
-//   reminder·issueMail·세션 정리 : slot 0 = 매시 2분(기존 매시 0분에서 2분 늦어짐)
+//   issueMail·세션 정리 : slot 0 = 매시 2분(기존 매시 0분에서 2분 늦어짐). reminder는 2026-11-27부터 안 부름(issueMail 안 메일로 대체, 주소는 되돌리기용으로 남김)
 function planTargets(minute) {
   const slot = Math.floor((((minute - 2) % 60 + 60) % 60) / 5);
   const keys = ['push'];
   if (slot % 3 === 0) keys.push('sweep');
-  if (slot === 0) keys.push('reminder', 'issueMail', 'cleanup');
+  if (slot === 0) keys.push('issueMail', 'cleanup'); // 2026-11-27: 'reminder'(앱 푸시 리마인더) 뺌 — 리마인더는 issueMail 안에서 메일로(lib/reminderMail.js)
   return { slot: slot, keys: keys };
 }
 

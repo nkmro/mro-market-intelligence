@@ -48,16 +48,16 @@ function fakeFs(sessions, opts) {
   // 1) 분 → 할 일
   const exp = m => {
     const s = Math.floor((((m - 2) % 60) + 60) % 60 / 5);
-    const k = ['push']; if (s % 3 === 0) k.push('sweep'); if (s === 0) k.push('reminder', 'issueMail', 'cleanup'); return k.join(',');
+    const k = ['push']; if (s % 3 === 0) k.push('sweep'); if (s === 0) k.push('issueMail', 'cleanup'); return k.join(','); // 2026-11-27: reminder 뺌(메일로 대체)
   };
   const sched = [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57];
-  t('P1 :02 → push+sweep+reminder+issueMail+cleanup', d.planTargets(2).keys.join(',') === 'push,sweep,reminder,issueMail,cleanup', d.planTargets(2));
+  t('P1 :02 → push+sweep+issueMail+cleanup (2026-11-27 reminder 뺌)', d.planTargets(2).keys.join(',') === 'push,sweep,issueMail,cleanup', d.planTargets(2));
   t('P2 :07 → push만', d.planTargets(7).keys.join(',') === 'push');
   t('P3 :17/:32/:47 → push+sweep', [17, 32, 47].every(m => d.planTargets(m).keys.join(',') === 'push,sweep'));
   const sweepMins = sched.filter(m => d.planTargets(m).keys.includes('sweep'));
   t('P4 한 시간 sweep = 2,17,32,47(기존과 같음)', sweepMins.join(',') === '2,17,32,47', sweepMins);
-  const hourly = sched.filter(m => d.planTargets(m).keys.includes('reminder'));
-  t('P5 한 시간 reminder/issueMail/정리 = 1번(:02)', hourly.join(',') === '2', hourly);
+  const hourly = sched.filter(m => d.planTargets(m).keys.includes('issueMail'));
+  t('P5 한 시간 issueMail/정리 = 1번(:02), reminder는 어느 분에도 없음', hourly.join(',') === '2' && sched.every(m => !d.planTargets(m).keys.includes('reminder')), hourly);
   t('P6 한 시간 push = 12번', sched.filter(m => d.planTargets(m).keys.includes('push')).length === 12);
   t('P7 몇 분 늦어도 같은 칸(:03~:06 → slot 0, :01 → slot 11)', [3, 4, 5, 6].every(m => d.planTargets(m).slot === 0) && d.planTargets(1).slot === 11 && d.planTargets(0).slot === 11);
   t('P8 0~59분 전체가 규칙식과 일치', Array.from({ length: 60 }, (_, m) => m).every(m => d.planTargets(m).keys.join(',') === exp(m)));
@@ -127,8 +127,8 @@ function fakeFs(sessions, opts) {
   {
     const f = fakeClients({}); const fs = fakeFs([mk('old', -48 * H)]);
     const r = await d.runDispatch({ getClient: f.getClient, firestore: fs }, kstMs(10, 2, 5));
-    t('R1 :02 → 4개 호출 + 정리, 모두 ok', r.allOk && r.results.length === 5 && f.calls.length === 4 && fs.st.deleted.join() === 'old', r);
-    t('R2 결과 순서 = 계획 순서', r.results.map(x => x.key).join(',') === 'push,sweep,reminder,issueMail,cleanup');
+    t('R1 :02 → 3개 호출 + 정리, 모두 ok', r.allOk && r.results.length === 4 && f.calls.length === 3 && fs.st.deleted.join() === 'old', r);
+    t('R2 결과 순서 = 계획 순서', r.results.map(x => x.key).join(',') === 'push,sweep,issueMail,cleanup');
   }
   {
     const f = fakeClients({}); const fs = fakeFs([mk('old', -48 * H)]);
@@ -150,7 +150,7 @@ function fakeFs(sessions, opts) {
   {
     const f = fakeClients({});
     const r = await d.runDispatch({ getClient: f.getClient, firestore: fakeFs([]) }, kstMs(0, 2));
-    t('R6 자정 00:02도 매시 작업 포함', r.slot === 0 && f.calls.length === 4, r);
+    t('R6 자정 00:02도 매시 작업 포함', r.slot === 0 && f.calls.length === 3, r); // 2026-11-27: reminder 뺌(push·sweep·issueMail)
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

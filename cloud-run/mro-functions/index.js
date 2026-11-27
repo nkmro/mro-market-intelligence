@@ -3237,6 +3237,7 @@ const ISSUE_MAIL_DELIVERIES = 'issueMailDeliveries';
 // 판단·문구는 lib/perfCloseMail.js(순수 함수). 여기서는 시트 읽기(MRO 본 시트 1번 + 인사평가 파일 1번, 1월엔 작년 파일 1번 더)·
 // Firestore perfCloseMails(문서 = 마감 1건, 이미 받은 사람 목록)·회사 메일 발송만 한다. 시트에는 쓰지 않는다.
 const perfCloseMail = require('./lib/perfCloseMail');
+const reminderMail = require('./lib/reminderMail'); // 2026-11-27 담당자 댓글 리마인더 — 앱 푸시 대신 메일
 const PERF_CLOSE_MAILS = 'perfCloseMails';
 async function runPerfCloseMail_(nowMs) {
   const client = await getSheetsClient();
@@ -3307,6 +3308,40 @@ async function runPerfCloseMail_(nowMs) {
   return summary;
 }
 
+// 담당자 댓글 리마인더 메일(2026-11-27 재홍님 결정 — lib/reminderMail.js 머리말). 예전 reminderBatchTest(앱 푸시)와 같은 대상·같은 시각 규칙,
+// 같은 발송 기록(reminderDeliveries/{날짜}_{시각}_{이메일}) — 문서가 있으면 그 사람은 건너뜀. 메일 로그인은 보낼 사람이 있을 때 1번만.
+// 메일을 못 보낸 사람은 기록하지 않아 다음 정시에 다시(그 사이 더 늦은 리마인더 시각이 지났으면 그 시각으로).
+async function runReminderMail_(nowMs, d) {
+  const when = reminderMail.due(d.settings, nowMs);
+  if (when.skip) return { skipped: true, reason: when.skip };
+  const leadScope = d.settings['팀장_열람범위'] || null;
+  const teamByEmail = feedEngine.buildTeamByEmail(d.allUsers);
+  const list = reminderMail.plan({ users: d.allUsers, posts: d.allPosts, items: d.allItems, comments: d.allComments, leadScope: leadScope, teamByEmail: teamByEmail });
+  const summary = { hour: when.targetHour, managers: list.length, already: 0, none: 0, notCompany: 0, sent: 0, failed: 0 };
+  const toSend = [];
+  for (const m of list) {
+    const ref = firestore.collection(reminderMail.COLL).doc(reminderMail.docId(when.today, when.targetHour, m.email));
+    if ((await ref.get()).exists) { summary.already++; continue; }
+    if (m.count === 0) { await ref.set({ sentAt: FieldValue.serverTimestamp(), itemCount: 0, skipped: true, channel: 'mail' }); summary.none++; continue; }
+    if (!mailer.isAllowedRecipient(m.email)) { await ref.set({ sentAt: FieldValue.serverTimestamp(), itemCount: m.count, skipped: true, reason: 'NOT_COMPANY_MAIL', channel: 'mail' }); summary.notCompany++; continue; }
+    toSend.push({ m: m, ref: ref });
+  }
+  if (!toSend.length) return summary;
+  try { await mailer.verifyLogin(); } catch (loginErr) { summary.loginFailed = mailer.describeError(loginErr); return summary; } // 다음 정시에 다시
+  const msgs = toSend.map(function (x) {
+    const parts = reminderMail.mailParts(x.m, x.m.count, when.targetHour, perfCloseMail.APP_URL);
+    return { to: parts.to, subject: parts.subject, text: perfCloseMail.buildText(parts), html: perfCloseMail.buildHtml(parts) };
+  });
+  const result = await mailer.sendMessages(msgs);
+  if (!result.ok) { summary.failed = msgs.length; summary.error = result.error; return summary; }
+  for (const r of result.results) {
+    const x = toSend.find(function (t) { return String(t.m.email).trim().toLowerCase() === r.to; });
+    if (r.ok && x) { await x.ref.set({ sentAt: FieldValue.serverTimestamp(), itemCount: x.m.count, skipped: false, channel: 'mail', messageId: r.messageId || null }); summary.sent++; }
+    else summary.failed++;
+  }
+  return summary;
+}
+
 exports.issueMailBatchTest = async (req, res) => {
   const t0 = Date.now();
   const nowMs = Date.now();
@@ -3338,6 +3373,12 @@ exports.issueMailBatchTest = async (req, res) => {
     const allComments = rowsToComments((valueRanges[3] && valueRanges[3].values) || []);
     const settings = parseSettings((valueRanges[4] && valueRanges[4].values) || []);
 
+    // [2026-11-27] 담당자 댓글 리마인더 메일 — 위에서 읽은 시트 자료를 그대로 씀(시트 추가 읽기 없음). 자체 try/catch(실패해도 아래 이슈 메일은 그대로). 결과는 로그 한 줄만
+    try {
+      console.log('[reminderMail] ' + JSON.stringify(await runReminderMail_(nowMs, { allUsers, allPosts, allItems, allComments, settings })));
+    } catch (rmErr) {
+      console.error('[reminderMail] 오류: ' + String((rmErr && rmErr.message) || rmErr));
+    }
     const enabled = String(settings['이슈댓글메일사용'] || '').trim().toUpperCase() === 'TRUE';
     if (!enabled) { res.status(200).json({ ok: true, skipped: true, reason: 'DISABLED', serverMs: Date.now() - t0 }); return; }
 
