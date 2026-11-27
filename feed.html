@@ -730,6 +730,7 @@ font-size: 13px; padding: 2px 4px; display: none;
 .pf-in:disabled { background: var(--bg); color: var(--text-muted); }
 .pf-int tr.pf-off td { color: #9a978f; }
 .pf-int tr.pf-costrow td { background: #faf9f6; }
+.pf-t tr.pf-totrow td { background: var(--accent-soft); color: var(--accent); font-weight: 700; } .pf-t tr.pf-totrow td.g { color: var(--accent); } /* 2026-11-27 재홍님: 실적 숫자 합계 줄 */
 .pf-int tr.pf-sumrow td { background: var(--accent-soft); color: var(--accent); font-weight: 700; text-align: right; padding-right: 14px; } .pf-int tr.pf-sumrow td.l, .pf-int tr.pf-sumrow td.c { text-align: left; } .pf-int tr.pf-sumrow td.c { text-align: center; } /* 2026-11-27 재홍님: 실적 입력 합계 줄 */
 .pf-newoff { width: 140px; min-width: 0; text-align: left; margin-left: 4px; }
 .pf-btns { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
@@ -5476,9 +5477,11 @@ const unitLabel = perfUnitLabel_(res), m = res.closeMonth;
 let t = `<h4 class="pf-h4">실적 숫자 <small class="pf-mut">${always ? '팀장·임원은 항상 보여요' : '공개 기간에만 보여요'} · 1~${m}월 누계 · 성장 = 당해 ÷ 전년</small></h4>
 <div class="pf-tablewrap"><table class="pf-t"><thead><tr><th rowspan="2">${unitLabel}</th><th colspan="3">매출액 누계 (천원)</th><th colspan="3">이익 누계 (천원)</th><th colspan="3">이익률</th><th colspan="3">인당 이익 (천원/인·월)</th></tr>
 <tr><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th><th>전년</th><th>당해</th><th>성장</th></tr></thead><tbody>`;
+const tot = { P: { sales: 0, profit: 0, heads: 0 }, C: { sales: 0, profit: 0, heads: 0 }, n: 0 }; // 2026-11-27 재홍님: 아래 합계 줄용(표에 나온 단위만)
 (res.units || []).forEach(function (u) {
 if (!u.P || !u.C) return;
 const P = u.P, C = u.C;
+['sales', 'profit', 'heads'].forEach(function (f) { tot.P[f] += Number(P[f]) || 0; tot.C[f] += Number(C[f]) || 0; }); tot.n++;
 const mP = P.sales ? P.profit / P.sales : null, mC = C.sales ? C.profit / C.sales : null;
 const hP = P.heads ? P.profit / P.heads : null, hC = C.heads ? C.profit / C.heads : null;
 const r = function (a, b) { return (b && a !== null && b !== null) ? a / b : null; };
@@ -5488,6 +5491,17 @@ t += `<tr class="${mine ? 'me' : ''}"><td class="l">${escapeHtml(u.name)}</td><t
 <td>${mP === null ? '—' : (mP * 100).toFixed(2) + '%'}</td><td>${mC === null ? '—' : (mC * 100).toFixed(2) + '%'}</td><td class="g">${perfPct_(r(mC, mP))}</td>
 <td>${perfNum_(hP)}</td><td>${perfNum_(hC)}</td><td class="g">${perfPct_(r(hC, hP))}</td></tr>`;
 });
+// 2026-11-27 재홍님: 합계 줄 — 매출·이익 = 더한 값, 이익률 = 이익 합계 ÷ 매출 합계, 인당 이익 = 이익 합계 ÷ 인원 합계(팀 전체 인당)
+if (tot.n >= 2) {
+const r2 = function (a, b) { return (b && a !== null && b !== null) ? a / b : null; };
+const TP = tot.P, TC = tot.C;
+const tmP = TP.sales ? TP.profit / TP.sales : null, tmC = TC.sales ? TC.profit / TC.sales : null;
+const thP = TP.heads ? TP.profit / TP.heads : null, thC = TC.heads ? TC.profit / TC.heads : null;
+t += `<tr class="pf-totrow"><td class="l">${escapeHtml(teamLabel(res.team))} 합계</td><td>${perfNum_(TP.sales)}</td><td>${perfNum_(TC.sales)}</td><td class="g">${perfPct_(r2(TC.sales, TP.sales))}</td>
+<td>${perfNum_(TP.profit)}</td><td>${perfNum_(TC.profit)}</td><td class="g">${perfPct_(r2(TC.profit, TP.profit))}</td>
+<td>${tmP === null ? '—' : (tmP * 100).toFixed(2) + '%'}</td><td>${tmC === null ? '—' : (tmC * 100).toFixed(2) + '%'}</td><td class="g">${perfPct_(r2(tmC, tmP))}</td>
+<td>${perfNum_(thP)}</td><td>${perfNum_(thC)}</td><td class="g">${perfPct_(r2(thC, thP))}</td></tr>`;
+}
 t += `</tbody></table></div>`;
 const ts = res.teamScore || {};
 if (ts.curOp !== undefined) {
