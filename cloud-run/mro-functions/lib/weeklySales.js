@@ -111,9 +111,9 @@ function readSettings(rows) {
 // desc = 시트에 그 줄이 없어 새로 넣을 때 C열(설명)
 const SETTING_RULES = [
   { key: '입력요일', parse: function (v) { return cell(v) === '월' ? '월' : null; }, why: '지금은 월만 가능', desc: '주간 실적 마감 요일(지금은 월만)' },
-  { key: '담당마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '3단계 팀 담당 [입력 완료] 마감 시각(0~23)' },
-  { key: '팀장마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '팀장 [입력 완료]·[팀 확정] 마감 시각, 16시 알림(0~23)' },
-  { key: '메일사용', parse: function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, why: 'TRUE 또는 FALSE', desc: '주간 실적·확정 실적 메일 전체 켜기/끄기(TRUE/FALSE)' }, // 2026-11-25 확정 실적 알림 메일도 같은 스위치
+  { key: '담당마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '3단계 팀 담당 [입력 완료] 마감 시각(0~23). 입력일(월) 이 시각부터 아직 완료하지 않은 담당 본인에게 마감 알림 메일이 갑니다.' }, // 2026-11-27 설명 보강(시트 C열이 먼저)
+  { key: '팀장마감시각', parse: function (v) { return intIn(v, 0, 23); }, why: '0~23 정수', desc: '팀장 [입력 완료]·[팀 확정] 마감 시각(0~23). 입력일(월) 이 시각에 아직 완료·확정하지 않은 팀의 팀장에게 알림 메일이 갑니다.' },
+  { key: '메일사용', parse: function (v) { const s = cell(v).toUpperCase(); return s === 'TRUE' ? true : s === 'FALSE' ? false : null; }, why: 'TRUE 또는 FALSE', desc: '주간 실적·확정 실적 메일 전체 켜기/끄기(TRUE/FALSE). 3단계 팀은 담당이 모두 [입력 완료]하면 요일과 상관없이 다음 정시 2분에 팀장에게 \'팀 확정 요청\' 메일이 갑니다(주차마다 1번).' }, // 2026-11-25 확정 실적 알림 메일도 같은 스위치
   { key: '첫주합침일수', parse: function (v) { return intIn(v, 0, 6); }, why: '0~6 정수', desc: '달 첫 주가 이 일수 이하면 다음 주와 합침(0~6)' },
   { key: '가마감이월일수', parse: function (v) { return intIn(v, 1, 8); }, why: '1~8 정수 (8 = 넘기지 않음)', desc: '말일이 월요일에서 이 일수 이상 남으면 가마감(1~8)' },
   { key: '결과메일대기분', parse: function (v) { return intIn(v, 0, 1440); }, why: '0~1440 정수(분)', desc: '주간 실적 4팀 완료·확정 실적 올림·담당 모두 확정 시각부터 이 분(0~1440)이 지난 뒤, 처음 오는 정시(매시 2분)에 메일 발송' }, // 2026-11-25 확정 실적도 같은 값 · 같은 날 재홍님: 실제 발송 시각(첫 정시)을 설명에
@@ -884,10 +884,7 @@ function stage3Jobs(p) {
     const md = managerDoneMap(p.progressRows, cur.year, cur.month, wk, t);
     const base = { team: t, year: cur.year, month: cur.month, entry: cur };
     if (names.every(function (n) { return md[n]; })) {
-      const leaders = users.filter(function (u) { return u.role === '팀장' && leadsTeam_(u, t) && mailable(u); }); // 겸임 팀장은 맡은 팀 전부
-      const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
-      jobs.push(Object.assign({ key: 'confirm_' + cur.year + '_' + cur.month + '_' + wk + '_' + t, kind: 'confirm', hour: s.팀장마감시각, proxy: !leaders.length, recipients: to,
-        done: names.map(function (n) { return { name: n, at: md[n].at }; }) }, base));
+      jobs.push(confirmJob_(s, cur, t, names, md, users, admin, rep.today));
       return;
     }
     if (hour < s.담당마감시각) return;
@@ -903,6 +900,38 @@ function stage3Jobs(p) {
     });
   });
   return jobs;
+}
+// 팀 확정 요청 메일 1건(stage3Jobs = 입력일, confirmJobsFor = 예약된 주차·아무 요일 — 같은 키라 한 주차에 1번만 감)
+function confirmJob_(s, cur, t, names, md, users, admin, today) {
+  const leaders = users.filter(function (u) { return u.role === '팀장' && leadsTeam_(u, t) && mailable(u); }); // 겸임 팀장은 맡은 팀 전부
+  const to = leaders.length ? leaders : (mailable(admin) ? [admin] : []);
+  return Object.assign({ key: confirmKey(cur.year, cur.month, cur, t), kind: 'confirm', hour: s.팀장마감시각, proxy: !leaders.length, recipients: to,
+    done: names.map(function (n) { return { name: n, at: md[n].at }; }), early: today < cur.inputDate }, { team: t, year: cur.year, month: cur.month, entry: cur });
+}
+function confirmKey(year, month, entry, team) { return 'confirm_' + year + '_' + month + '_' + weekKeyOf(entry) + '_' + team; }
+// 2026-11-27 재홍님 승인: 담당 마지막 사람이 [입력 완료]하면 요일과 상관없이(금~일 미리 완료·화요일 이후 늦은 완료 포함) 다음 정시 2분에 팀장 확정 요청.
+// targets = Firestore에 예약된 [{ key, year, month, week, team }]. 보낼 것은 jobs, 더 보낼 필요 없는 예약은 cancel(팀 확정됨·담당 완료 취소·주차 없음·2단계)
+function confirmJobsFor(p) {
+  const s = p.settings || DEFAULTS, out = { jobs: [], cancel: [] };
+  if (s.메일사용 === false) return out; // 꺼져 있으면 예약은 그대로 둠(켜면 다음 정시에 판단)
+  const today = seoulToday(p.nowMs), users = usersOf(p.users), admin = users.find(function (u) { return u.email === lcs(p.adminEmail); });
+  (p.targets || []).forEach(function (g) {
+    const year = num(g.year), month = num(g.month), t = normTeam(g.team), week = weekKey(g.week);
+    const cur = year && month ? weekPlan(year, month, s).find(function (w) { return weekKeyOf(w) === week; }) : null;
+    const no = function (why) { out.cancel.push({ key: g.key, reason: why }); };
+    if (!cur || !t) return no('NO_WEEK');
+    const e = Object.assign({ year: year, month: month }, cur);
+    if (g.key && g.key !== confirmKey(year, month, e, t)) return no('BAD_KEY');
+    if (modeAt(s, p.progressRows, t, e) !== '3단계') return no('NOT_STAGE3');
+    if (allDoneOf(p.customers, p.progressRows, year, month, e).done[t]) return no('TEAM_DONE');
+    const mus = managerUsersOf(p.users, t), counts = managerCounts(p.customers, t, month, mus.map(function (u) { return u.name; }));
+    const names = mus.map(function (u) { return u.name; }).filter(function (n) { return counts[n]; });
+    const md = managerDoneMap(p.progressRows, year, month, week, t);
+    if (!names.length) return no('NO_MANAGERS');
+    if (!names.every(function (n) { return md[n]; })) return no('NOT_ALL_DONE'); // 담당이 [완료 취소] — 다시 완료하면 새로 예약됨
+    out.jobs.push(confirmJob_(s, e, t, names, md, users, admin, today));
+  });
+  return out;
 }
 // 시안 C: 담당 마감 알림
 function managerRemindParts(job, r, appUrl) {
@@ -928,7 +957,7 @@ function confirmParts(job, r, appUrl) {
     subject: '[MRO 워크허브] ' + title + ' 주간 실적 팀 확정 요청 (' + job.team + '팀 담당 ' + n + '명 완료)',
     hello: job.proxy ? (r.name ? r.name + '님,' : '') : (r.name ? r.name + ' 팀장님,' : '팀장님,'),
     lines: [job.team + '팀 담당 ' + n + '명이 모두 ' + title + ' 주간 실적을 [입력 완료]했어요.', '숫자를 확인하고 [팀 확정]을 눌러 주세요.'].concat(job.proxy ? ['(' + job.team + '팀은 팀장 계정이 아직 없어 관리자에게 보냈어요.)'] : []),
-    period: { title: null, lines: ['· 팀장 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00'] },
+    period: { title: null, lines: ['· 팀장 마감: ' + fmtMd(job.entry.inputDate) + ' ' + pad2s(job.hour) + ':00'].concat(job.early ? ['· 입력일 ' + fmtMd(job.entry.inputDate) + ' 전에 완료한 숫자는 예상치예요 — 마감 전까지 바뀔 수 있어요.'] : []) }, // 2026-11-27: 금~일 미리 완료
     bodyHtml: box,
     textBlock: ['■ 담당 입력 완료'].concat(job.done.map(function (x) { return '· ' + x.name + ' ' + at(x); })),
     button: '팀 확정하러 가기', link: appUrl + '?view=weekly', footer: FOOTER
@@ -944,5 +973,6 @@ module.exports = {
   seoulStamp, seoulHour, weekCellOf, weekKeyOf, reportKey, teamDoneMap, teamsOf, allDoneOf, checkNum,
   inputView, planWeekWrite, planProgress, planAddCustomer, usersOf, reminderJobs, resultRecipients, reminderParts, resultParts, leadTeam,
   CUSTOMER_EDIT_COLS, managersOf, customerEditList, planUpdateCustomers, customersAt, resultDue,
-  STAGE_CONFIRM, STAGE_MAIL_MREMIND, STAGE_MAIL_CONFIRM, managerUsersOf, managerDoneMap, managerCounts, modeAt, planSetMode, stage3Jobs, managerRemindParts, confirmParts
+  STAGE_CONFIRM, STAGE_MAIL_MREMIND, STAGE_MAIL_CONFIRM, managerUsersOf, managerDoneMap, managerCounts, modeAt, planSetMode, stage3Jobs, managerRemindParts, confirmParts,
+  confirmKey, confirmJobsFor
 };

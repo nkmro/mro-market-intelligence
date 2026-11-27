@@ -5904,7 +5904,12 @@ exports.saveWeeklySalesTest = async (req, res) => {
           const n = await perfBatchWrite_(mro.fileId, [{ range: q(weeklySales.TAB_PROGRESS) + '!A' + pw.row + ':I' + pw.row, values: [pw.values] }]);
           timings.writeMs = Date.now() - w0;
           if (n !== weeklySales.PROGRESS_COLS) return { ok: false, error: 'PARTIAL_WRITE', updatedCells: n };
-          return { ok: true, updatedCells: n, team: lead.team, manager: who, stage: stage, proxy: !asMgr };
+          // 2026-11-27 재홍님 승인: 마지막 담당이 [입력 완료]하면 팀 확정 요청 메일 예약(요일 무관, 다음 정시 2분 issueMailBatchTest가 보냄). 실패해도 저장은 성공 — 입력일에는 예전처럼 stage3Jobs가 보냄
+          let mail = null;
+          if (complete && Object.keys(counts).filter(function (x) { return counts[x]; }).every(function (x) { return x === who || mdone[x]; })) {
+            try { mail = await markConfirmPending_(en, lead.team, nowMs); } catch (mkErr) { console.error('[weeklySales] 팀 확정 요청 예약 실패: ' + mkErr); mail = 'MARK_FAILED'; }
+          }
+          return { ok: true, updatedCells: n, team: lead.team, manager: who, stage: stage, proxy: !asMgr, confirmMail: mail };
         }
         if (b.action === 'complete') {
           if (isDone) return { ok: false, error: 'ALREADY_DONE' };
@@ -6002,6 +6007,15 @@ async function runConfirmedMail_(nowMs) {
   return summary;
 }
 
+// 팀 확정 요청 메일 예약 표시(weeklySalesMails/confirm_{연}_{월}_{주차}_{팀}). 이미 보냈으면(done) 그대로 둠 — 주차마다 1번
+async function markConfirmPending_(en, team, nowMs) {
+  const key = weeklySales.confirmKey(en.year, en.month, en.entry, team);
+  const ref = firestore.collection(WEEKLY_MAILS).doc(key);
+  const snap = await ref.get();
+  if (snap.exists && snap.data().status === 'done') return 'ALREADY_SENT';
+  await ref.set({ status: 'pending', kind: 'confirm', team: team, year: en.year, month: en.month, week: weeklySales.weekKeyOf(en.entry), markedAt: nowMs, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  return 'PENDING';
+}
 async function runWeeklySalesMail_(nowMs) {
   const stateSnap = await firestore.collection(WEEKLY_STATE).doc('latest').get();
   const latest = stateSnap.exists ? stateSnap.data() : null;
@@ -6014,9 +6028,12 @@ async function runWeeklySalesMail_(nowMs) {
   const guess = weeklySales.currentReport(nowMs).current;
   // 입력일(월요일)에만 시트를 읽는다. 실제 시각 판단(팀장마감시각, 시트 값)은 reminderJobs 안에서
   const maybeRemind = !!guess && guess.inputDate === weeklySales.seoulToday(nowMs);
-  if (!resultPending && !maybeRemind) return { skipped: true, reason: 'NOTHING_DUE' };
+  // 2026-11-27 팀 확정 요청 예약(saveWeeklySalesTest가 담당 마지막 [입력 완료] 때 남김) — 요일과 상관없이 예약이 있을 때만 시트를 읽는다
+  const pendSnap = await firestore.collection(WEEKLY_MAILS).where('status', '==', 'pending').get();
+  const pending = pendSnap.docs.map(function (d) { return Object.assign({ key: d.id }, d.data()); }).filter(function (g) { return g.kind === 'confirm'; });
+  if (!resultPending && !maybeRemind && !pending.length) return { skipped: true, reason: 'NOTHING_DUE' };
   const client = await getSheetsClient();
-  const year = resultPending ? Number(latest.year) : guess.year;
+  const year = resultPending ? Number(latest.year) : maybeRemind ? guess.year : Number(pending[0].year);
   const mro = await weeklyMro_(client, '', year);
   if (!mro.fileId) {
     // 확인 4: 결과 메일을 보내야 하는데 그해 파일 줄('설정' 실적관리파일_{연도})이 없으면 관리자에게 1번만 알림. 줄을 다시 넣으면 다음 정시에 보냄(문서는 done이 아님)
@@ -6053,6 +6070,14 @@ async function runWeeklySalesMail_(nowMs) {
   // 3단계(2026-11-17 확정 ⑦): 담당 마감 알림(담당마감시각 이후 미완료 담당 본인) · 팀장 확정 요청(담당 모두 완료, 팀 확정 전)
   weeklySales.stage3Jobs({ nowMs: nowMs, settings: f.settings, customers: f.customers, progressRows: f.progress, weeklyRows: f.weekly, users: mro.userRows, adminEmail: ADMIN_EMAIL })
     .forEach(function (j) { jobs.push(j); });
+  // 예약된 팀 확정 요청(이 파일 연도만 — 다른 연도 예약은 그 연도를 읽는 정시에). 입력일에 stage3Jobs와 겹치면 키가 같아 1번만
+  const cf = weeklySales.confirmJobsFor({ nowMs: nowMs, settings: f.settings, customers: f.customers, progressRows: f.progress, users: mro.userRows, adminEmail: ADMIN_EMAIL,
+    targets: pending.filter(function (g) { return Number(g.year) === year; }) });
+  cf.jobs.forEach(function (j) { if (!jobs.some(function (x) { return x.key === j.key; })) jobs.push(j); });
+  for (const c of cf.cancel) { // 더 보낼 필요 없는 예약은 닫아서 매시간 시트를 다시 읽지 않게
+    await firestore.collection(WEEKLY_MAILS).doc(c.key).set({ status: 'cancelled', reason: c.reason, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+  if (cf.cancel.length) summary.cancelled = cf.cancel;
   if (!jobs.length) return Object.assign(summary, { due: 0 });
   let view = null, loggedIn = false;
   const logRows = [];
@@ -6078,7 +6103,8 @@ async function runWeeklySalesMail_(nowMs) {
     if (!msgs.length) { await ref.set({ status: 'done', sentTo: prev.sentTo || [], updatedAt: FieldValue.serverTimestamp() }, { merge: true }); continue; }
     if (!loggedIn) {
       try { await mailer.verifyLogin(); loggedIn = true; } catch (loginErr) {
-        await ref.set({ status: 'login_failed', error: mailer.describeError(loginErr), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await ref.set(Object.assign({ status: 'login_failed', error: mailer.describeError(loginErr), updatedAt: FieldValue.serverTimestamp() }, // 팀 확정 요청은 예약을 남겨 다음 정시에 다시
+          job.kind === 'confirm' ? { status: 'pending', kind: 'confirm', team: job.team, year: job.year, month: job.month, week: weeklySales.weekKeyOf(job.entry) } : {}), { merge: true });
         summary.loginFailed = true; break;
       }
     }
